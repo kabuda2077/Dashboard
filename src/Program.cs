@@ -32,21 +32,19 @@ internal static class Program
 
     private static void ReportCrash(Exception exception)
     {
+        if (IsShutdownNoise(exception))
+        {
+            return;
+        }
+
         var logPath = Path.Combine(AppSettings.SettingsDirectory, "crash.log");
         Directory.CreateDirectory(AppSettings.SettingsDirectory);
         File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {exception}{Environment.NewLine}{Environment.NewLine}");
+    }
 
-        try
-        {
-            MessageBox.Show(
-                $"Mihomo Dashboard failed to start.\n\n{exception.Message}\n\nCrash log:\n{logPath}",
-                "Mihomo Dashboard",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
-        catch
-        {
-            // The log file is the fallback when UI cannot be displayed.
-        }
+    private static bool IsShutdownNoise(Exception exception)
+    {
+        return exception is OperationCanceledException or ObjectDisposedException
+            || exception.GetBaseException() is OperationCanceledException or ObjectDisposedException;
     }
 }
