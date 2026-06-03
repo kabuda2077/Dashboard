@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+zashboard-gh-pages.zip
+_tmp_zashboard/
+config/config.yaml
+cores/*.exe
