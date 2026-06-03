@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -138,111 +139,145 @@ public sealed class MainForm : Form
 
   const css = document.createElement('style');
   css.textContent = `
-    #mihomo-core-widget {
-      position: fixed;
-      top: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 2147483647;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #171717;
-    }
-    #mihomo-core-widget * { box-sizing: border-box; }
-    #mihomo-core-widget .mc-pill {
-      height: 36px;
+    #mihomo-core-entry {
+      width: calc(100% - 24px);
+      min-height: 42px;
+      margin: 8px 12px;
+      border: 0;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 0 10px 0 14px;
-      border-radius: 12px;
-      border: 1px solid rgba(15, 23, 42, .08);
-      background: rgba(255, 255, 255, .88);
-      box-shadow: 0 12px 30px rgba(15, 23, 42, .10);
-      backdrop-filter: blur(16px);
+      padding: 0 16px;
+      background: transparent;
+      color: #27272a;
+      cursor: pointer;
+      font: 700 14px Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+      text-align: left;
     }
-    #mihomo-core-widget .mc-dot {
+    #mihomo-core-entry[data-active="true"] {
+      background: #18181b;
+      color: #fff;
+    }
+    #mihomo-core-entry .mc-dot,
+    #mihomo-core-page .mc-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       background: #f97316;
       box-shadow: 0 0 0 3px rgba(249, 115, 22, .16);
+      flex: 0 0 auto;
     }
-    #mihomo-core-widget[data-running="true"] .mc-dot {
+    #mihomo-core-entry[data-running="true"] .mc-dot,
+    #mihomo-core-page[data-running="true"] .mc-dot {
       background: #22c55e;
       box-shadow: 0 0 0 3px rgba(34, 197, 94, .16);
     }
-    #mihomo-core-widget .mc-title {
-      font-size: 13px;
-      font-weight: 700;
-      white-space: nowrap;
+    #mihomo-core-page {
+      position: fixed;
+      left: var(--mc-sidebar-left, 306px);
+      top: var(--mc-content-top, 58px);
+      right: 0;
+      bottom: 0;
+      z-index: 2147483000;
+      overflow: auto;
+      padding: 22px;
+      background: #f7f7f8;
+      color: #18181b;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    #mihomo-core-widget .mc-sub {
-      color: #737373;
-      font-size: 12px;
-      white-space: nowrap;
+    #mihomo-core-page[hidden] { display: none !important; }
+    #mihomo-core-page * { box-sizing: border-box; }
+    #mihomo-core-page .mc-wrap {
+      max-width: 980px;
+      margin: 0 auto;
     }
-    #mihomo-core-widget button {
-      height: 28px;
+    #mihomo-core-page .mc-hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 24px;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15,23,42,.06);
+    }
+    #mihomo-core-page .mc-heading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #mihomo-core-page h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.2;
+    }
+    #mihomo-core-page .mc-sub {
+      margin-top: 6px;
+      color: #71717a;
+      font-size: 14px;
+    }
+    #mihomo-core-page .mc-actions {
+      display: flex;
       border: 0;
-      border-radius: 9px;
-      padding: 0 11px;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    #mihomo-core-page button {
+      height: 36px;
+      border: 0;
+      border-radius: 10px;
+      padding: 0 14px;
       font: inherit;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
       cursor: pointer;
       background: #18181b;
       color: #fff;
     }
-    #mihomo-core-widget button.secondary {
+    #mihomo-core-page button.secondary {
       background: #f4f4f5;
       color: #27272a;
     }
-    #mihomo-core-widget button.danger {
+    #mihomo-core-page button.danger {
       background: #fff7ed;
       color: #c2410c;
     }
-    #mihomo-core-widget button.icon {
-      width: 28px;
-      padding: 0;
+    #mihomo-core-page button.warn {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    #mihomo-core-page .mc-grid {
       display: grid;
-      place-items: center;
-      font-size: 16px;
-      background: transparent;
-      color: #52525b;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+      gap: 16px;
+      margin-top: 16px;
     }
-    #mihomo-core-widget .mc-panel {
-      display: none;
-      width: min(420px, calc(100vw - 32px));
-      margin-top: 10px;
-      margin-left: auto;
-      margin-right: auto;
+    #mihomo-core-page .mc-card {
       border-radius: 16px;
-      border: 1px solid rgba(15, 23, 42, .08);
-      background: rgba(255, 255, 255, .96);
-      box-shadow: 0 18px 55px rgba(15, 23, 42, .18);
-      backdrop-filter: blur(18px);
-      overflow: hidden;
+      background: #fff;
+      padding: 18px;
+      box-shadow: 0 1px 2px rgba(15,23,42,.06);
     }
-    #mihomo-core-widget[data-open="true"] .mc-panel { display: block; }
-    #mihomo-core-widget .mc-section {
-      padding: 14px;
-      border-top: 1px solid #f1f5f9;
+    #mihomo-core-page h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
     }
-    #mihomo-core-widget .mc-section:first-child { border-top: 0; }
-    #mihomo-core-widget label {
+    #mihomo-core-page label {
       display: block;
       margin-bottom: 6px;
       color: #71717a;
       font-size: 12px;
       font-weight: 700;
     }
-    #mihomo-core-widget .mc-field {
+    #mihomo-core-page .mc-field {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
-    #mihomo-core-widget input[type="text"] {
+    #mihomo-core-page input[type="text"] {
       width: 100%;
       height: 34px;
       border: 1px solid #e4e4e7;
@@ -253,14 +288,14 @@ public sealed class MainForm : Form
       color: #18181b;
       font-size: 12px;
     }
-    #mihomo-core-widget .mc-options {
+    #mihomo-core-page .mc-options {
       display: grid;
       gap: 8px;
       margin-top: 8px;
       color: #3f3f46;
       font-size: 12px;
     }
-    #mihomo-core-widget .mc-options label {
+    #mihomo-core-page .mc-options label {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -268,8 +303,8 @@ public sealed class MainForm : Form
       color: inherit;
       font-weight: 600;
     }
-    #mihomo-core-widget .mc-log {
-      max-height: 160px;
+    #mihomo-core-page .mc-log {
+      height: 260px;
       overflow: auto;
       margin: 0;
       padding: 10px;
@@ -279,9 +314,18 @@ public sealed class MainForm : Form
       font: 11px/1.45 "Cascadia Mono", Consolas, monospace;
       white-space: pre-wrap;
     }
-    #mihomo-core-widget .mc-toast {
+    #mihomo-core-page .mc-note {
+      padding: 12px;
+      border-radius: 12px;
+      background: #fff7ed;
+      color: #9a3412;
+      font-size: 13px;
+      line-height: 1.55;
+      margin-bottom: 12px;
+    }
+    #mihomo-core-page .mc-toast {
       display: none;
-      margin: 10px 14px 0;
+      margin-top: 12px;
       padding: 9px 10px;
       border-radius: 10px;
       background: #ecfeff;
@@ -289,66 +333,133 @@ public sealed class MainForm : Form
       font-size: 12px;
       font-weight: 700;
     }
-    #mihomo-core-widget .mc-toast.show { display: block; }
-    @media (max-width: 1180px) {
-      #mihomo-core-widget {
-        top: 58px;
-        right: 16px;
-        left: auto;
-        transform: none;
+    #mihomo-core-page .mc-toast.show { display: block; }
+    @media (max-width: 900px) {
+      #mihomo-core-page {
+        left: 0;
+        top: 56px;
+        padding: 14px;
+      }
+      #mihomo-core-page .mc-grid {
+        grid-template-columns: 1fr;
       }
     }
   `;
   document.head.appendChild(css);
 
-  const root = document.createElement('div');
-  root.id = 'mihomo-core-widget';
-  root.innerHTML = `
-    <div class="mc-pill">
-      <span class="mc-dot"></span>
-      <span class="mc-title">Mihomo Core</span>
-      <span class="mc-sub" data-role="status">未运行</span>
-      <button data-action="start">启动</button>
-      <button class="danger" data-action="stop">停止</button>
-      <button class="icon" data-action="toggle" title="内核设置">⚙</button>
-    </div>
-    <div class="mc-panel">
-      <div class="mc-section">
-        <label>内核路径</label>
-        <div class="mc-field">
-          <input type="text" data-field="corePath" />
-          <button class="secondary" data-action="browseCore">选择</button>
+  const navLabels = ['概览', '代理', '连接', '日志', '规则'];
+  const findTextElement = (text) => [...document.querySelectorAll('a,button,div,span')]
+    .find((element) => element.textContent?.trim() === text);
+  const findNavContainer = () => {
+    const overview = findTextElement('概览');
+    let node = overview;
+    while (node && node !== document.body) {
+      const rect = node.getBoundingClientRect();
+      const text = node.textContent || '';
+      if (rect.width >= 160 && rect.width <= 360 && rect.left < 40 && text.includes('概览') && text.includes('代理')) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return document.querySelector('aside') || overview?.parentElement || document.body;
+  };
+  const clickableNavItem = (label) => {
+    const element = findTextElement(label);
+    return element?.closest('a,button,[role="button"]') || element?.parentElement || element;
+  };
+
+  const navContainer = findNavContainer();
+  const coreEntry = document.createElement('button');
+  coreEntry.id = 'mihomo-core-entry';
+  coreEntry.type = 'button';
+  coreEntry.innerHTML = `<span class="mc-dot"></span><span>内核</span>`;
+  navContainer.insertBefore(coreEntry, navContainer.firstChild);
+
+  const page = document.createElement('div');
+  page.id = 'mihomo-core-page';
+  page.innerHTML = `
+    <div class="mc-wrap">
+      <div class="mc-hero">
+        <div>
+          <div class="mc-heading">
+            <span class="mc-dot"></span>
+            <div>
+              <h1>Mihomo Core</h1>
+              <div class="mc-sub" data-role="status">未运行</div>
+            </div>
+          </div>
         </div>
-        <label>配置文件</label>
-        <div class="mc-field">
-          <input type="text" data-field="configPath" />
-          <button class="secondary" data-action="browseConfig">选择</button>
-        </div>
-        <label>API 地址</label>
-        <div class="mc-field">
-          <input type="text" data-field="apiUrl" />
-          <button class="secondary" data-action="reload">刷新 UI</button>
-        </div>
-        <label>Secret</label>
-        <div class="mc-field">
-          <input type="text" data-field="secret" />
-          <button data-action="save">保存</button>
-        </div>
-        <div class="mc-options">
-          <label><input type="checkbox" data-field="startCoreOnLaunch" /> 启动软件时自动启动内核</label>
-          <label><input type="checkbox" data-field="minimizeToTray" /> 关闭窗口时最小化到托盘</label>
-          <label><input type="checkbox" data-field="autostart" /> 开机自启</label>
+        <div class="mc-actions">
+          <button data-action="start">启动内核</button>
+          <button class="danger" data-action="stop">停止内核</button>
+          <button class="warn" data-action="restartAdmin">管理员重启</button>
         </div>
       </div>
-      <div class="mc-section">
-        <label>内核日志</label>
-        <pre class="mc-log" data-role="log">暂无日志</pre>
+      <div class="mc-grid">
+        <div class="mc-card">
+          <h2>启动配置</h2>
+          <div class="mc-note">如果配置启用了 TUN，普通权限启动可能会出现 Access is denied。请点击“管理员重启”后再启动内核，或关闭配置里的 TUN。</div>
+          <label>内核路径</label>
+          <div class="mc-field">
+            <input type="text" data-field="corePath" />
+            <button class="secondary" data-action="browseCore">选择</button>
+          </div>
+          <label>配置文件</label>
+          <div class="mc-field">
+            <input type="text" data-field="configPath" />
+            <button class="secondary" data-action="browseConfig">选择</button>
+          </div>
+          <label>API 地址</label>
+          <div class="mc-field">
+            <input type="text" data-field="apiUrl" />
+            <button class="secondary" data-action="reload">刷新 UI</button>
+          </div>
+          <label>Secret</label>
+          <div class="mc-field">
+            <input type="text" data-field="secret" />
+            <button data-action="save">保存</button>
+          </div>
+          <div class="mc-options">
+            <label><input type="checkbox" data-field="startCoreOnLaunch" /> 启动软件时自动启动内核</label>
+            <label><input type="checkbox" data-field="minimizeToTray" /> 关闭窗口时最小化到托盘</label>
+            <label><input type="checkbox" data-field="autostart" /> 开机自启</label>
+          </div>
+          <div class="mc-toast" data-role="toast"></div>
+        </div>
+        <div class="mc-card">
+          <h2>内核日志</h2>
+          <pre class="mc-log" data-role="log">暂无日志</pre>
+        </div>
       </div>
-      <div class="mc-toast" data-role="toast"></div>
     </div>
   `;
-  document.body.appendChild(root);
+  document.body.appendChild(page);
 
+  let corePageActive = true;
+  let lastRunning = false;
+  const nativeItems = navLabels.map(clickableNavItem).filter(Boolean);
+  const updateLayout = () => {
+    const rect = navContainer.getBoundingClientRect();
+    document.documentElement.style.setProperty('--mc-sidebar-left', `${Math.max(0, rect.right)}px`);
+  };
+  const showCorePage = (show) => {
+    corePageActive = show;
+    page.hidden = !show;
+    coreEntry.dataset.active = show ? 'true' : 'false';
+  };
+  const updateNavigation = (running) => {
+    nativeItems.forEach((item) => {
+      item.style.display = running ? '' : 'none';
+    });
+    if (!running) showCorePage(true);
+  };
+
+  coreEntry.addEventListener('click', () => showCorePage(true));
+  nativeItems.forEach((item) => item.addEventListener('click', () => showCorePage(false)));
+  window.addEventListener('resize', updateLayout);
+  updateLayout();
+
+  const root = page;
   const post = (message) => window.chrome?.webview?.postMessage(message);
   const collect = () => ({
     type: 'save',
@@ -366,22 +477,21 @@ public sealed class MainForm : Form
     if (!button) return;
     const action = button.dataset.action;
 
-    if (action === 'toggle') {
-      root.dataset.open = root.dataset.open === 'true' ? 'false' : 'true';
-      return;
-    }
     if (action === 'save') return post(collect());
     if (action === 'start') return post({ ...collect(), type: 'start' });
     if (action === 'stop') return post({ type: 'stop' });
     if (action === 'reload') return post({ ...collect(), type: 'reload' });
     if (action === 'browseCore') return post({ type: 'browseCore' });
     if (action === 'browseConfig') return post({ type: 'browseConfig' });
+    if (action === 'restartAdmin') return post({ ...collect(), type: 'restartAdmin' });
   });
 
   window.__mihomoControlSetState = (state) => {
-    root.dataset.running = state.isRunning ? 'true' : 'false';
+    page.dataset.running = state.isRunning ? 'true' : 'false';
+    coreEntry.dataset.running = state.isRunning ? 'true' : 'false';
+    updateNavigation(!!state.isRunning);
     root.querySelector('[data-role="status"]').textContent = state.isRunning
-      ? `运行中${state.processId ? ` · PID ${state.processId}` : ''}`
+      ? `运行中 · PID ${state.processId ?? ''}`
       : '未运行';
     root.querySelector('[data-action="start"]').disabled = state.isRunning;
     root.querySelector('[data-action="stop"]').disabled = !state.isRunning;
@@ -393,6 +503,15 @@ public sealed class MainForm : Form
     root.querySelector('[data-field="minimizeToTray"]').checked = !!state.minimizeToTray;
     root.querySelector('[data-field="autostart"]').checked = !!state.autostart;
     root.querySelector('[data-role="log"]').textContent = state.logText || '暂无日志';
+    if (!state.isRunning) {
+      showCorePage(true);
+    } else if (!lastRunning) {
+      showCorePage(false);
+      nativeItems[0]?.click();
+    } else if (corePageActive) {
+      showCorePage(true);
+    }
+    lastRunning = !!state.isRunning;
   };
 
   window.__mihomoControlNotice = (message) => {
@@ -437,6 +556,10 @@ public sealed class MainForm : Form
                     break;
                 case "browseConfig":
                     BrowseConfigPath();
+                    break;
+                case "restartAdmin":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    RelaunchAsAdministrator();
                     break;
             }
 
@@ -588,6 +711,25 @@ public sealed class MainForm : Form
         {
             _settings.ConfigPath = dialog.FileName;
             _settings.Save();
+        }
+    }
+
+    private void RelaunchAsAdministrator()
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo(Application.ExecutablePath)
+            {
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+            Process.Start(startInfo);
+            _allowClose = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"无法以管理员权限重启：{ex.Message}", "管理员重启失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
