@@ -72,11 +72,6 @@ public sealed class WindowCaptionButton : Control
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
-        if (_pressed && e.Button == MouseButtons.Left && ClientRectangle.Contains(e.Location))
-        {
-            OnClick(EventArgs.Empty);
-        }
-
         _pressed = false;
         Invalidate();
     }

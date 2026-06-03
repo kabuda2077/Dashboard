@@ -7,19 +7,16 @@ public sealed class TrayMenuForm : Form
 {
     private const int CsDropShadow = 0x00020000;
     private const int CornerRadius = 14;
-    private const int MenuWidth = 300;
+    private const int MenuWidth = 260;
     private const int OuterPadding = 8;
-    private const int HeaderHeight = 58;
     private const int ItemHeight = 44;
     private const int SeparatorHeight = 12;
 
-    private readonly Bitmap _appIcon;
     private readonly List<TrayMenuItem> _items;
     private int _hoverIndex = -1;
 
-    public TrayMenuForm(Icon appIcon, bool isRunning, IEnumerable<TrayMenuItem> items)
+    public TrayMenuForm(IEnumerable<TrayMenuItem> items)
     {
-        _appIcon = appIcon.ToBitmap();
         _items = items.ToList();
 
         AutoScaleMode = AutoScaleMode.None;
@@ -31,15 +28,9 @@ public sealed class TrayMenuForm : Form
         StartPosition = FormStartPosition.Manual;
         TopMost = true;
 
-        var height = OuterPadding * 2 + HeaderHeight + _items.Sum(item => item.IsSeparator ? SeparatorHeight : ItemHeight);
+        var height = OuterPadding * 2 + _items.Sum(item => item.IsSeparator ? SeparatorHeight : ItemHeight);
         Size = new Size(MenuWidth, height);
-        StatusText = isRunning ? "内核运行中" : "内核未运行";
-        StatusColor = isRunning ? Color.FromArgb(34, 197, 94) : Color.FromArgb(245, 158, 11);
     }
-
-    private string StatusText { get; }
-
-    private Color StatusColor { get; }
 
     protected override CreateParams CreateParams
     {
@@ -125,9 +116,7 @@ public sealed class TrayMenuForm : Form
         using var background = new SolidBrush(BackColor);
         g.FillRectangle(background, ClientRectangle);
 
-        DrawHeader(g);
-
-        var y = OuterPadding + HeaderHeight;
+        var y = OuterPadding;
         for (var i = 0; i < _items.Count; i++)
         {
             var item = _items[i];
@@ -141,22 +130,6 @@ public sealed class TrayMenuForm : Form
             DrawItem(g, item, i, new Rectangle(OuterPadding, y, Width - OuterPadding * 2, ItemHeight));
             y += ItemHeight;
         }
-    }
-
-    private void DrawHeader(Graphics g)
-    {
-        g.DrawImage(_appIcon, OuterPadding + 16, OuterPadding + 13, 22, 22);
-
-        var titleRect = new Rectangle(OuterPadding + 44, OuterPadding + 7, Width - OuterPadding * 2 - 60, 24);
-        using var titleFont = new Font("Segoe UI", 10.5f, FontStyle.Bold, GraphicsUnit.Point);
-        TextRenderer.DrawText(g, "Mihomo Dashboard", titleFont, titleRect, Color.FromArgb(24, 24, 27), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-
-        var dotRect = new Rectangle(OuterPadding + 46, OuterPadding + 37, 7, 7);
-        using var dotBrush = new SolidBrush(StatusColor);
-        g.FillEllipse(dotBrush, dotRect);
-
-        var statusRect = new Rectangle(OuterPadding + 60, OuterPadding + 29, Width - OuterPadding * 2 - 76, 24);
-        TextRenderer.DrawText(g, StatusText, Font, statusRect, Color.FromArgb(113, 113, 122), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
     private void DrawItem(Graphics g, TrayMenuItem item, int index, Rectangle bounds)
@@ -181,7 +154,7 @@ public sealed class TrayMenuForm : Form
 
     private int HitTest(Point point)
     {
-        var y = OuterPadding + HeaderHeight;
+        var y = OuterPadding;
         for (var i = 0; i < _items.Count; i++)
         {
             var height = _items[i].IsSeparator ? SeparatorHeight : ItemHeight;
@@ -242,15 +215,6 @@ public sealed class TrayMenuForm : Form
     [DllImport("gdi32.dll", EntryPoint = "CreateRoundRectRgn", SetLastError = true)]
     private static extern IntPtr CreateRoundRectRgnNative(int left, int top, int right, int bottom, int width, int height);
 
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _appIcon.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
 }
 
 public sealed record TrayMenuItem(string Text, Action? Action = null, bool Enabled = true, bool IsSeparator = false)

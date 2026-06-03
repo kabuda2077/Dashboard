@@ -224,7 +224,7 @@ public sealed class MainForm : Form
         _trayMenu?.Close();
 
         var isRunning = _mihomo.IsRunning;
-        _trayMenu = new TrayMenuForm(_appIcon, isRunning, new[]
+        _trayMenu = new TrayMenuForm(new[]
         {
             new TrayMenuItem("显示窗口", ShowFromTray),
             new TrayMenuItem("启动内核", StartCore, Enabled: !isRunning),
