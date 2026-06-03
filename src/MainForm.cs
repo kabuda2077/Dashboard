@@ -4,6 +4,16 @@ namespace MihomoDashboard;
 
 public sealed class MainForm : Form
 {
+    private static readonly Color ShellBackground = Color.FromArgb(14, 18, 24);
+    private static readonly Color PanelBackground = Color.FromArgb(22, 27, 36);
+    private static readonly Color CardBackground = Color.FromArgb(30, 37, 48);
+    private static readonly Color InputBackground = Color.FromArgb(15, 19, 26);
+    private static readonly Color TextPrimary = Color.FromArgb(241, 245, 249);
+    private static readonly Color TextSecondary = Color.FromArgb(148, 163, 184);
+    private static readonly Color Accent = Color.FromArgb(56, 189, 248);
+    private static readonly Color Success = Color.FromArgb(52, 211, 153);
+    private static readonly Color Warning = Color.FromArgb(251, 146, 60);
+
     private readonly AppSettings _settings;
     private readonly MihomoManager _mihomo = new();
     private readonly DashboardServer _dashboardServer;
@@ -38,6 +48,7 @@ public sealed class MainForm : Form
         Size = new Size(1280, 820);
         StartPosition = FormStartPosition.CenterScreen;
         Icon = SystemIcons.Application;
+        BackColor = ShellBackground;
 
         _trayIcon = CreateTrayIcon();
         BuildLayout();
@@ -75,7 +86,9 @@ public sealed class MainForm : Form
         var root = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            FixedPanel = FixedPanel.Panel1
+            FixedPanel = FixedPanel.Panel1,
+            BackColor = ShellBackground,
+            SplitterWidth = 1
         };
         _rootSplit = root;
         root.SizeChanged += (_, _) => ApplySplitLayout();
@@ -86,10 +99,11 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
-            Padding = new Padding(16),
-            BackColor = Color.FromArgb(246, 248, 250)
+            RowCount = 5,
+            Padding = new Padding(18),
+            BackColor = PanelBackground
         };
+        left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -98,30 +112,46 @@ public sealed class MainForm : Form
 
         var title = new Label
         {
-            Text = "Mihomo 控制器",
+            Text = "Mihomo",
             AutoSize = true,
-            Font = new Font(Font.FontFamily, 18, FontStyle.Bold),
-            Margin = new Padding(0, 0, 0, 12)
+            ForeColor = TextPrimary,
+            Font = new Font("Segoe UI Variable Display", 24, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 0)
         };
         left.Controls.Add(title, 0, 0);
+
+        var subtitle = new Label
+        {
+            Text = "Core control and zashboard",
+            AutoSize = true,
+            ForeColor = TextSecondary,
+            Font = new Font("Segoe UI", 9),
+            Margin = new Padding(2, 0, 0, 18)
+        };
+        left.Controls.Add(subtitle, 0, 1);
 
         var settingsPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             ColumnCount = 3,
             AutoSize = true,
-            Margin = new Padding(0, 0, 0, 12)
+            Padding = new Padding(14),
+            Margin = new Padding(0, 0, 0, 14),
+            BackColor = CardBackground
         };
         settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        left.Controls.Add(settingsPanel, 0, 1);
+        left.Controls.Add(settingsPanel, 0, 2);
 
         AddPathRow(settingsPanel, "内核路径", _corePathBox, BrowseCorePath);
         AddPathRow(settingsPanel, "配置文件", _configPathBox, BrowseConfigPath);
         AddTextRow(settingsPanel, "API 地址", _apiUrlBox);
         AddTextRow(settingsPanel, "Secret", _secretBox, password: false);
 
+        StyleCheckBox(_startCoreBox);
+        StyleCheckBox(_minimizeToTrayBox);
+        StyleCheckBox(_autostartBox);
         _startCoreBox.Text = "启动软件时自动启动内核";
         _minimizeToTrayBox.Text = "关闭窗口时最小化到托盘";
         _autostartBox.Text = "开机自启";
@@ -137,18 +167,25 @@ public sealed class MainForm : Form
             Dock = DockStyle.Top,
             AutoSize = true,
             FlowDirection = FlowDirection.LeftToRight,
-            Margin = new Padding(0, 0, 0, 12)
+            Margin = new Padding(0, 0, 0, 0),
+            Padding = new Padding(0)
         };
-        left.Controls.Add(controlPanel, 0, 3);
+        left.Controls.Add(controlPanel, 0, 4);
 
         _startButton.Text = "启动内核";
-        _startButton.Width = 96;
+        _startButton.Width = 100;
         _stopButton.Text = "停止内核";
-        _stopButton.Width = 96;
+        _stopButton.Width = 100;
 
-        var saveButton = new Button { Text = "保存设置", Width = 96 };
-        var reloadButton = new Button { Text = "刷新 UI", Width = 96 };
-        var clearLogButton = new Button { Text = "清空日志", Width = 96 };
+        var saveButton = new Button { Text = "保存设置", Width = 100 };
+        var reloadButton = new Button { Text = "刷新 UI", Width = 88 };
+        var clearLogButton = new Button { Text = "清空日志", Width = 88 };
+
+        StyleButton(_startButton, Accent, Color.FromArgb(3, 7, 18));
+        StyleButton(_stopButton, Warning, Color.FromArgb(3, 7, 18));
+        StyleButton(saveButton, Color.FromArgb(71, 85, 105), TextPrimary);
+        StyleButton(reloadButton, Color.FromArgb(51, 65, 85), TextPrimary);
+        StyleButton(clearLogButton, Color.FromArgb(51, 65, 85), TextPrimary);
 
         controlPanel.Controls.AddRange(new Control[] { _startButton, _stopButton, saveButton, reloadButton, clearLogButton });
         saveButton.Click += (_, _) => SaveSettingsFromUi(showMessage: true);
@@ -163,23 +200,32 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             RowCount = 2,
-            ColumnCount = 1
+            ColumnCount = 1,
+            BackColor = ShellBackground,
+            Padding = new Padding(0),
+            Margin = new Padding(0, 0, 0, 14)
         };
         logPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         logPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        left.Controls.Add(logPanel, 0, 2);
+        left.Controls.Add(logPanel, 0, 3);
+        left.SetRowSpan(logPanel, 1);
 
         _statusLabel.AutoSize = true;
-        _statusLabel.Margin = new Padding(0, 6, 0, 8);
+        _statusLabel.Padding = new Padding(12, 7, 12, 7);
+        _statusLabel.Margin = new Padding(0, 0, 0, 10);
+        _statusLabel.BackColor = CardBackground;
+        _statusLabel.Font = new Font("Segoe UI", 9, FontStyle.Bold);
         logPanel.Controls.Add(_statusLabel, 0, 0);
 
         _logBox.Dock = DockStyle.Fill;
         _logBox.Multiline = true;
         _logBox.ScrollBars = ScrollBars.Vertical;
         _logBox.ReadOnly = true;
-        _logBox.Font = new Font("Consolas", 9);
-        _logBox.BackColor = Color.FromArgb(22, 27, 34);
-        _logBox.ForeColor = Color.FromArgb(230, 237, 243);
+        _logBox.BorderStyle = BorderStyle.None;
+        _logBox.Font = new Font("Cascadia Mono", 9);
+        _logBox.BackColor = InputBackground;
+        _logBox.ForeColor = Color.FromArgb(203, 213, 225);
+        _logBox.Margin = new Padding(0);
         logPanel.Controls.Add(_logBox, 0, 1);
 
         _webView.Dock = DockStyle.Fill;
@@ -189,7 +235,8 @@ public sealed class MainForm : Form
     private static void AddPathRow(TableLayoutPanel panel, string labelText, TextBox textBox, EventHandler browseHandler)
     {
         AddTextRow(panel, labelText, textBox);
-        var browseButton = new Button { Text = "...", Width = 36, Margin = new Padding(6, 0, 0, 8) };
+        var browseButton = new Button { Text = "...", Width = 36, Height = 28, Margin = new Padding(6, 0, 0, 10) };
+        StyleButton(browseButton, Color.FromArgb(51, 65, 85), TextPrimary);
         browseButton.Click += browseHandler;
         panel.Controls.Add(browseButton, 2, panel.RowCount - 1);
     }
@@ -203,16 +250,43 @@ public sealed class MainForm : Form
         {
             Text = labelText,
             AutoSize = true,
-            Margin = new Padding(0, 8, 0, 4)
+            ForeColor = TextSecondary,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            Margin = new Padding(0, 8, 0, 5)
         };
         panel.Controls.Add(label, 0, row);
         panel.SetColumnSpan(label, 3);
 
         textBox.Dock = DockStyle.Top;
         textBox.UseSystemPasswordChar = password;
-        textBox.Margin = new Padding(0, 0, 0, 8);
+        textBox.BorderStyle = BorderStyle.FixedSingle;
+        textBox.BackColor = InputBackground;
+        textBox.ForeColor = TextPrimary;
+        textBox.Font = new Font("Segoe UI", 9);
+        textBox.Height = 28;
+        textBox.Margin = new Padding(0, 0, 0, 10);
         panel.Controls.Add(textBox, 0, panel.RowCount++);
         panel.SetColumnSpan(textBox, 2);
+    }
+
+    private static void StyleButton(Button button, Color backColor, Color foreColor)
+    {
+        button.Height = 32;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 0;
+        button.BackColor = backColor;
+        button.ForeColor = foreColor;
+        button.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+        button.Margin = new Padding(0, 0, 8, 8);
+        button.Cursor = Cursors.Hand;
+    }
+
+    private static void StyleCheckBox(CheckBox checkBox)
+    {
+        checkBox.AutoSize = true;
+        checkBox.ForeColor = TextPrimary;
+        checkBox.Font = new Font("Segoe UI", 9);
+        checkBox.Margin = new Padding(0, 6, 0, 0);
     }
 
     private void BindEvents()
@@ -353,7 +427,7 @@ public sealed class MainForm : Form
         _statusLabel.Text = running
             ? $"状态：运行中  PID：{_mihomo.ProcessId}"
             : "状态：未运行";
-        _statusLabel.ForeColor = running ? Color.FromArgb(35, 134, 54) : Color.FromArgb(130, 80, 223);
+        _statusLabel.ForeColor = running ? Success : Warning;
         _startButton.Enabled = !running;
         _stopButton.Enabled = running;
         _trayIcon.Text = running ? "Mihomo Dashboard - 运行中" : "Mihomo Dashboard - 未运行";
