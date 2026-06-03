@@ -6,24 +6,26 @@ namespace MihomoDashboard;
 public sealed class TrayMenuForm : Form
 {
     private const int CsDropShadow = 0x00020000;
-    private const int CornerRadius = 18;
-    private const int MenuWidth = 280;
-    private const int OuterPadding = 10;
-    private const int HeaderHeight = 66;
-    private const int ItemHeight = 50;
-    private const int SeparatorHeight = 13;
+    private const int CornerRadius = 14;
+    private const int MenuWidth = 300;
+    private const int OuterPadding = 8;
+    private const int HeaderHeight = 58;
+    private const int ItemHeight = 44;
+    private const int SeparatorHeight = 12;
 
+    private readonly Bitmap _appIcon;
     private readonly List<TrayMenuItem> _items;
     private int _hoverIndex = -1;
 
-    public TrayMenuForm(bool isRunning, IEnumerable<TrayMenuItem> items)
+    public TrayMenuForm(Icon appIcon, bool isRunning, IEnumerable<TrayMenuItem> items)
     {
+        _appIcon = appIcon.ToBitmap();
         _items = items.ToList();
 
         AutoScaleMode = AutoScaleMode.None;
         BackColor = Color.FromArgb(250, 250, 252);
         DoubleBuffered = true;
-        Font = new Font("Segoe UI", 10.5f, FontStyle.Regular, GraphicsUnit.Point);
+        Font = new Font("Segoe UI", 10f, FontStyle.Regular, GraphicsUnit.Point);
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -143,15 +145,17 @@ public sealed class TrayMenuForm : Form
 
     private void DrawHeader(Graphics g)
     {
-        var titleRect = new Rectangle(OuterPadding + 16, OuterPadding + 11, Width - OuterPadding * 2 - 32, 25);
-        using var titleFont = new Font("Segoe UI", 11.5f, FontStyle.Bold, GraphicsUnit.Point);
+        g.DrawImage(_appIcon, OuterPadding + 16, OuterPadding + 13, 22, 22);
+
+        var titleRect = new Rectangle(OuterPadding + 44, OuterPadding + 7, Width - OuterPadding * 2 - 60, 24);
+        using var titleFont = new Font("Segoe UI", 10.5f, FontStyle.Bold, GraphicsUnit.Point);
         TextRenderer.DrawText(g, "Mihomo Dashboard", titleFont, titleRect, Color.FromArgb(24, 24, 27), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
-        var dotRect = new Rectangle(OuterPadding + 17, OuterPadding + 42, 8, 8);
+        var dotRect = new Rectangle(OuterPadding + 46, OuterPadding + 37, 7, 7);
         using var dotBrush = new SolidBrush(StatusColor);
         g.FillEllipse(dotBrush, dotRect);
 
-        var statusRect = new Rectangle(OuterPadding + 32, OuterPadding + 34, Width - OuterPadding * 2 - 48, 25);
+        var statusRect = new Rectangle(OuterPadding + 60, OuterPadding + 29, Width - OuterPadding * 2 - 76, 24);
         TextRenderer.DrawText(g, StatusText, Font, statusRect, Color.FromArgb(113, 113, 122), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
@@ -159,13 +163,13 @@ public sealed class TrayMenuForm : Form
     {
         if (index == _hoverIndex && item.Enabled)
         {
-            using var hoverBrush = new SolidBrush(Color.FromArgb(240, 240, 243));
-            using var path = RoundedRect(bounds, 10);
+            using var hoverBrush = new SolidBrush(Color.FromArgb(242, 242, 245));
+            using var path = RoundedRect(bounds, 8);
             g.FillPath(hoverBrush, path);
         }
 
         var textColor = item.Enabled ? Color.FromArgb(39, 39, 42) : Color.FromArgb(161, 161, 170);
-        var textRect = new Rectangle(bounds.Left + 16, bounds.Top, bounds.Width - 32, bounds.Height);
+        var textRect = new Rectangle(bounds.Left + 18, bounds.Top, bounds.Width - 36, bounds.Height);
         TextRenderer.DrawText(g, item.Text, Font, textRect, textColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
@@ -237,6 +241,16 @@ public sealed class TrayMenuForm : Form
 
     [DllImport("gdi32.dll", EntryPoint = "CreateRoundRectRgn", SetLastError = true)]
     private static extern IntPtr CreateRoundRectRgnNative(int left, int top, int right, int bottom, int width, int height);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _appIcon.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
 }
 
 public sealed record TrayMenuItem(string Text, Action? Action = null, bool Enabled = true, bool IsSeparator = false)

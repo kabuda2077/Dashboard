@@ -161,3 +161,5 @@ if (Test-Path $dashboardDir) {
 
 New-Item -ItemType Directory -Path $dashboardDir | Out-Null
 Copy-Item -Path (Join-Path $sourceRoot 'dist\*') -Destination $dashboardDir -Recurse -Force
+
+& (Join-Path $repoRoot 'tools\create-app-icon.ps1')

@@ -34,7 +34,7 @@ public sealed class MainForm : Form
     private readonly Icon _appIcon;
     private readonly NotifyIcon _trayIcon;
     private readonly WebView2 _webView = new();
-    private Button? _maximizeButton;
+    private WindowCaptionButton? _maximizeButton;
     private TrayMenuForm? _trayMenu;
     private bool _allowClose;
     private bool _initialized;
@@ -157,59 +157,23 @@ public sealed class MainForm : Form
         title.DoubleClick += (_, _) => ToggleMaximize();
         titleBar.Controls.Add(title);
 
-        var closeButton = CreateWindowButton("×", closeButton: true);
-        closeButton.Click += (_, _) => Close();
-
-        _maximizeButton = CreateWindowButton("□");
-        _maximizeButton.Click += (_, _) => ToggleMaximize();
-
-        var minimizeButton = CreateWindowButton("-");
+        var minimizeButton = new WindowCaptionButton(WindowCaptionButtonKind.Minimize);
         minimizeButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
-        closeButton.Dock = DockStyle.Right;
-        _maximizeButton.Dock = DockStyle.Right;
+        _maximizeButton = new WindowCaptionButton(WindowCaptionButtonKind.Maximize);
+        _maximizeButton.Click += (_, _) => ToggleMaximize();
+
+        var closeButton = new WindowCaptionButton(WindowCaptionButtonKind.Close);
+        closeButton.Click += (_, _) => Close();
+
         minimizeButton.Dock = DockStyle.Right;
-        titleBar.Controls.Add(closeButton);
-        titleBar.Controls.Add(_maximizeButton);
+        _maximizeButton.Dock = DockStyle.Right;
+        closeButton.Dock = DockStyle.Right;
         titleBar.Controls.Add(minimizeButton);
+        titleBar.Controls.Add(_maximizeButton);
+        titleBar.Controls.Add(closeButton);
 
         return titleBar;
-    }
-
-    private static Button CreateWindowButton(string text, bool closeButton = false)
-    {
-        var normalBack = Color.FromArgb(244, 244, 245);
-        var hoverBack = closeButton ? Color.FromArgb(232, 17, 35) : Color.FromArgb(229, 229, 232);
-        var normalText = Color.FromArgb(39, 39, 42);
-        var hoverText = closeButton ? Color.White : normalText;
-
-        var button = new Button
-        {
-            Text = text,
-            Width = 46,
-            Height = TitleBarHeight,
-            BackColor = normalBack,
-            ForeColor = normalText,
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", closeButton ? 13f : 10f, FontStyle.Regular, GraphicsUnit.Point),
-            Margin = Padding.Empty,
-            TabStop = false,
-            UseVisualStyleBackColor = false
-        };
-        button.FlatAppearance.BorderSize = 0;
-        button.FlatAppearance.MouseDownBackColor = hoverBack;
-        button.FlatAppearance.MouseOverBackColor = hoverBack;
-        button.MouseEnter += (_, _) =>
-        {
-            button.BackColor = hoverBack;
-            button.ForeColor = hoverText;
-        };
-        button.MouseLeave += (_, _) =>
-        {
-            button.BackColor = normalBack;
-            button.ForeColor = normalText;
-        };
-        return button;
     }
 
     private void BeginWindowDrag(MouseEventArgs e)
@@ -260,7 +224,7 @@ public sealed class MainForm : Form
         _trayMenu?.Close();
 
         var isRunning = _mihomo.IsRunning;
-        _trayMenu = new TrayMenuForm(isRunning, new[]
+        _trayMenu = new TrayMenuForm(_appIcon, isRunning, new[]
         {
             new TrayMenuItem("显示窗口", ShowFromTray),
             new TrayMenuItem("启动内核", StartCore, Enabled: !isRunning),
@@ -847,7 +811,9 @@ public sealed class MainForm : Form
         base.OnResize(e);
         if (_maximizeButton is not null)
         {
-            _maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
+            _maximizeButton.Kind = WindowState == FormWindowState.Maximized
+                ? WindowCaptionButtonKind.Restore
+                : WindowCaptionButtonKind.Maximize;
         }
 
         if (WindowState == FormWindowState.Minimized && _settings.MinimizeToTray)
