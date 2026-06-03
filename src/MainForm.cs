@@ -21,6 +21,7 @@ public sealed class MainForm : Form
     private readonly CheckBox _autostartBox = new();
     private readonly CheckBox _startCoreBox = new();
     private readonly CheckBox _minimizeToTrayBox = new();
+    private SplitContainer? _rootSplit;
     private bool _allowClose;
     private bool _initialized;
     private bool _startMinimized;
@@ -54,6 +55,7 @@ public sealed class MainForm : Form
         }
 
         _initialized = true;
+        ApplySplitLayout();
         await InitializeWebViewAsync();
         RefreshStatus();
 
@@ -73,11 +75,10 @@ public sealed class MainForm : Form
         var root = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            FixedPanel = FixedPanel.Panel1,
-            SplitterDistance = 360,
-            Panel1MinSize = 320,
-            Panel2MinSize = 520
+            FixedPanel = FixedPanel.Panel1
         };
+        _rootSplit = root;
+        root.SizeChanged += (_, _) => ApplySplitLayout();
 
         Controls.Add(root);
 
@@ -356,6 +357,34 @@ public sealed class MainForm : Form
         _startButton.Enabled = !running;
         _stopButton.Enabled = running;
         _trayIcon.Text = running ? "Mihomo Dashboard - 运行中" : "Mihomo Dashboard - 未运行";
+    }
+
+    private void ApplySplitLayout()
+    {
+        if (_rootSplit is null || _rootSplit.Width <= 0)
+        {
+            return;
+        }
+
+        const int panel1Min = 300;
+        const int panel2Min = 420;
+        const int desiredDistance = 360;
+
+        if (_rootSplit.Width <= panel1Min + panel2Min)
+        {
+            return;
+        }
+
+        _rootSplit.Panel1MinSize = panel1Min;
+        _rootSplit.Panel2MinSize = panel2Min;
+
+        var maxDistance = _rootSplit.Width - panel2Min;
+        var distance = Math.Min(Math.Max(desiredDistance, panel1Min), maxDistance);
+
+        if (_rootSplit.SplitterDistance != distance)
+        {
+            _rootSplit.SplitterDistance = distance;
+        }
     }
 
     private void BrowseCorePath(object? sender, EventArgs e)
