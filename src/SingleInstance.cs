@@ -1,9 +1,9 @@
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed class SingleInstance : IDisposable
 {
-    private const string MutexName = "Local\\MihomoDashboard.SingleInstance";
-    private const string ActivateEventName = "Local\\MihomoDashboard.Activate";
+    private const string MutexName = "Local\\Dashboard.SingleInstance";
+    private const string ActivateEventName = "Local\\Dashboard.Activate";
 
     private readonly Mutex _mutex;
     private readonly EventWaitHandle _activateEvent;

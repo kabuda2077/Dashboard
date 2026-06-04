@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed class MihomoManager : IDisposable
 {

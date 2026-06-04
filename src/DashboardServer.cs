@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed class DashboardServer : IDisposable
 {
@@ -10,12 +10,14 @@ public sealed class DashboardServer : IDisposable
     private static readonly TimeSpan RequestReadTimeout = TimeSpan.FromSeconds(5);
 
     private readonly string _root;
+    private readonly string _iconCacheRoot;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
 
-    public DashboardServer(string root)
+    public DashboardServer(string root, string iconCacheRoot)
     {
         _root = root;
+        _iconCacheRoot = iconCacheRoot;
     }
 
     public Uri Start()
@@ -97,6 +99,20 @@ public sealed class DashboardServer : IDisposable
                 requestPath = "index.html";
             }
 
+            if (IsIconCacheRequest(requestPath))
+            {
+                if (TryGetIconCacheFile(requestPath, out var iconCacheFile))
+                {
+                    var iconBytes = await File.ReadAllBytesAsync(iconCacheFile, token);
+                    await WriteResponseAsync(stream, "200 OK", GetContentType(Path.GetExtension(iconCacheFile)), iconBytes, "public, max-age=604800");
+                }
+                else
+                {
+                    await WriteResponseAsync(stream, "404 Not Found", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Not Found"));
+                }
+                return;
+            }
+
             var candidate = Path.GetFullPath(Path.Combine(_root, requestPath.Replace('/', Path.DirectorySeparatorChar)));
             var rootFullPath = Path.GetFullPath(_root);
             if (!IsPathUnderRoot(candidate, rootFullPath) || !File.Exists(candidate))
@@ -104,7 +120,7 @@ public sealed class DashboardServer : IDisposable
                 candidate = Path.Combine(rootFullPath, "index.html");
             }
 
-            var bytes = await File.ReadAllBytesAsync(candidate);
+            var bytes = await File.ReadAllBytesAsync(candidate, token);
             await WriteResponseAsync(stream, "200 OK", GetContentType(Path.GetExtension(candidate)), bytes);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -137,10 +153,42 @@ public sealed class DashboardServer : IDisposable
         }
     }
 
-    private static async Task WriteResponseAsync(Stream stream, string status, string contentType, byte[] body)
+    private bool TryGetIconCacheFile(string requestPath, out string iconCacheFile)
+    {
+        iconCacheFile = "";
+        if (!IsIconCacheRequest(requestPath))
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileName(Uri.UnescapeDataString(requestPath[IconCacheRequestPrefix.Length..]));
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return false;
+        }
+
+        var candidate = Path.GetFullPath(Path.Combine(_iconCacheRoot, fileName));
+        var rootFullPath = Path.GetFullPath(_iconCacheRoot);
+        if (!IsPathUnderRoot(candidate, rootFullPath) || !File.Exists(candidate))
+        {
+            return false;
+        }
+
+        iconCacheFile = candidate;
+        return true;
+    }
+
+    private const string IconCacheRequestPrefix = "__mihomo/icon-cache/";
+
+    private static bool IsIconCacheRequest(string requestPath)
+    {
+        return requestPath.StartsWith(IconCacheRequestPrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task WriteResponseAsync(Stream stream, string status, string contentType, byte[] body, string cacheControl = "no-cache")
     {
         var header = Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
+            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: {cacheControl}\r\nConnection: close\r\n\r\n");
         await stream.WriteAsync(header);
         await stream.WriteAsync(body);
     }
@@ -153,6 +201,10 @@ public sealed class DashboardServer : IDisposable
         ".json" or ".webmanifest" => "application/json; charset=utf-8",
         ".svg" => "image/svg+xml",
         ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".webp" => "image/webp",
+        ".gif" => "image/gif",
+        ".avif" => "image/avif",
         ".ico" => "image/x-icon",
         ".woff" => "font/woff",
         ".woff2" => "font/woff2",

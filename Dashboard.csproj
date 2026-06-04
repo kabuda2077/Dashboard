@@ -7,8 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>resources\app.ico</ApplicationIcon>
-    <AssemblyName>MihomoDashboard</AssemblyName>
-    <RootNamespace>MihomoDashboard</RootNamespace>
+    <AssemblyName>Dashboard</AssemblyName>
+    <RootNamespace>Dashboard</RootNamespace>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 

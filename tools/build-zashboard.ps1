@@ -31,10 +31,16 @@ if ($SkipBuild) {
     return
 }
 
+$pnpmCommand = Get-Command pnpm -ErrorAction SilentlyContinue
+$pnpmPath = if ($pnpmCommand) { $pnpmCommand.Source } else { Join-Path $env:APPDATA 'npm\pnpm.cmd' }
+if (-not (Test-Path $pnpmPath)) {
+    throw "pnpm is required for local dashboard builds. Install pnpm 10.15.0, for example: npm install -g pnpm@10.15.0"
+}
+
 Push-Location $sourceRoot
 try {
-    pnpm install --frozen-lockfile
-    pnpm run build
+    & $pnpmPath install --frozen-lockfile
+    & $pnpmPath run build
 }
 finally {
     Pop-Location

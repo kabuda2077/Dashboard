@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed class AppSettings
 {
+    private const string AppDirectoryName = "Dashboard";
+    private const string LegacyAppDirectoryName = "MihomoDashboard";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -22,13 +25,19 @@ public sealed class AppSettings
     public bool Autostart { get; set; }
 
     public static string SettingsDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MihomoDashboard");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDirectoryName);
+
+    private static string LegacySettingsDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), LegacyAppDirectoryName);
 
     public static string SettingsPath => Path.Combine(SettingsDirectory, "settings.json");
+
+    private static string LegacySettingsPath => Path.Combine(LegacySettingsDirectory, "settings.json");
 
     public static AppSettings Load()
     {
         Directory.CreateDirectory(SettingsDirectory);
+        MigrateLegacySettingsFile();
 
         if (!File.Exists(SettingsPath))
         {
@@ -65,6 +74,22 @@ public sealed class AppSettings
     private static string DefaultConfigPath => Path.Combine(AppContext.BaseDirectory, "config.yaml");
 
     private static string LegacyDefaultConfigPath => Path.Combine(AppContext.BaseDirectory, "config", "config.yaml");
+
+    private static void MigrateLegacySettingsFile()
+    {
+        if (File.Exists(SettingsPath) || !File.Exists(LegacySettingsPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Copy(LegacySettingsPath, SettingsPath, overwrite: false);
+        }
+        catch
+        {
+        }
+    }
 
     private void MigrateDefaultConfigPath()
     {

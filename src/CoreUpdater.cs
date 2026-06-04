@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed record CoreUpgradeResult(string Version, string AssetName, string BackupPath);
 
@@ -34,7 +34,7 @@ public static class CoreUpdater
         var version = root.TryGetProperty("tag_name", out var tagName) ? tagName.GetString() ?? "latest" : "latest";
         var asset = FindWindowsX64Asset(root.GetProperty("assets"));
 
-        var tempRoot = Path.Combine(Path.GetTempPath(), "MihomoDashboard", "core-upgrade", Guid.NewGuid().ToString("N"));
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Dashboard", "core-upgrade", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
         try
         {
@@ -69,7 +69,7 @@ public static class CoreUpdater
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient();
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MihomoDashboard", "1.0"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Dashboard", "1.0"));
         return client;
     }
 

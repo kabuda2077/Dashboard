@@ -1,16 +1,18 @@
 using Microsoft.Win32;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public static class AutostartManager
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string AppName = "MihomoDashboard";
+    private const string AppName = "Dashboard";
+    private const string LegacyAppName = "MihomoDashboard";
 
     public static bool IsEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey, false);
-        return key?.GetValue(AppName) is string value && value.Contains(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
+        return IsCurrentExecutableValue(key?.GetValue(AppName))
+            || IsCurrentExecutableValue(key?.GetValue(LegacyAppName));
     }
 
     public static void SetEnabled(bool enabled)
@@ -21,10 +23,17 @@ public static class AutostartManager
         if (enabled)
         {
             key.SetValue(AppName, $"\"{Application.ExecutablePath}\" --minimized");
+            key.DeleteValue(LegacyAppName, false);
         }
         else
         {
             key.DeleteValue(AppName, false);
+            key.DeleteValue(LegacyAppName, false);
         }
+    }
+
+    private static bool IsCurrentExecutableValue(object? value)
+    {
+        return value is string text && text.Contains(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
     }
 }

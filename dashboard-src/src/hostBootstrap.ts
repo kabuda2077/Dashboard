@@ -5,6 +5,7 @@ import type { Backend } from '@/types'
 type HostState = {
   apiUrl?: string
   secret?: string
+  iconCacheMap?: Record<string, string>
 }
 
 type HostMessage = {
@@ -22,6 +23,7 @@ type HostWindow = Window & {
     }
   }
   __mihomoApplyBackend?: (state: HostState) => void
+  __mihomoIconCache?: Record<string, string>
 }
 
 const normalizePath = (pathname: string) => {
@@ -53,16 +55,23 @@ const applyBackend = (backend: Omit<Backend, 'uuid'> | null) => {
   addBackend(backend)
 }
 
+const applyIconCache = (state: HostState | undefined) => {
+  ;(window as HostWindow).__mihomoIconCache = state?.iconCacheMap || {}
+  window.dispatchEvent(new CustomEvent('__mihomoIconCacheUpdated'))
+}
+
 if (!(window as HostWindow).chrome?.webview) {
   applyBackend(getBackendFromUrl())
 }
 
 ;(window as HostWindow).__mihomoApplyBackend = (state) => {
+  applyIconCache(state)
   applyBackend(backendFromApiUrl(state.apiUrl, state.secret))
 }
 
 ;(window as HostWindow).chrome?.webview?.addEventListener?.('message', (event) => {
   if (event.data?.type === 'state') {
+    applyIconCache(event.data.state)
     applyBackend(backendFromApiUrl(event.data.state?.apiUrl, event.data.state?.secret))
   }
 })

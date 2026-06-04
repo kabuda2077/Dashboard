@@ -1,4 +1,4 @@
-namespace MihomoDashboard;
+namespace Dashboard;
 
 internal static class Program
 {

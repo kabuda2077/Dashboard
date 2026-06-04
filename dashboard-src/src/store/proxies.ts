@@ -46,6 +46,24 @@ export const IPv6Map = useStorage<Record<string, boolean>>('cache/ipv6-map', {})
 export const hiddenGroupMap = useStorage<Record<string, boolean>>('config/hidden-group-map', {})
 export const proxyProviederList = ref<ProxyProvider[]>([])
 
+type HostWindow = Window & {
+  __mihomoIconCache?: Record<string, string>
+}
+
+const getCachedIcon = (icon: string) => {
+  return (window as HostWindow).__mihomoIconCache?.[icon] || icon
+}
+
+const applyCachedIconsToCurrentProxies = () => {
+  Object.entries(proxyMap.value).forEach(([name, proxy]) => {
+    if (proxy.icon) {
+      proxyMap.value[name].icon = getCachedIcon(proxy.icon)
+    }
+  })
+}
+
+window.addEventListener('__mihomoIconCacheUpdated', applyCachedIconsToCurrentProxies)
+
 const speedtestUrlWithDefault = computed(() => {
   return speedtestUrl.value || TEST_URL
 })
@@ -164,7 +182,9 @@ export const fetchProxies = async () => {
     const iconReflect = iconReflectList.value.find((icon) => icon.name === name)
 
     if (iconReflect) {
-      proxyMap.value[name].icon = iconReflect.icon
+      proxyMap.value[name].icon = getCachedIcon(iconReflect.icon)
+    } else if (proxy.icon) {
+      proxyMap.value[name].icon = getCachedIcon(proxy.icon)
     }
     if (IPv6test.value && getIPv6FromExtra(proxy)) {
       IPv6Map.value[name] = true

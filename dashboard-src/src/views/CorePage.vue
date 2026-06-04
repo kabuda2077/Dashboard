@@ -186,6 +186,7 @@ type CoreState = {
   autostart?: boolean
   isCoreUpgrading?: boolean
   logText?: string
+  iconCacheMap?: Record<string, string>
 }
 
 type HostMessage = {

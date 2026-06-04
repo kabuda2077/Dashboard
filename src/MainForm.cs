@@ -4,12 +4,13 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed class MainForm : Form
 {
     private readonly AppSettings _settings;
     private readonly MihomoManager _mihomo = new();
+    private readonly ProxyGroupIconCache _iconCache = new();
     private readonly DashboardServer _dashboardServer;
     private readonly Uri _dashboardUri;
     private readonly Icon _appIcon;
@@ -37,10 +38,10 @@ public sealed class MainForm : Form
         _startCoreAfterLaunch = startCoreAfterLaunch;
         _settings = AppSettings.Load();
         SyncAutostartSetting();
-        _dashboardServer = new DashboardServer(Path.Combine(AppContext.BaseDirectory, "resources", "dashboard"));
+        _dashboardServer = new DashboardServer(Path.Combine(AppContext.BaseDirectory, "resources", "dashboard"), _iconCache.CacheDirectory);
         _dashboardUri = _dashboardServer.Start();
 
-        Text = "Mihomo Dashboard";
+        Text = "Dashboard";
         FormBorderStyle = FormBorderStyle.Sizable;
         BackColor = Color.FromArgb(244, 244, 245);
         MinimumSize = new Size(1120, 720);
@@ -69,6 +70,7 @@ public sealed class MainForm : Form
         await InitializeWebViewAsync();
         LoadDashboard();
         RefreshStatus();
+        RefreshIconCache();
 
         if (_startMinimized)
         {
@@ -104,6 +106,7 @@ public sealed class MainForm : Form
             SendStateToDashboard();
             HandleTunPermissionFailure();
         };
+        _iconCache.CacheChanged += (_, _) => BeginInvoke(new Action(SendStateToDashboard));
     }
 
     private NotifyIcon CreateTrayIcon()
@@ -111,7 +114,7 @@ public sealed class MainForm : Form
         var icon = new NotifyIcon
         {
             Icon = _trayIconImage,
-            Text = "Mihomo Dashboard",
+            Text = "Dashboard",
             Visible = true
         };
         icon.MouseUp += (_, e) =>
@@ -283,6 +286,7 @@ public sealed class MainForm : Form
             AutostartManager.SetEnabled(_settings.Autostart);
         }
         _settings.Save();
+        RefreshIconCache();
 
         if (showMessage)
         {
@@ -320,6 +324,7 @@ public sealed class MainForm : Form
             _elevatedRetryPending = !IsRunningAsAdministrator();
             _tunPermissionFailureSeen = false;
             _mihomo.Start(_settings);
+            RefreshIconCache();
             _ = WaitForApiAndNotifyAsync();
         }
         catch (Exception ex)
@@ -347,7 +352,7 @@ public sealed class MainForm : Form
             _mihomo.Stop();
             if (showTrayNotification && wasRunning)
             {
-                _trayIcon.ShowBalloonTip(1800, "Mihomo Dashboard", "内核已关闭", ToolTipIcon.Info);
+                _trayIcon.ShowBalloonTip(1800, "Dashboard", "内核已关闭", ToolTipIcon.Info);
             }
         }
         catch (Exception ex)
@@ -405,7 +410,7 @@ public sealed class MainForm : Form
 
             var result = await CoreUpdater.UpgradeLatestAsync(_settings.CorePath);
             await ShowDashboardNoticeAsync($"内核已升级到 {result.Version}。");
-            _trayIcon.ShowBalloonTip(2200, "Mihomo Dashboard", "内核已升级", ToolTipIcon.Info);
+            _trayIcon.ShowBalloonTip(2200, "Dashboard", "内核已升级", ToolTipIcon.Info);
 
             if (wasRunning)
             {
@@ -445,6 +450,7 @@ public sealed class MainForm : Form
                 {
                     _elevatedRetryPending = false;
                     _tunPermissionFailureSeen = false;
+                    RefreshIconCache();
                     BeginInvoke(new Action(SendStateToDashboard));
                     return;
                 }
@@ -468,7 +474,7 @@ public sealed class MainForm : Form
     private void RefreshStatus()
     {
         var running = _mihomo.IsRunning;
-        _trayIcon.Text = running ? "Mihomo Dashboard - 运行中" : "Mihomo Dashboard - 未运行";
+        _trayIcon.Text = running ? "Dashboard - 运行中" : "Dashboard - 未运行";
         SendStateToDashboard();
     }
 
@@ -526,7 +532,8 @@ public sealed class MainForm : Form
             minimizeToTray = _settings.MinimizeToTray,
             autostart = _settings.Autostart,
             isCoreUpgrading = _coreUpgradeInProgress,
-            logText = _mihomo.GetLogTail(8000)
+            logText = _mihomo.GetLogTail(8000),
+            iconCacheMap = _iconCache.GetDashboardMap(_dashboardUri)
         };
         PostDashboardMessage(new { type = "state", state });
     }
@@ -577,7 +584,23 @@ public sealed class MainForm : Form
         {
             _settings.ConfigPath = dialog.FileName;
             _settings.Save();
+            RefreshIconCache();
         }
+    }
+
+    private void RefreshIconCache()
+    {
+        var configPath = _settings.ConfigPath;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _iconCache.RefreshAsync(configPath);
+            }
+            catch
+            {
+            }
+        });
     }
 
     private static bool IsRunningAsAdministrator()

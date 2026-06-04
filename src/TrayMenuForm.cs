@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
-namespace MihomoDashboard;
+namespace Dashboard;
 
 public sealed class TrayMenuForm : Form
 {
