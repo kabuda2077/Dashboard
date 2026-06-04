@@ -65,14 +65,14 @@ public sealed class MainForm : Form
         LoadDashboard();
         RefreshStatus();
 
-        if (_settings.StartCoreOnLaunch || _startCoreAfterLaunch)
-        {
-            StartCore();
-        }
-
         if (_startMinimized)
         {
             HideToTray();
+        }
+
+        if (_settings.StartCoreOnLaunch || _startCoreAfterLaunch)
+        {
+            StartCore();
         }
     }
 
@@ -195,234 +195,6 @@ public sealed class MainForm : Form
         return string.Join("&", query);
     }
 
-    private void ShowStartupPage()
-    {
-        if (_webView.CoreWebView2 is null)
-        {
-            return;
-        }
-
-        _webView.CoreWebView2.NavigateToString("""
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mihomo Core</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: #f7f7f8;
-      color: #18181b;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      display: grid;
-      place-items: center;
-      padding: 28px;
-    }
-    .shell { width: min(980px, 100%); }
-    .hero, .card {
-      background: #fff;
-      border-radius: 18px;
-      box-shadow: 0 1px 2px rgba(15,23,42,.06);
-    }
-    .hero {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 24px;
-      margin-bottom: 16px;
-    }
-    .heading { display: flex; align-items: center; gap: 12px; }
-    .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #f97316;
-      box-shadow: 0 0 0 4px rgba(249,115,22,.16);
-    }
-    body[data-running="true"] .dot {
-      background: #22c55e;
-      box-shadow: 0 0 0 4px rgba(34,197,94,.16);
-    }
-    h1 { margin: 0; font-size: 28px; }
-    h2 { margin: 0 0 14px; font-size: 15px; }
-    .sub { margin-top: 6px; color: #71717a; font-size: 14px; }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-    button {
-      height: 36px;
-      border: 0;
-      border-radius: 10px;
-      padding: 0 14px;
-      font: inherit;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      background: #18181b;
-      color: #fff;
-    }
-    button.secondary { background: #f4f4f5; color: #27272a; }
-    button.danger { background: #fff7ed; color: #c2410c; }
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
-      gap: 16px;
-    }
-    .card { padding: 18px; }
-    .note {
-      padding: 12px;
-      border-radius: 12px;
-      background: #fff7ed;
-      color: #9a3412;
-      font-size: 13px;
-      line-height: 1.55;
-      margin-bottom: 12px;
-    }
-    label {
-      display: block;
-      margin-bottom: 6px;
-      color: #71717a;
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .field {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    input[type="text"] {
-      width: 100%;
-      height: 34px;
-      border: 1px solid #e4e4e7;
-      border-radius: 10px;
-      padding: 0 10px;
-      outline: none;
-      background: #fafafa;
-      color: #18181b;
-      font-size: 12px;
-    }
-    .options { display: grid; gap: 8px; margin-top: 8px; color: #3f3f46; font-size: 12px; }
-    .options label { display: flex; align-items: center; gap: 8px; margin: 0; color: inherit; font-weight: 600; }
-    .log {
-      height: 260px;
-      overflow: auto;
-      margin: 0;
-      padding: 10px;
-      border-radius: 10px;
-      background: #0f172a;
-      color: #dbeafe;
-      font: 11px/1.45 "Cascadia Mono", Consolas, monospace;
-      white-space: pre-wrap;
-    }
-    .toast {
-      display: none;
-      margin-top: 12px;
-      padding: 9px 10px;
-      border-radius: 10px;
-      background: #ecfeff;
-      color: #0e7490;
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .toast.show { display: block; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .hero { align-items: flex-start; flex-direction: column; } }
-  </style>
-</head>
-<body>
-  <main class="shell">
-    <section class="hero">
-      <div class="heading">
-        <span class="dot"></span>
-        <div>
-          <h1>Mihomo Core</h1>
-          <div class="sub" data-role="status">未运行</div>
-        </div>
-      </div>
-      <div class="actions">
-        <button data-action="start">启动内核</button>
-        <button class="danger" data-action="stop">停止内核</button>
-      </div>
-    </section>
-    <section class="grid">
-      <div class="card">
-        <h2>启动配置</h2>
-        <div class="note">如果配置启用了 TUN，启动内核时会自动请求管理员权限。看到 UAC 提示后允许即可。</div>
-        <label>内核路径</label>
-        <div class="field"><input type="text" data-field="corePath" /><button class="secondary" data-action="browseCore">选择</button></div>
-        <label>配置文件</label>
-        <div class="field"><input type="text" data-field="configPath" /><button class="secondary" data-action="browseConfig">选择</button></div>
-        <label>API 地址</label>
-        <div class="field"><input type="text" data-field="apiUrl" /><button class="secondary" data-action="reload">进入面板</button></div>
-        <label>Secret</label>
-        <div class="field"><input type="text" data-field="secret" /><button data-action="save">保存</button></div>
-        <div class="options">
-          <label><input type="checkbox" data-field="startCoreOnLaunch" /> 启动软件时自动启动内核</label>
-          <label><input type="checkbox" data-field="minimizeToTray" /> 关闭窗口时最小化到托盘</label>
-          <label><input type="checkbox" data-field="autostart" /> 开机自启</label>
-        </div>
-        <div class="toast" data-role="toast"></div>
-      </div>
-      <div class="card">
-        <h2>内核日志</h2>
-        <pre class="log" data-role="log">暂无日志</pre>
-      </div>
-    </section>
-  </main>
-  <script>
-    const post = (message) => window.chrome?.webview?.postMessage(message);
-    const collect = () => ({
-      type: 'save',
-      corePath: document.querySelector('[data-field="corePath"]').value,
-      configPath: document.querySelector('[data-field="configPath"]').value,
-      apiUrl: document.querySelector('[data-field="apiUrl"]').value,
-      secret: document.querySelector('[data-field="secret"]').value,
-      startCoreOnLaunch: document.querySelector('[data-field="startCoreOnLaunch"]').checked,
-      minimizeToTray: document.querySelector('[data-field="minimizeToTray"]').checked,
-      autostart: document.querySelector('[data-field="autostart"]').checked
-    });
-    document.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-action]');
-      if (!button) return;
-      const action = button.dataset.action;
-      if (action === 'save') return post(collect());
-      if (action === 'start') return post({ ...collect(), type: 'start' });
-      if (action === 'stop') return post({ type: 'stop' });
-      if (action === 'reload') return post({ ...collect(), type: 'reload' });
-      if (action === 'browseCore') return post({ type: 'browseCore' });
-      if (action === 'browseConfig') return post({ type: 'browseConfig' });
-    });
-    window.__mihomoStartupSetState = (state) => {
-      document.body.dataset.running = state.isRunning ? 'true' : 'false';
-      document.querySelector('[data-role="status"]').textContent = state.isRunning
-        ? `运行中 · PID ${state.processId ?? ''}`
-        : '未运行';
-      document.querySelector('[data-action="start"]').disabled = state.isRunning;
-      document.querySelector('[data-action="stop"]').disabled = !state.isRunning;
-      document.querySelector('[data-field="corePath"]').value = state.corePath ?? '';
-      document.querySelector('[data-field="configPath"]').value = state.configPath ?? '';
-      document.querySelector('[data-field="apiUrl"]').value = state.apiUrl ?? '';
-      document.querySelector('[data-field="secret"]').value = state.secret ?? '';
-      document.querySelector('[data-field="startCoreOnLaunch"]').checked = !!state.startCoreOnLaunch;
-      document.querySelector('[data-field="minimizeToTray"]').checked = !!state.minimizeToTray;
-      document.querySelector('[data-field="autostart"]').checked = !!state.autostart;
-      document.querySelector('[data-role="log"]').textContent = state.logText || '暂无日志';
-    };
-    window.__mihomoControlNotice = (message) => {
-      const toast = document.querySelector('[data-role="toast"]');
-      toast.textContent = message;
-      toast.classList.add('show');
-      window.clearTimeout(window.__mihomoNoticeTimer);
-      window.__mihomoNoticeTimer = window.setTimeout(() => toast.classList.remove('show'), 2400);
-    };
-  </script>
-</body>
-</html>
-""");
-    }
-
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         try
@@ -513,7 +285,7 @@ public sealed class MainForm : Form
         {
             if (!IsRunningAsAdministrator())
             {
-                RelaunchAsAdministrator(startCore: true);
+                RelaunchAsAdministrator(startCore: true, startMinimized: ShouldKeepMinimizedForRelaunch());
                 return;
             }
 
@@ -673,12 +445,30 @@ public sealed class MainForm : Form
         return principal.IsInRole(WindowsBuiltInRole.Administrator);
     }
 
-    private void RelaunchAsAdministrator(bool startCore)
+    private bool ShouldKeepMinimizedForRelaunch()
+    {
+        return _startMinimized
+            || _hiddenToTray
+            || !Visible
+            || !ShowInTaskbar
+            || WindowState == FormWindowState.Minimized;
+    }
+
+    private void RelaunchAsAdministrator(bool startCore, bool startMinimized)
     {
         try
         {
-            var arguments = startCore ? "--start-core" : "";
-            var startInfo = new ProcessStartInfo(Application.ExecutablePath, arguments)
+            var arguments = new List<string>();
+            if (startCore)
+            {
+                arguments.Add("--start-core");
+            }
+            if (startMinimized)
+            {
+                arguments.Add("--minimized");
+            }
+
+            var startInfo = new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
             {
                 UseShellExecute = true,
                 Verb = "runas"

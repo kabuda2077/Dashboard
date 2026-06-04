@@ -17,9 +17,9 @@ public sealed class DashboardServer : IDisposable
 
     public Uri Start()
     {
-        var port = GetFreePort();
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
+        var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => ListenAsync(_cts.Token));
@@ -78,7 +78,7 @@ public sealed class DashboardServer : IDisposable
 
             var candidate = Path.GetFullPath(Path.Combine(_root, requestPath.Replace('/', Path.DirectorySeparatorChar)));
             var rootFullPath = Path.GetFullPath(_root);
-            if (!candidate.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase) || !File.Exists(candidate))
+            if (!IsPathUnderRoot(candidate, rootFullPath) || !File.Exists(candidate))
             {
                 candidate = Path.Combine(rootFullPath, "index.html");
             }
@@ -114,11 +114,13 @@ public sealed class DashboardServer : IDisposable
         _ => "application/octet-stream"
     };
 
-    private static int GetFreePort()
+    private static bool IsPathUnderRoot(string candidate, string rootFullPath)
     {
-        using var socket = new TcpListener(IPAddress.Loopback, 0);
-        socket.Start();
-        return ((IPEndPoint)socket.LocalEndpoint).Port;
+        var normalizedRoot = rootFullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+
+        return candidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)
+            || candidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()

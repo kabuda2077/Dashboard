@@ -12,8 +12,15 @@ public sealed class MihomoManager : IDisposable
     public event EventHandler? StatusChanged;
     public event EventHandler<string>? LogReceived;
 
-    public bool IsRunning => _process is { HasExited: false };
-    public int? ProcessId => IsRunning ? _process!.Id : null;
+    public bool IsRunning => _process is not null && IsProcessRunning(_process);
+    public int? ProcessId
+    {
+        get
+        {
+            var process = _process;
+            return process is not null && IsProcessRunning(process) ? process.Id : null;
+        }
+    }
 
     public string LogText
     {
@@ -28,6 +35,8 @@ public sealed class MihomoManager : IDisposable
 
     public void Start(AppSettings settings)
     {
+        DisposeExitedProcess();
+
         if (IsRunning)
         {
             AppendLog("mihomo is already running.");
@@ -56,29 +65,30 @@ public sealed class MihomoManager : IDisposable
             RedirectStandardError = true
         };
 
-        _process = new Process
+        var process = new Process
         {
             StartInfo = startInfo,
             EnableRaisingEvents = true
         };
-        _process.OutputDataReceived += (_, e) => AppendLog(e.Data);
-        _process.ErrorDataReceived += (_, e) => AppendLog(e.Data);
-        _process.Exited += (_, _) =>
+        process.OutputDataReceived += (_, e) => AppendLog(e.Data);
+        process.ErrorDataReceived += (_, e) => AppendLog(e.Data);
+        process.Exited += (_, _) =>
         {
-            AppendLog($"mihomo exited with code {_process?.ExitCode}.");
+            AppendLog($"mihomo exited with code {GetExitCodeText(process)}.");
             StatusChanged?.Invoke(this, EventArgs.Empty);
         };
 
-        if (!_process.Start())
+        _process = process;
+        if (!process.Start())
         {
-            _process.Dispose();
+            process.Dispose();
             _process = null;
             throw new InvalidOperationException("mihomo 启动失败。");
         }
 
-        _process.BeginOutputReadLine();
-        _process.BeginErrorReadLine();
-        AppendLog($"mihomo started. pid={_process.Id}");
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        AppendLog($"mihomo started. pid={process.Id}");
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -86,14 +96,16 @@ public sealed class MihomoManager : IDisposable
     {
         if (!IsRunning)
         {
+            DisposeExitedProcess();
             AppendLog("mihomo is not running.");
             return;
         }
 
+        var process = _process!;
         try
         {
-            _process!.Kill(entireProcessTree: true);
-            _process.WaitForExit(3000);
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(3000);
             AppendLog("mihomo stopped.");
         }
         catch (Exception ex)
@@ -103,6 +115,11 @@ public sealed class MihomoManager : IDisposable
         }
         finally
         {
+            process.Dispose();
+            if (ReferenceEquals(_process, process))
+            {
+                _process = null;
+            }
             StatusChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -134,6 +151,42 @@ public sealed class MihomoManager : IDisposable
         }
 
         LogReceived?.Invoke(this, entry);
+    }
+
+    private void DisposeExitedProcess()
+    {
+        var process = _process;
+        if (process is null || IsProcessRunning(process))
+        {
+            return;
+        }
+
+        process.Dispose();
+        _process = null;
+    }
+
+    private static bool IsProcessRunning(Process process)
+    {
+        try
+        {
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string GetExitCodeText(Process process)
+    {
+        try
+        {
+            return process.ExitCode.ToString();
+        }
+        catch
+        {
+            return "unknown";
+        }
     }
 
     public void Dispose()

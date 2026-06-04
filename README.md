@@ -21,7 +21,7 @@
 
 ## 使用
 
-1. 安装 .NET 9 SDK 和 Microsoft Edge WebView2 Runtime。
+1. 安装 .NET 9 Desktop Runtime 和 Microsoft Edge WebView2 Runtime。正式使用不需要 .NET SDK。
 2. 将 mihomo Windows 内核放到 `cores/mihomo.exe`，或在界面里选择你的内核路径。
 3. 将配置复制为 `config/config.yaml`，或在界面里选择你的配置路径。
 4. 确保 mihomo 配置包含：
@@ -31,7 +31,7 @@ external-controller: 127.0.0.1:9090
 secret: ""
 ```
 
-5. 如需本地构建带原生 `内核` 路由的 zashboard，需要安装 Node.js 24 和 pnpm 10，然后运行：
+5. 如需本地开发或本地构建，需要额外安装 .NET 9 SDK、Node.js 24 和 pnpm 10，然后运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1
