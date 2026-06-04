@@ -7,18 +7,33 @@ public sealed class MihomoManager : IDisposable
 {
     private const int MaxLogLength = 80_000;
     private readonly StringBuilder _log = new();
+    private readonly object _processLock = new();
+    private readonly HashSet<int> _stoppingProcessIds = new();
     private Process? _process;
 
     public event EventHandler? StatusChanged;
     public event EventHandler<string>? LogReceived;
 
-    public bool IsRunning => _process is not null && IsProcessRunning(_process);
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_processLock)
+            {
+                return _process is not null && IsProcessRunning(_process);
+            }
+        }
+    }
+
     public int? ProcessId
     {
         get
         {
-            var process = _process;
-            return process is not null && IsProcessRunning(process) ? process.Id : null;
+            lock (_processLock)
+            {
+                var process = _process;
+                return process is not null && IsProcessRunning(process) ? process.Id : null;
+            }
         }
     }
 
@@ -30,6 +45,19 @@ public sealed class MihomoManager : IDisposable
             {
                 return _log.ToString();
             }
+        }
+    }
+
+    public string GetLogTail(int maxLength)
+    {
+        lock (_log)
+        {
+            if (_log.Length <= maxLength)
+            {
+                return _log.ToString();
+            }
+
+            return _log.ToString(_log.Length - maxLength, maxLength);
         }
     }
 
@@ -70,25 +98,39 @@ public sealed class MihomoManager : IDisposable
             StartInfo = startInfo,
             EnableRaisingEvents = true
         };
+        var processId = 0;
         process.OutputDataReceived += (_, e) => AppendLog(e.Data);
         process.ErrorDataReceived += (_, e) => AppendLog(e.Data);
         process.Exited += (_, _) =>
         {
-            AppendLog($"mihomo exited with code {GetExitCodeText(process)}.");
+            if (processId == 0 || !ShouldSuppressExitedLog(processId))
+            {
+                AppendLog($"mihomo exited with code {GetExitCodeText(process)}.");
+            }
             StatusChanged?.Invoke(this, EventArgs.Empty);
         };
+        lock (_processLock)
+        {
+            _process = process;
+        }
 
-        _process = process;
         if (!process.Start())
         {
             process.Dispose();
-            _process = null;
+            lock (_processLock)
+            {
+                if (ReferenceEquals(_process, process))
+                {
+                    _process = null;
+                }
+            }
             throw new InvalidOperationException("mihomo 启动失败。");
         }
 
+        processId = process.Id;
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        AppendLog($"mihomo started. pid={process.Id}");
+        AppendLog($"mihomo started. pid={processId}");
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -101,9 +143,15 @@ public sealed class MihomoManager : IDisposable
             return;
         }
 
-        var process = _process!;
+        Process process;
+        lock (_processLock)
+        {
+            process = _process!;
+        }
+
         try
         {
+            MarkStopping(process);
             process.Kill(entireProcessTree: true);
             process.WaitForExit(3000);
             AppendLog("mihomo stopped.");
@@ -116,21 +164,15 @@ public sealed class MihomoManager : IDisposable
         finally
         {
             process.Dispose();
-            if (ReferenceEquals(_process, process))
+            lock (_processLock)
             {
-                _process = null;
+                if (ReferenceEquals(_process, process))
+                {
+                    _process = null;
+                }
             }
             StatusChanged?.Invoke(this, EventArgs.Empty);
         }
-    }
-
-    public void ClearLog()
-    {
-        lock (_log)
-        {
-            _log.Clear();
-        }
-        LogReceived?.Invoke(this, "");
     }
 
     private void AppendLog(string? line)
@@ -155,14 +197,19 @@ public sealed class MihomoManager : IDisposable
 
     private void DisposeExitedProcess()
     {
-        var process = _process;
-        if (process is null || IsProcessRunning(process))
+        Process? process;
+        lock (_processLock)
         {
-            return;
+            process = _process;
+            if (process is null || IsProcessRunning(process))
+            {
+                return;
+            }
+
+            _process = null;
         }
 
         process.Dispose();
-        _process = null;
     }
 
     private static bool IsProcessRunning(Process process)
@@ -189,12 +236,49 @@ public sealed class MihomoManager : IDisposable
         }
     }
 
+    private void MarkStopping(Process process)
+    {
+        try
+        {
+            lock (_processLock)
+            {
+                _stoppingProcessIds.Add(process.Id);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private bool ShouldSuppressExitedLog(int processId)
+    {
+        try
+        {
+            lock (_processLock)
+            {
+                return _stoppingProcessIds.Remove(processId);
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         if (IsRunning)
         {
             Stop();
         }
-        _process?.Dispose();
+
+        Process? process;
+        lock (_processLock)
+        {
+            process = _process;
+            _process = null;
+        }
+
+        process?.Dispose();
     }
 }

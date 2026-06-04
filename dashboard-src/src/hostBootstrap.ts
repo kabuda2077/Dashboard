@@ -7,7 +7,20 @@ type HostState = {
   secret?: string
 }
 
+type HostMessage = {
+  type?: string
+  state?: HostState
+}
+
 type HostWindow = Window & {
+  chrome?: {
+    webview?: {
+      addEventListener?: (
+        type: 'message',
+        listener: (event: MessageEvent<HostMessage>) => void,
+      ) => void
+    }
+  }
   __mihomoApplyBackend?: (state: HostState) => void
 }
 
@@ -40,8 +53,16 @@ const applyBackend = (backend: Omit<Backend, 'uuid'> | null) => {
   addBackend(backend)
 }
 
-applyBackend(getBackendFromUrl())
+if (!(window as HostWindow).chrome?.webview) {
+  applyBackend(getBackendFromUrl())
+}
 
 ;(window as HostWindow).__mihomoApplyBackend = (state) => {
   applyBackend(backendFromApiUrl(state.apiUrl, state.secret))
 }
+
+;(window as HostWindow).chrome?.webview?.addEventListener?.('message', (event) => {
+  if (event.data?.type === 'state') {
+    applyBackend(backendFromApiUrl(event.data.state?.apiUrl, event.data.state?.secret))
+  }
+})

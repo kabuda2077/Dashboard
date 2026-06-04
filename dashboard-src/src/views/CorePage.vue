@@ -188,10 +188,24 @@ type CoreState = {
   logText?: string
 }
 
+type HostMessage = {
+  type?: string
+  state?: CoreState
+  message?: string
+}
+
 type WebViewWindow = Window & {
   chrome?: {
     webview?: {
       postMessage: (message: unknown) => void
+      addEventListener?: (
+        type: 'message',
+        listener: (event: MessageEvent<HostMessage>) => void,
+      ) => void
+      removeEventListener?: (
+        type: 'message',
+        listener: (event: MessageEvent<HostMessage>) => void,
+      ) => void
     }
   }
   __mihomoControlSetState?: (state: CoreState) => void
@@ -262,13 +276,23 @@ const showNotice = (message: string) => {
   }, 2400)
 }
 
+const handleHostMessage = (event: MessageEvent<HostMessage>) => {
+  if (event.data?.type === 'state') {
+    setState(event.data.state ?? {})
+  } else if (event.data?.type === 'notice') {
+    showNotice(event.data.message ?? '')
+  }
+}
+
 onMounted(() => {
+  webviewWindow.chrome?.webview?.addEventListener?.('message', handleHostMessage)
   webviewWindow.__mihomoControlSetState = setState
   webviewWindow.__mihomoControlNotice = showNotice
   post({ type: 'requestState' })
 })
 
 onUnmounted(() => {
+  webviewWindow.chrome?.webview?.removeEventListener?.('message', handleHostMessage)
   if (webviewWindow.__mihomoControlSetState === setState) {
     delete webviewWindow.__mihomoControlSetState
   }

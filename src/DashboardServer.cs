@@ -6,6 +6,8 @@ namespace MihomoDashboard;
 
 public sealed class DashboardServer : IDisposable
 {
+    private static readonly TimeSpan RequestReadTimeout = TimeSpan.FromSeconds(5);
+
     private readonly string _root;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
@@ -38,33 +40,35 @@ public sealed class DashboardServer : IDisposable
             try
             {
                 var client = await _listener.AcceptTcpClientAsync(token);
-                _ = Task.Run(() => HandleAsync(client), token);
+                _ = Task.Run(() => HandleAsync(client, token), token);
             }
             catch when (token.IsCancellationRequested)
             {
                 break;
             }
-            catch
+            catch (Exception ex)
             {
-                break;
+                System.Diagnostics.Debug.WriteLine($"Dashboard server accept failed: {ex.Message}");
             }
         }
     }
 
-    private async Task HandleAsync(TcpClient client)
+    private async Task HandleAsync(TcpClient client, CancellationToken token)
     {
-        await using var stream = client.GetStream();
+        using var ownedClient = client;
+        ownedClient.ReceiveTimeout = (int)RequestReadTimeout.TotalMilliseconds;
+        await using var stream = ownedClient.GetStream();
         using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
 
         try
         {
-            var requestLine = await reader.ReadLineAsync();
+            var requestLine = await ReadLineWithTimeoutAsync(reader, token);
             if (string.IsNullOrWhiteSpace(requestLine))
             {
                 return;
             }
 
-            while (!string.IsNullOrEmpty(await reader.ReadLineAsync()))
+            while (!string.IsNullOrEmpty(await ReadLineWithTimeoutAsync(reader, token)))
             {
             }
 
@@ -86,9 +90,33 @@ public sealed class DashboardServer : IDisposable
             var bytes = await File.ReadAllBytesAsync(candidate);
             await WriteResponseAsync(stream, "200 OK", GetContentType(Path.GetExtension(candidate)), bytes);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
         catch
         {
-            await WriteResponseAsync(stream, "500 Internal Server Error", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Internal Server Error"));
+            try
+            {
+                await WriteResponseAsync(stream, "500 Internal Server Error", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Internal Server Error"));
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static async Task<string?> ReadLineWithTimeoutAsync(StreamReader reader, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(RequestReadTimeout);
+
+        try
+        {
+            return await reader.ReadLineAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            return null;
         }
     }
 

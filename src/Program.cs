@@ -21,8 +21,34 @@ internal static class Program
 
             var startMinimized = args.Any(arg => string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase));
             var startCore = args.Any(arg => string.Equals(arg, "--start-core", StringComparison.OrdinalIgnoreCase));
-            using var form = new MainForm(startMinimized, startCore);
-            Application.Run(form);
+            var elevatedRestart = args.Any(arg => string.Equals(arg, "--elevated-restart", StringComparison.OrdinalIgnoreCase));
+            MainForm? form = null;
+            if (!SingleInstance.TryCreate(
+                    () =>
+                    {
+                        try
+                        {
+                            if (form is not null && !form.IsDisposed && form.IsHandleCreated)
+                            {
+                                form.BeginInvoke(new Action(form.ShowFromTray));
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    },
+                    waitForPreviousExit: elevatedRestart,
+                    out var singleInstance))
+            {
+                return;
+            }
+
+            using (singleInstance!)
+            {
+                using var mainForm = new MainForm(startMinimized, startCore);
+                form = mainForm;
+                Application.Run(mainForm);
+            }
         }
         catch (Exception exception)
         {

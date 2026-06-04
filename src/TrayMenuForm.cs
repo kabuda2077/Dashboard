@@ -13,16 +13,18 @@ public sealed class TrayMenuForm : Form
     private const int SeparatorHeight = 12;
 
     private readonly List<TrayMenuItem> _items;
+    private readonly Font _menuFont;
     private int _hoverIndex = -1;
 
     public TrayMenuForm(IEnumerable<TrayMenuItem> items)
     {
         _items = items.ToList();
+        _menuFont = new Font("Segoe UI", 10f, FontStyle.Regular, GraphicsUnit.Point);
 
         AutoScaleMode = AutoScaleMode.None;
         BackColor = Color.FromArgb(250, 250, 252);
         DoubleBuffered = true;
-        Font = new Font("Segoe UI", 10f, FontStyle.Regular, GraphicsUnit.Point);
+        Font = _menuFont;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -58,6 +60,16 @@ public sealed class TrayMenuForm : Form
     {
         base.OnDeactivate(e);
         Close();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _menuFont.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     protected override void OnSizeChanged(EventArgs e)

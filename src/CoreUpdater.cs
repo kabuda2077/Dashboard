@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace MihomoDashboard;
@@ -9,6 +10,7 @@ public sealed record CoreUpgradeResult(string Version, string AssetName, string 
 public static class CoreUpdater
 {
     private const string LatestReleaseApi = "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest";
+    private const int MaxCoreBackups = 3;
 
     public static async Task<CoreUpgradeResult> UpgradeLatestAsync(string corePath, CancellationToken cancellationToken = default)
     {
@@ -45,6 +47,7 @@ public static class CoreUpdater
                 await assetStream.CopyToAsync(fileStream, cancellationToken);
             }
 
+            await VerifyArchiveSha256Async(archivePath, asset.Sha256Digest, cancellationToken);
             var extractedCore = ExtractCoreExecutable(archivePath, tempRoot);
             var backupPath = BackupCore(corePath);
             File.Copy(extractedCore, corePath, overwrite: true);
@@ -77,6 +80,8 @@ public static class CoreUpdater
         {
             var name = asset.GetProperty("name").GetString() ?? "";
             var downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+            var sha256Digest = NormalizeSha256Digest(
+                asset.TryGetProperty("digest", out var digest) ? digest.GetString() : null);
             var normalizedName = name.ToLowerInvariant();
 
             if (!normalizedName.Contains("windows") ||
@@ -93,7 +98,7 @@ public static class CoreUpdater
                 continue;
             }
 
-            candidates.Add(new CoreAsset(name, downloadUrl));
+            candidates.Add(new CoreAsset(name, downloadUrl, sha256Digest));
         }
 
         var selected = candidates
@@ -222,8 +227,65 @@ public static class CoreUpdater
             $"{Path.GetFileNameWithoutExtension(corePath)}-{DateTime.Now:yyyyMMdd-HHmmss}{Path.GetExtension(corePath)}.bak");
 
         File.Copy(corePath, backupPath, overwrite: false);
+        PruneOldBackups(backupDirectory, corePath);
         return backupPath;
     }
 
-    private sealed record CoreAsset(string Name, string DownloadUrl);
+    private static async Task VerifyArchiveSha256Async(string archivePath, string expectedSha256, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            throw new InvalidOperationException("Release asset is missing a SHA256 digest; core upgrade was cancelled.");
+        }
+
+        await using var stream = File.OpenRead(archivePath);
+        var actualBytes = await SHA256.HashDataAsync(stream, cancellationToken);
+        var actualSha256 = Convert.ToHexString(actualBytes).ToLowerInvariant();
+        if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Downloaded core archive SHA256 verification failed; core upgrade was cancelled.");
+        }
+    }
+
+    private static string NormalizeSha256Digest(string? digest)
+    {
+        if (string.IsNullOrWhiteSpace(digest))
+        {
+            return "";
+        }
+
+        var value = digest.Trim();
+        const string prefix = "sha256:";
+        if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = value[prefix.Length..];
+        }
+
+        return value.Length == 64 && value.All(Uri.IsHexDigit)
+            ? value.ToLowerInvariant()
+            : "";
+    }
+
+    private static void PruneOldBackups(string backupDirectory, string corePath)
+    {
+        var prefix = $"{Path.GetFileNameWithoutExtension(corePath)}-";
+        var suffix = $"{Path.GetExtension(corePath)}.bak";
+        var backups = Directory
+            .EnumerateFiles(backupDirectory, $"{prefix}*{suffix}")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .Skip(MaxCoreBackups);
+
+        foreach (var backup in backups)
+        {
+            try
+            {
+                File.Delete(backup);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private sealed record CoreAsset(string Name, string DownloadUrl, string Sha256Digest);
 }

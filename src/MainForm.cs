@@ -26,6 +26,10 @@ public sealed class MainForm : Form
     private bool _startMinimized;
     private bool _startCoreAfterLaunch;
     private bool _coreUpgradeInProgress;
+    private bool _elevatedRetryPending;
+    private bool _tunPermissionFailureSeen;
+    private bool _stateRefreshPending;
+    private readonly System.Windows.Forms.Timer _stateRefreshTimer = new() { Interval = 150 };
 
     public MainForm(bool startMinimized, bool startCoreAfterLaunch)
     {
@@ -87,7 +91,19 @@ public sealed class MainForm : Form
     private void BindEvents()
     {
         _mihomo.StatusChanged += (_, _) => BeginInvoke(new Action(RefreshStatus));
-        _mihomo.LogReceived += (_, _) => BeginInvoke(new Action(SendStateToDashboard));
+        _mihomo.LogReceived += (_, entry) => BeginInvoke(new Action(() => QueueStateRefresh(entry)));
+        _stateRefreshTimer.Tick += (_, _) =>
+        {
+            _stateRefreshTimer.Stop();
+            if (!_stateRefreshPending)
+            {
+                return;
+            }
+
+            _stateRefreshPending = false;
+            SendStateToDashboard();
+            HandleTunPermissionFailure();
+        };
     }
 
     private NotifyIcon CreateTrayIcon()
@@ -190,7 +206,6 @@ public sealed class MainForm : Form
             query.Add("port=9090");
         }
 
-        query.Add($"secret={Uri.EscapeDataString(_settings.Secret)}");
         query.Add($"label={Uri.EscapeDataString("本机内核")}");
         query.Add("disableUpgradeCore=1");
 
@@ -293,17 +308,15 @@ public sealed class MainForm : Form
     {
         try
         {
-            if (!IsRunningAsAdministrator())
-            {
-                RelaunchAsAdministrator(startCore: true, startMinimized: ShouldKeepMinimizedForRelaunch());
-                return;
-            }
-
+            _elevatedRetryPending = !IsRunningAsAdministrator();
+            _tunPermissionFailureSeen = false;
             _mihomo.Start(_settings);
             _ = WaitForApiAndNotifyAsync();
         }
         catch (Exception ex)
         {
+            _elevatedRetryPending = false;
+            _tunPermissionFailureSeen = false;
             MessageBox.Show(this, ex.Message, "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -421,6 +434,8 @@ public sealed class MainForm : Form
                 using var response = await client.GetAsync(endpoint);
                 if (response.IsSuccessStatusCode)
                 {
+                    _elevatedRetryPending = false;
+                    _tunPermissionFailureSeen = false;
                     BeginInvoke(new Action(SendStateToDashboard));
                     return;
                 }
@@ -431,6 +446,9 @@ public sealed class MainForm : Form
 
             await Task.Delay(500);
         }
+
+        _elevatedRetryPending = false;
+        _tunPermissionFailureSeen = false;
 
         BeginInvoke(new Action(() =>
         {
@@ -443,6 +461,41 @@ public sealed class MainForm : Form
         var running = _mihomo.IsRunning;
         _trayIcon.Text = running ? "Mihomo Dashboard - 运行中" : "Mihomo Dashboard - 未运行";
         SendStateToDashboard();
+    }
+
+    private void QueueStateRefresh(string? logEntry = null)
+    {
+        if (_elevatedRetryPending && IsTunPermissionFailure(logEntry))
+        {
+            _tunPermissionFailureSeen = true;
+        }
+
+        _stateRefreshPending = true;
+        if (!_stateRefreshTimer.Enabled)
+        {
+            _stateRefreshTimer.Start();
+        }
+    }
+
+    private void HandleTunPermissionFailure()
+    {
+        if (!_elevatedRetryPending || !_tunPermissionFailureSeen)
+        {
+            return;
+        }
+
+        _elevatedRetryPending = false;
+        _tunPermissionFailureSeen = false;
+        StopCore();
+        _ = ShowDashboardNoticeAsync("TUN 启动需要管理员权限，正在请求 UAC 提权启动内核。");
+        RelaunchAsAdministrator(startCore: true, startMinimized: ShouldKeepMinimizedForRelaunch(), elevatedRestart: true);
+    }
+
+    private static bool IsTunPermissionFailure(string? logEntry)
+    {
+        return !string.IsNullOrWhiteSpace(logEntry)
+            && (logEntry.Contains("Start TUN listening error", StringComparison.OrdinalIgnoreCase)
+                || logEntry.Contains("configure tun interface: Access is denied", StringComparison.OrdinalIgnoreCase));
     }
 
     private void SendStateToDashboard()
@@ -464,28 +517,30 @@ public sealed class MainForm : Form
             minimizeToTray = _settings.MinimizeToTray,
             autostart = _settings.Autostart,
             isCoreUpgrading = _coreUpgradeInProgress,
-            logText = TrimLog(_mihomo.LogText)
+            logText = _mihomo.GetLogTail(8000)
         };
-        var json = JsonSerializer.Serialize(state);
-        _ = _webView.CoreWebView2.ExecuteScriptAsync(
-            $"window.__mihomoApplyBackend && window.__mihomoApplyBackend({json}); window.__mihomoControlSetState && window.__mihomoControlSetState({json}); window.__mihomoStartupSetState && window.__mihomoStartupSetState({json});");
+        PostDashboardMessage(new { type = "state", state });
     }
 
-    private static string TrimLog(string log)
+    private Task ShowDashboardNoticeAsync(string message)
     {
-        const int maxLength = 8000;
-        return log.Length <= maxLength ? log : log[^maxLength..];
+        if (_webView.CoreWebView2 is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        PostDashboardMessage(new { type = "notice", message });
+        return Task.CompletedTask;
     }
 
-    private async Task ShowDashboardNoticeAsync(string message)
+    private void PostDashboardMessage(object message)
     {
         if (_webView.CoreWebView2 is null)
         {
             return;
         }
 
-        var text = JsonSerializer.Serialize(message);
-        await _webView.CoreWebView2.ExecuteScriptAsync($"window.__mihomoControlNotice ? window.__mihomoControlNotice({text}) : alert({text});");
+        _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
     }
 
     private void BrowseCorePath()
@@ -532,7 +587,7 @@ public sealed class MainForm : Form
             || WindowState == FormWindowState.Minimized;
     }
 
-    private void RelaunchAsAdministrator(bool startCore, bool startMinimized)
+    private void RelaunchAsAdministrator(bool startCore, bool startMinimized, bool elevatedRestart)
     {
         try
         {
@@ -544,6 +599,10 @@ public sealed class MainForm : Form
             if (startMinimized)
             {
                 arguments.Add("--minimized");
+            }
+            if (elevatedRestart)
+            {
+                arguments.Add("--elevated-restart");
             }
 
             var startInfo = new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
@@ -598,7 +657,7 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (!_allowClose && _settings.MinimizeToTray)
+        if (!_allowClose && _settings.MinimizeToTray && ShouldHideToTrayOnClose(e.CloseReason))
         {
             e.Cancel = true;
             HideToTray();
@@ -606,6 +665,11 @@ public sealed class MainForm : Form
         }
 
         base.OnFormClosing(e);
+    }
+
+    private static bool ShouldHideToTrayOnClose(CloseReason closeReason)
+    {
+        return closeReason is CloseReason.UserClosing or CloseReason.None;
     }
 
     private void HideToTray()
@@ -639,7 +703,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private void ShowFromTray()
+    public void ShowFromTray()
     {
         _trayMenu?.Close();
         if (Visible && WindowState != FormWindowState.Minimized)
@@ -686,12 +750,13 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
+            _mihomo.Dispose();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
+            _stateRefreshTimer.Dispose();
             _trayMenu?.Dispose();
             _trayIconImage.Dispose();
             _appIcon.Dispose();
-            _mihomo.Dispose();
             _dashboardServer.Dispose();
             _webView.Dispose();
         }
