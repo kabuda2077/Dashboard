@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
@@ -9,26 +8,6 @@ namespace MihomoDashboard;
 
 public sealed class MainForm : Form
 {
-    private const int TitleBarHeight = 38;
-    private const int ResizeBorder = 8;
-    private const int WmGetMinMaxInfo = 0x0024;
-    private const int WmNcLButtonDown = 0x00A1;
-    private const int WmNcHitTest = 0x0084;
-    private const int HtCaption = 2;
-    private const int HtClient = 1;
-    private const int HtLeft = 10;
-    private const int HtRight = 11;
-    private const int HtTop = 12;
-    private const int HtTopLeft = 13;
-    private const int HtTopRight = 14;
-    private const int HtBottom = 15;
-    private const int HtBottomLeft = 16;
-    private const int HtBottomRight = 17;
-    private const int DwmwaWindowCornerPreference = 33;
-    private const int DwmwcpDoNotRound = 1;
-    private const int DwmwcpRound = 2;
-    private static readonly IntPtr MonitorDefaultToNearest = new(2);
-
     private readonly AppSettings _settings;
     private readonly MihomoManager _mihomo = new();
     private readonly DashboardServer _dashboardServer;
@@ -36,7 +15,6 @@ public sealed class MainForm : Form
     private readonly Icon _appIcon;
     private readonly NotifyIcon _trayIcon;
     private readonly WebView2 _webView = new();
-    private WindowCaptionButton? _maximizeButton;
     private TrayMenuForm? _trayMenu;
     private Rectangle _trayRestoreBounds;
     private FormWindowState _trayRestoreWindowState = FormWindowState.Normal;
@@ -57,7 +35,7 @@ public sealed class MainForm : Form
         _dashboardUri = _dashboardServer.Start();
 
         Text = "Mihomo Dashboard";
-        FormBorderStyle = FormBorderStyle.None;
+        FormBorderStyle = FormBorderStyle.Sizable;
         BackColor = Color.FromArgb(244, 244, 245);
         MinimumSize = new Size(1120, 720);
         Size = new Size(1360, 840);
@@ -98,98 +76,9 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        var titleBar = CreateTitleBar();
         _webView.Dock = DockStyle.Fill;
         _webView.Margin = Padding.Empty;
-
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1,
-            Margin = Padding.Empty,
-            Padding = Padding.Empty
-        };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, TitleBarHeight));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.Controls.Add(titleBar, 0, 0);
-        layout.Controls.Add(_webView, 0, 1);
-        Controls.Add(layout);
-    }
-
-    private Control CreateTitleBar()
-    {
-        var titleBar = new Panel
-        {
-            BackColor = Color.FromArgb(244, 244, 245),
-            Dock = DockStyle.Fill,
-            Margin = Padding.Empty,
-            Padding = new Padding(12, 0, 0, 0)
-        };
-        titleBar.MouseDown += (_, e) => BeginWindowDrag(e);
-        titleBar.DoubleClick += (_, _) => ToggleMaximize();
-
-        var appIcon = new PictureBox
-        {
-            Image = _appIcon.ToBitmap(),
-            Size = new Size(18, 18),
-            SizeMode = PictureBoxSizeMode.StretchImage,
-            Location = new Point(11, 10)
-        };
-        appIcon.MouseDown += (_, e) => BeginWindowDrag(e);
-        titleBar.Controls.Add(appIcon);
-
-        var title = new Label
-        {
-            Text = Text,
-            AutoEllipsis = true,
-            BackColor = Color.Transparent,
-            ForeColor = Color.FromArgb(39, 39, 42),
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Regular, GraphicsUnit.Point),
-            Location = new Point(38, 0),
-            Size = new Size(280, TitleBarHeight),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-        title.MouseDown += (_, e) => BeginWindowDrag(e);
-        title.DoubleClick += (_, _) => ToggleMaximize();
-        titleBar.Controls.Add(title);
-
-        var minimizeButton = new WindowCaptionButton(WindowCaptionButtonKind.Minimize);
-        minimizeButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
-
-        _maximizeButton = new WindowCaptionButton(WindowCaptionButtonKind.Maximize);
-        _maximizeButton.Click += (_, _) => ToggleMaximize();
-
-        var closeButton = new WindowCaptionButton(WindowCaptionButtonKind.Close);
-        closeButton.Click += (_, _) => Close();
-
-        minimizeButton.Dock = DockStyle.Right;
-        _maximizeButton.Dock = DockStyle.Right;
-        closeButton.Dock = DockStyle.Right;
-        titleBar.Controls.Add(minimizeButton);
-        titleBar.Controls.Add(_maximizeButton);
-        titleBar.Controls.Add(closeButton);
-
-        return titleBar;
-    }
-
-    private void BeginWindowDrag(MouseEventArgs e)
-    {
-        if (e.Button != MouseButtons.Left)
-        {
-            return;
-        }
-
-        ReleaseCapture();
-        SendMessage(Handle, WmNcLButtonDown, HtCaption, 0);
-    }
-
-    private void ToggleMaximize()
-    {
-        WindowState = WindowState == FormWindowState.Maximized
-            ? FormWindowState.Normal
-            : FormWindowState.Maximized;
+        Controls.Add(_webView);
     }
 
     private void BindEvents()
@@ -802,33 +691,18 @@ public sealed class MainForm : Form
         }
     }
 
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        ApplyWindowCornerPreference();
-        UpdateMaximizedBounds();
-    }
-
     protected override void OnLocationChanged(EventArgs e)
     {
         base.OnLocationChanged(e);
         if (WindowState == FormWindowState.Normal)
         {
             RememberTrayRestoreState();
-            UpdateMaximizedBounds();
         }
     }
 
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
-        if (_maximizeButton is not null)
-        {
-            _maximizeButton.Kind = WindowState == FormWindowState.Maximized
-                ? WindowCaptionButtonKind.Restore
-                : WindowCaptionButtonKind.Maximize;
-        }
-        ApplyWindowCornerPreference();
 
         if (WindowState != FormWindowState.Minimized)
         {
@@ -839,110 +713,6 @@ public sealed class MainForm : Form
         {
             HideToTray();
         }
-    }
-
-    protected override void WndProc(ref Message m)
-    {
-        if (m.Msg == WmGetMinMaxInfo)
-        {
-            ApplyMaximizedSize(ref m);
-            return;
-        }
-
-        if (m.Msg == WmNcHitTest && WindowState == FormWindowState.Normal)
-        {
-            base.WndProc(ref m);
-            if ((int)m.Result == HtClient)
-            {
-                var hitTest = GetResizeHitTest(PointToClient(PointFromLParam(m.LParam)));
-                if (hitTest != HtClient)
-                {
-                    m.Result = (IntPtr)hitTest;
-                }
-            }
-
-            return;
-        }
-
-        base.WndProc(ref m);
-    }
-
-    private void UpdateMaximizedBounds()
-    {
-        if (IsHandleCreated)
-        {
-            MaximizedBounds = Screen.FromHandle(Handle).WorkingArea;
-        }
-    }
-
-    private void ApplyMaximizedSize(ref Message message)
-    {
-        var monitor = MonitorFromWindow(Handle, MonitorDefaultToNearest);
-        if (monitor == IntPtr.Zero)
-        {
-            base.WndProc(ref message);
-            return;
-        }
-
-        var monitorInfo = new MonitorInfo
-        {
-            Size = Marshal.SizeOf<MonitorInfo>()
-        };
-        if (!GetMonitorInfo(monitor, ref monitorInfo))
-        {
-            base.WndProc(ref message);
-            return;
-        }
-
-        var minMaxInfo = Marshal.PtrToStructure<MinMaxInfo>(message.LParam);
-        var workArea = monitorInfo.WorkArea;
-        var monitorArea = monitorInfo.MonitorArea;
-
-        minMaxInfo.MaxPosition.X = workArea.Left - monitorArea.Left;
-        minMaxInfo.MaxPosition.Y = workArea.Top - monitorArea.Top;
-        minMaxInfo.MaxSize.X = workArea.Right - workArea.Left;
-        minMaxInfo.MaxSize.Y = workArea.Bottom - workArea.Top;
-        minMaxInfo.MaxTrackSize.X = minMaxInfo.MaxSize.X;
-        minMaxInfo.MaxTrackSize.Y = minMaxInfo.MaxSize.Y;
-
-        Marshal.StructureToPtr(minMaxInfo, message.LParam, false);
-        message.Result = IntPtr.Zero;
-    }
-
-    private void ApplyWindowCornerPreference()
-    {
-        try
-        {
-            var preference = WindowState == FormWindowState.Maximized ? DwmwcpDoNotRound : DwmwcpRound;
-            _ = DwmSetWindowAttribute(Handle, DwmwaWindowCornerPreference, ref preference, Marshal.SizeOf<int>());
-        }
-        catch
-        {
-        }
-    }
-
-    private static Point PointFromLParam(IntPtr lParam)
-    {
-        var value = lParam.ToInt64();
-        return new Point(unchecked((short)(value & 0xffff)), unchecked((short)((value >> 16) & 0xffff)));
-    }
-
-    private int GetResizeHitTest(Point point)
-    {
-        var left = point.X < ResizeBorder;
-        var right = point.X >= Width - ResizeBorder;
-        var top = point.Y < ResizeBorder;
-        var bottom = point.Y >= Height - ResizeBorder;
-
-        if (top && left) return HtTopLeft;
-        if (top && right) return HtTopRight;
-        if (bottom && left) return HtBottomLeft;
-        if (bottom && right) return HtBottomRight;
-        if (left) return HtLeft;
-        if (right) return HtRight;
-        if (top) return HtTop;
-        if (bottom) return HtBottom;
-        return HtClient;
     }
 
     private void RememberTrayRestoreState()
@@ -1086,53 +856,4 @@ public sealed class MainForm : Form
         }
     }
 
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr SendMessage(IntPtr handle, int message, int wParam, int lParam);
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int attributeValue, int attributeSize);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr MonitorFromWindow(IntPtr handle, IntPtr flags);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo monitorInfo);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PointInfo
-    {
-        public int X;
-        public int Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MinMaxInfo
-    {
-        public PointInfo Reserved;
-        public PointInfo MaxSize;
-        public PointInfo MaxPosition;
-        public PointInfo MinTrackSize;
-        public PointInfo MaxTrackSize;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RectInfo
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    private struct MonitorInfo
-    {
-        public int Size;
-        public RectInfo MonitorArea;
-        public RectInfo WorkArea;
-        public int Flags;
-    }
 }
