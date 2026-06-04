@@ -6,6 +6,7 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $sourceFile = Join-Path $root "resources\dashboard\favicon.ico"
 $outDir = Join-Path $root "resources"
 $outFile = Join-Path $outDir "app.ico"
+$trayFile = Join-Path $outDir "tray.ico"
 
 if (-not (Test-Path $sourceFile)) {
     throw "zashboard favicon not found: $sourceFile"
@@ -62,6 +63,70 @@ function Resize-PngBytes {
     return ,$result
 }
 
+function ConvertTo-SolidColorPngBytes {
+    param(
+        [byte[]]$SourceBytes,
+        [System.Drawing.Color]$Color
+    )
+
+    $sourceStream = [System.IO.MemoryStream]::new($SourceBytes)
+    $sourceBitmap = [System.Drawing.Bitmap]::new($sourceStream)
+    $bitmap = [System.Drawing.Bitmap]::new($sourceBitmap.Width, $sourceBitmap.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+
+    for ($y = 0; $y -lt $sourceBitmap.Height; $y++) {
+        for ($x = 0; $x -lt $sourceBitmap.Width; $x++) {
+            $pixel = $sourceBitmap.GetPixel($x, $y)
+            $bitmap.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($pixel.A, $Color.R, $Color.G, $Color.B))
+        }
+    }
+
+    $outStream = [System.IO.MemoryStream]::new()
+    $bitmap.Save($outStream, [System.Drawing.Imaging.ImageFormat]::Png)
+    $result = $outStream.ToArray()
+
+    $outStream.Dispose()
+    $bitmap.Dispose()
+    $sourceBitmap.Dispose()
+    $sourceStream.Dispose()
+
+    return ,$result
+}
+
+function Write-IcoFile {
+    param(
+        [string]$Path,
+        [object[]]$Images
+    )
+
+    $writerStream = [System.IO.MemoryStream]::new()
+    $writer = [System.IO.BinaryWriter]::new($writerStream)
+    $writer.Write([UInt16]0)
+    $writer.Write([UInt16]1)
+    $writer.Write([UInt16]$Images.Count)
+
+    $offset = 6 + (16 * $Images.Count)
+    foreach ($image in $Images) {
+        $writer.Write([byte]($(if ($image.Size -eq 256) { 0 } else { $image.Size })))
+        $writer.Write([byte]($(if ($image.Size -eq 256) { 0 } else { $image.Size })))
+        $writer.Write([byte]0)
+        $writer.Write([byte]0)
+        $writer.Write([UInt16]1)
+        $writer.Write([UInt16]32)
+        $writer.Write([UInt32]$image.Bytes.Length)
+        $writer.Write([UInt32]$offset)
+        $offset += $image.Bytes.Length
+    }
+
+    foreach ($image in $Images) {
+        $writer.Write($image.Bytes)
+    }
+
+    $writer.Flush()
+    [System.IO.File]::WriteAllBytes($Path, $writerStream.ToArray())
+    $writer.Dispose()
+    $writerStream.Dispose()
+}
+
 $sourceImages = @(Get-IcoImages -Path $sourceFile)
 $largest = $sourceImages | Sort-Object Width -Descending | Select-Object -First 1
 if ($null -eq $largest) {
@@ -76,34 +141,16 @@ $images = foreach ($size in $sizes) {
     }
 }
 
+$trayImages = foreach ($image in $images) {
+    [PSCustomObject]@{
+        Size = $image.Size
+        Bytes = ConvertTo-SolidColorPngBytes -SourceBytes $image.Bytes -Color ([System.Drawing.Color]::White)
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-
-$writerStream = [System.IO.MemoryStream]::new()
-$writer = [System.IO.BinaryWriter]::new($writerStream)
-$writer.Write([UInt16]0)
-$writer.Write([UInt16]1)
-$writer.Write([UInt16]$images.Count)
-
-$offset = 6 + (16 * $images.Count)
-foreach ($image in $images) {
-    $writer.Write([byte]($(if ($image.Size -eq 256) { 0 } else { $image.Size })))
-    $writer.Write([byte]($(if ($image.Size -eq 256) { 0 } else { $image.Size })))
-    $writer.Write([byte]0)
-    $writer.Write([byte]0)
-    $writer.Write([UInt16]1)
-    $writer.Write([UInt16]32)
-    $writer.Write([UInt32]$image.Bytes.Length)
-    $writer.Write([UInt32]$offset)
-    $offset += $image.Bytes.Length
-}
-
-foreach ($image in $images) {
-    $writer.Write($image.Bytes)
-}
-
-$writer.Flush()
-[System.IO.File]::WriteAllBytes($outFile, $writerStream.ToArray())
-$writer.Dispose()
-$writerStream.Dispose()
+Write-IcoFile -Path $outFile -Images $images
+Write-IcoFile -Path $trayFile -Images $trayImages
 
 Write-Host "Synced zashboard icon to $outFile"
+Write-Host "Synced white tray icon to $trayFile"

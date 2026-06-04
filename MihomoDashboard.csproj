@@ -23,6 +23,9 @@
     <Content Include="resources\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="resources\tray.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <None Update="config\config.yaml.example" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

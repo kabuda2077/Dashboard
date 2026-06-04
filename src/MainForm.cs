@@ -13,6 +13,7 @@ public sealed class MainForm : Form
     private readonly DashboardServer _dashboardServer;
     private readonly Uri _dashboardUri;
     private readonly Icon _appIcon;
+    private readonly Icon _trayIconImage;
     private readonly NotifyIcon _trayIcon;
     private readonly WebView2 _webView = new();
     private TrayMenuForm? _trayMenu;
@@ -42,6 +43,7 @@ public sealed class MainForm : Form
         _trayRestoreBounds = Bounds;
         StartPosition = FormStartPosition.CenterScreen;
         _appIcon = LoadAppIcon();
+        _trayIconImage = LoadTrayIcon(_appIcon);
         Icon = _appIcon;
 
         _trayIcon = CreateTrayIcon();
@@ -91,7 +93,7 @@ public sealed class MainForm : Form
     {
         var icon = new NotifyIcon
         {
-            Icon = _appIcon,
+            Icon = _trayIconImage,
             Text = "Mihomo Dashboard",
             Visible = true
         };
@@ -823,6 +825,7 @@ public sealed class MainForm : Form
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _trayMenu?.Dispose();
+            _trayIconImage.Dispose();
             _appIcon.Dispose();
             _mihomo.Dispose();
             _dashboardServer.Dispose();
@@ -838,6 +841,14 @@ public sealed class MainForm : Form
         return File.Exists(iconPath)
             ? new Icon(iconPath)
             : Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? (Icon)SystemIcons.Application.Clone();
+    }
+
+    private static Icon LoadTrayIcon(Icon fallback)
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "resources", "tray.ico");
+        return File.Exists(iconPath)
+            ? new Icon(iconPath)
+            : (Icon)fallback.Clone();
     }
 
     private void SyncAutostartSetting()
