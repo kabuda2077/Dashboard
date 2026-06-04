@@ -137,35 +137,13 @@ $backendSettingsPath = Join-Path $sourceRoot 'src\components\settings\backend\Ba
 $backendSettings = [System.IO.File]::ReadAllText($backendSettingsPath).Replace("`r`n", "`n")
 $backendSettings = Replace-Required $backendSettings 'v-if="isCoreUpdateAvailable"' 'v-if="false && isCoreUpdateAvailable"' 'hide core upgrade indicator'
 $backendSettings = Replace-Required $backendSettings 'v-if="!activeBackend?.disableUpgradeCore"' 'v-if="false && !activeBackend?.disableUpgradeCore"' 'hide upgrade core button'
-$backendSettings = Replace-Required $backendSettings @'
-          <button
-            class="btn btn-sm"
-            @click="handlerClickRestartCore"
-          >
-'@ @'
-          <button
-            v-if="false"
-            class="btn btn-sm"
-            @click="handlerClickRestartCore"
-          >
-'@ 'hide restart core button'
+$backendSettings = Replace-Required $backendSettings '@click="handlerClickRestartCore"' "v-if=`"false`"`n            @click=`"handlerClickRestartCore`"" 'hide restart core button'
 Set-Utf8File -Path $backendSettingsPath -Content $backendSettings
 
 $zashboardSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\ZashboardSettings.vue'
 $zashboardSettings = [System.IO.File]::ReadAllText($zashboardSettingsPath).Replace("`r`n", "`n")
 $zashboardSettings = Replace-Required $zashboardSettings 'v-if="isUIUpdateAvailable"' 'v-if="false && isUIUpdateAvailable"' 'hide dashboard upgrade indicator'
-$zashboardSettings = Replace-Required $zashboardSettings @'
-      <button
-        :class="twMerge('btn btn-neutral btn-sm', isUIUpgrading ? 'animate-pulse' : '')"
-        @click="handlerClickUpgradeUI"
-      >
-'@ @'
-      <button
-        v-if="false"
-        :class="twMerge('btn btn-neutral btn-sm', isUIUpgrading ? 'animate-pulse' : '')"
-        @click="handlerClickUpgradeUI"
-      >
-'@ 'hide upgrade dashboard button'
+$zashboardSettings = Replace-Required $zashboardSettings '@click="handlerClickUpgradeUI"' "v-if=`"false`"`n        @click=`"handlerClickUpgradeUI`"" 'hide upgrade dashboard button'
 Set-Utf8File -Path $zashboardSettingsPath -Content $zashboardSettings
 
 $generalSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\GeneralSettings.vue'
