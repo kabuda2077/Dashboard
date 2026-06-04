@@ -61,10 +61,6 @@
       <div class="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
         <section class="base-container p-4">
           <h2 class="mb-4 text-base font-semibold">启动配置</h2>
-          <p class="bg-warning/10 text-warning-content mb-4 rounded-box p-3 text-sm leading-6">
-            如果配置启用了 TUN，启动内核时会自动请求管理员权限。看到 UAC 提示后允许即可；不需要 TUN 时也可以关闭配置里的 TUN。
-          </p>
-
           <div class="flex flex-col gap-3">
             <label class="form-control">
               <span class="label-text mb-1">内核路径</span>
@@ -145,7 +141,7 @@
                 />
               </label>
               <label class="flex items-center justify-between gap-3">
-                <span class="text-sm">关闭窗口时最小化到托盘</span>
+                <span class="text-sm">关闭窗口时隐藏到托盘</span>
                 <input
                   v-model="settings.minimizeToTray"
                   class="toggle toggle-sm"

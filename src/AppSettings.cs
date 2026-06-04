@@ -12,7 +12,7 @@ public sealed class AppSettings
     };
 
     public string CorePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "cores", "mihomo.exe");
-    public string ConfigPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "config", "config.yaml");
+    public string ConfigPath { get; set; } = DefaultConfigPath;
     public string DashboardApiUrl { get; set; } = "http://127.0.0.1:9090";
     public string Secret { get; set; } = "";
     public bool StartCoreOnLaunch { get; set; }
@@ -38,7 +38,9 @@ public sealed class AppSettings
         try
         {
             var json = File.ReadAllText(SettingsPath);
-            return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            settings.MigrateDefaultConfigPath();
+            return settings;
         }
         catch
         {
@@ -50,5 +52,27 @@ public sealed class AppSettings
     {
         Directory.CreateDirectory(SettingsDirectory);
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
+    }
+
+    private static string DefaultConfigPath => Path.Combine(AppContext.BaseDirectory, "config.yaml");
+
+    private static string LegacyDefaultConfigPath => Path.Combine(AppContext.BaseDirectory, "config", "config.yaml");
+
+    private void MigrateDefaultConfigPath()
+    {
+        if (string.IsNullOrWhiteSpace(ConfigPath)
+            || !IsSamePath(ConfigPath, LegacyDefaultConfigPath)
+            || File.Exists(ConfigPath))
+        {
+            return;
+        }
+
+        ConfigPath = DefaultConfigPath;
+        Save();
+    }
+
+    private static bool IsSamePath(string left, string right)
+    {
+        return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
     }
 }

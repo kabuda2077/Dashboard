@@ -11,5 +11,5 @@ _build_zashboard/
 dashboard-src/node_modules/
 dashboard-src/dist/
 .pnpm-store/
-config/config.yaml
+config.yaml
 cores/*.exe

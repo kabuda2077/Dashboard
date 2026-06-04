@@ -191,7 +191,7 @@ public sealed class MainForm : Form
         }
 
         query.Add($"secret={Uri.EscapeDataString(_settings.Secret)}");
-        query.Add("label=Mihomo%20Dashboard");
+        query.Add($"label={Uri.EscapeDataString("本机内核")}");
         query.Add("disableUpgradeCore=1");
 
         return string.Join("&", query);
@@ -579,10 +579,6 @@ public sealed class MainForm : Form
             RememberTrayRestoreState();
         }
 
-        if (WindowState == FormWindowState.Minimized && _settings.MinimizeToTray && !_trayTransitionInProgress)
-        {
-            HideToTray();
-        }
     }
 
     private void RememberTrayRestoreState()
