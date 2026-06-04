@@ -25,6 +25,7 @@ public sealed class MainForm : Form
     private bool _initialized;
     private bool _startMinimized;
     private bool _startCoreAfterLaunch;
+    private bool _coreUpgradeInProgress;
 
     public MainForm(bool startMinimized, bool startCoreAfterLaunch)
     {
@@ -120,8 +121,9 @@ public sealed class MainForm : Form
         _trayMenu = new TrayMenuForm(new[]
         {
             new TrayMenuItem("显示窗口", ShowFromTray),
-            new TrayMenuItem("启动内核", StartCore, Enabled: !isRunning),
-            new TrayMenuItem("停止内核", () => StopCore(showTrayNotification: true), Enabled: isRunning),
+            new TrayMenuItem("启动内核", StartCore, Enabled: !isRunning && !_coreUpgradeInProgress),
+            new TrayMenuItem("重启内核", RestartCore, Enabled: isRunning && !_coreUpgradeInProgress),
+            new TrayMenuItem("停止内核", () => StopCore(showTrayNotification: true), Enabled: isRunning && !_coreUpgradeInProgress),
             TrayMenuItem.Separator(),
             new TrayMenuItem("退出", ExitApplication)
         });
@@ -214,8 +216,16 @@ public sealed class MainForm : Form
                     SaveSettingsFromMessage(root, showMessage: false);
                     StartCore();
                     break;
+                case "restart":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    RestartCore();
+                    break;
                 case "stop":
                     StopCore();
+                    break;
+                case "upgradeCore":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    await UpgradeCoreAsync();
                     break;
                 case "reload":
                     SaveSettingsFromMessage(root, showMessage: false);
@@ -328,6 +338,73 @@ public sealed class MainForm : Form
         }
     }
 
+    private void RestartCore()
+    {
+        try
+        {
+            if (!_mihomo.IsRunning)
+            {
+                StartCore();
+                return;
+            }
+
+            _mihomo.Stop();
+            StartCore();
+            _ = ShowDashboardNoticeAsync("内核已重启。");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "重启失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            SendStateToDashboard();
+        }
+    }
+
+    private async Task UpgradeCoreAsync()
+    {
+        if (_coreUpgradeInProgress)
+        {
+            return;
+        }
+
+        var wasRunning = _mihomo.IsRunning;
+        _coreUpgradeInProgress = true;
+        SendStateToDashboard();
+        await ShowDashboardNoticeAsync("正在升级内核，请稍候。");
+
+        try
+        {
+            if (wasRunning)
+            {
+                _mihomo.Stop();
+            }
+
+            var result = await CoreUpdater.UpgradeLatestAsync(_settings.CorePath);
+            await ShowDashboardNoticeAsync($"内核已升级到 {result.Version}。");
+            _trayIcon.ShowBalloonTip(2200, "Mihomo Dashboard", "内核已升级", ToolTipIcon.Info);
+
+            if (wasRunning)
+            {
+                StartCore();
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "升级内核失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (wasRunning && !_mihomo.IsRunning)
+            {
+                StartCore();
+            }
+        }
+        finally
+        {
+            _coreUpgradeInProgress = false;
+            SendStateToDashboard();
+        }
+    }
+
     private async Task WaitForApiAndNotifyAsync()
     {
         using var client = new HttpClient();
@@ -386,6 +463,7 @@ public sealed class MainForm : Form
             startCoreOnLaunch = _settings.StartCoreOnLaunch,
             minimizeToTray = _settings.MinimizeToTray,
             autostart = _settings.Autostart,
+            isCoreUpgrading = _coreUpgradeInProgress,
             logText = TrimLog(_mihomo.LogText)
         };
         var json = JsonSerializer.Serialize(state);

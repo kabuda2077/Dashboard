@@ -6,7 +6,8 @@
 
 - 在 GitHub Actions 中构建 `Zephyruso/zashboard` 源码，并加入原生 `内核` 路由。
 - 启动、停止 mihomo 内核，并显示 stdout/stderr 日志。
-- 系统托盘图标，支持显示窗口、启动内核、停止内核、退出。
+- 重启 mihomo 内核，或从 `MetaCubeX/mihomo` 最新 release 升级 Windows x64 内核。
+- 系统托盘图标，支持显示窗口、启动内核、重启内核、停止内核、退出。
 - 当前用户开机自启，写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，不需要管理员权限。
 - 应用设置保存在 `%LOCALAPPDATA%\MihomoDashboard\settings.json`。
 
@@ -69,6 +70,10 @@ dotnet publish -c Release -r win-x64 --self-contained false
 zashboard 本身仍然通过 Clash/Mihomo external-controller API 工作。应用会启动一个本地临时端口来托管 zashboard 静态文件，并默认把 API 地址设置为 `http://127.0.0.1:9090`。
 
 内核启动/停止、路径设置、日志和开机自启控件会作为 zashboard 原生路由集成在侧栏的 `内核` 页面中。应用打开后会直接进入这个页面；内核启动成功后，侧栏会保留 `内核`、`概览`、`代理`、`连接` 等页面入口。
+
+内核的启动、停止、重启和升级由桌面应用统一管理；zashboard 原生的升级核心、重启核心、升级面板和自动升级面板入口会在构建时隐藏，避免和便携包内置资源产生冲突。面板更新请通过 GitHub Actions 下载新的便携包。
+
+内核升级默认优先选择 `mihomo-windows-amd64-v3-go125-*.zip`。如果当前 release 没有这个构建，会自动回退到其他 Windows x64 构建。
 
 如果配置启用了 TUN，点击 `启动内核` 时应用会自动请求管理员权限并在提权后继续启动内核。
 

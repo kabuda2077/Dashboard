@@ -18,17 +18,35 @@
         <div class="flex flex-wrap gap-2">
           <button
             class="btn btn-primary btn-sm"
-            :disabled="runtime.isRunning"
+            :disabled="runtime.isRunning || runtime.isCoreUpgrading"
             @click="startCore"
           >
             启动内核
           </button>
           <button
+            class="btn btn-sm"
+            :disabled="!runtime.isRunning || runtime.isCoreUpgrading"
+            @click="post({ ...collect(), type: 'restart' })"
+          >
+            重启内核
+          </button>
+          <button
             class="btn btn-warning btn-sm"
-            :disabled="!runtime.isRunning"
+            :disabled="!runtime.isRunning || runtime.isCoreUpgrading"
             @click="post({ type: 'stop' })"
           >
             停止内核
+          </button>
+          <button
+            class="btn btn-secondary btn-sm"
+            :disabled="runtime.isCoreUpgrading"
+            @click="post({ ...collect(), type: 'upgradeCore' })"
+          >
+            <span
+              v-if="runtime.isCoreUpgrading"
+              class="loading loading-spinner loading-xs"
+            />
+            {{ runtime.isCoreUpgrading ? '升级中' : '升级内核' }}
           </button>
         </div>
       </section>
@@ -170,6 +188,7 @@ type CoreState = {
   startCoreOnLaunch?: boolean
   minimizeToTray?: boolean
   autostart?: boolean
+  isCoreUpgrading?: boolean
   logText?: string
 }
 
@@ -186,6 +205,7 @@ type WebViewWindow = Window & {
 const runtime = reactive({
   isRunning: false,
   processId: null as number | null,
+  isCoreUpgrading: false,
   logText: '',
 })
 
@@ -227,6 +247,7 @@ const saveSettings = () => {
 const setState = (state: CoreState) => {
   runtime.isRunning = !!state.isRunning
   runtime.processId = state.processId ?? null
+  runtime.isCoreUpgrading = !!state.isCoreUpgrading
   runtime.logText = state.logText ?? ''
   settings.corePath = state.corePath ?? ''
   settings.configPath = state.configPath ?? ''

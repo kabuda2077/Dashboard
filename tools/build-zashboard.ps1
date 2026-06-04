@@ -71,6 +71,12 @@ type HostWindow = Window & {
   __mihomoApplyBackend?: (state: HostState) => void
 }
 
+const disableSelfManagedUpdates = () => {
+  localStorage.setItem('config/auto-upgrade', 'false')
+  localStorage.setItem('config/check-upgrade-core', 'false')
+  localStorage.setItem('config/auto-upgrade-core', 'false')
+}
+
 const normalizePath = (pathname: string) => {
   const path = pathname.replace(/\/$/, '')
   return path === '' || path === '/' ? '' : path
@@ -100,6 +106,7 @@ const applyBackend = (backend: Omit<Backend, 'uuid'> | null) => {
   addBackend(backend)
 }
 
+disableSelfManagedUpdates()
 applyBackend(getBackendFromUrl())
 
 ;(window as HostWindow).__mihomoApplyBackend = (state) => {
@@ -125,6 +132,46 @@ $mainPath = Join-Path $sourceRoot 'src\main.ts'
 $main = [System.IO.File]::ReadAllText($mainPath).Replace("`r`n", "`n")
 $main = Replace-Required $main "import App from './App.vue'`n" "import App from './App.vue'`nimport './hostBootstrap'`n" 'host bootstrap import'
 Set-Utf8File -Path $mainPath -Content $main
+
+$backendSettingsPath = Join-Path $sourceRoot 'src\components\settings\backend\BackendSettings.vue'
+$backendSettings = [System.IO.File]::ReadAllText($backendSettingsPath).Replace("`r`n", "`n")
+$backendSettings = Replace-Required $backendSettings 'v-if="isCoreUpdateAvailable"' 'v-if="false && isCoreUpdateAvailable"' 'hide core upgrade indicator'
+$backendSettings = Replace-Required $backendSettings 'v-if="!activeBackend?.disableUpgradeCore"' 'v-if="false && !activeBackend?.disableUpgradeCore"' 'hide upgrade core button'
+$backendSettings = Replace-Required $backendSettings @'
+          <button
+            class="btn btn-sm"
+            @click="handlerClickRestartCore"
+          >
+'@ @'
+          <button
+            v-if="false"
+            class="btn btn-sm"
+            @click="handlerClickRestartCore"
+          >
+'@ 'hide restart core button'
+Set-Utf8File -Path $backendSettingsPath -Content $backendSettings
+
+$zashboardSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\ZashboardSettings.vue'
+$zashboardSettings = [System.IO.File]::ReadAllText($zashboardSettingsPath).Replace("`r`n", "`n")
+$zashboardSettings = Replace-Required $zashboardSettings 'v-if="isUIUpdateAvailable"' 'v-if="false && isUIUpdateAvailable"' 'hide dashboard upgrade indicator'
+$zashboardSettings = Replace-Required $zashboardSettings @'
+      <button
+        :class="twMerge('btn btn-neutral btn-sm', isUIUpgrading ? 'animate-pulse' : '')"
+        @click="handlerClickUpgradeUI"
+      >
+'@ @'
+      <button
+        v-if="false"
+        :class="twMerge('btn btn-neutral btn-sm', isUIUpgrading ? 'animate-pulse' : '')"
+        @click="handlerClickUpgradeUI"
+      >
+'@ 'hide upgrade dashboard button'
+Set-Utf8File -Path $zashboardSettingsPath -Content $zashboardSettings
+
+$generalSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\GeneralSettings.vue'
+$generalSettings = [System.IO.File]::ReadAllText($generalSettingsPath).Replace("`r`n", "`n")
+$generalSettings = Replace-Required $generalSettings 'v-if="isVisibleAutoUpgrade"' 'v-if="false && isVisibleAutoUpgrade"' 'hide auto upgrade dashboard setting'
+Set-Utf8File -Path $generalSettingsPath -Content $generalSettings
 
 $translations = @(
     @{ Path = 'src\i18n\en.ts'; Value = 'Core' },
