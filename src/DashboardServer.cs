@@ -6,6 +6,7 @@ namespace MihomoDashboard;
 
 public sealed class DashboardServer : IDisposable
 {
+    private const int PreferredPort = 33291;
     private static readonly TimeSpan RequestReadTimeout = TimeSpan.FromSeconds(5);
 
     private readonly string _root;
@@ -19,13 +20,29 @@ public sealed class DashboardServer : IDisposable
 
     public Uri Start()
     {
-        _listener = new TcpListener(IPAddress.Loopback, 0);
-        _listener.Start();
+        _listener = StartListener(PreferredPort);
         var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => ListenAsync(_cts.Token));
         return new Uri($"http://127.0.0.1:{port}/");
+    }
+
+    private static TcpListener StartListener(int preferredPort)
+    {
+        var listener = new TcpListener(IPAddress.Loopback, preferredPort);
+        try
+        {
+            listener.Start();
+            return listener;
+        }
+        catch
+        {
+            listener.Stop();
+            listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            return listener;
+        }
     }
 
     private async Task ListenAsync(CancellationToken token)

@@ -308,6 +308,15 @@ public sealed class MainForm : Form
     {
         try
         {
+            if (!_mihomo.IsRunning && !IsRunningAsAdministrator())
+            {
+                _elevatedRetryPending = false;
+                _tunPermissionFailureSeen = false;
+                _ = ShowDashboardNoticeAsync("启动内核需要管理员权限，正在请求 UAC 提权启动。");
+                RelaunchAsAdministrator(startCore: true, startMinimized: ShouldKeepMinimizedForRelaunch(), elevatedRestart: true);
+                return;
+            }
+
             _elevatedRetryPending = !IsRunningAsAdministrator();
             _tunPermissionFailureSeen = false;
             _mihomo.Start(_settings);
