@@ -1,6 +1,6 @@
 <template>
-  <div class="h-full overflow-x-hidden overflow-y-auto p-3 lg:overflow-hidden">
-    <div class="mx-auto flex min-h-full max-w-5xl flex-col gap-3 lg:h-full lg:min-h-0">
+  <div class="h-full overflow-x-hidden overflow-y-auto p-3">
+    <div class="mx-auto flex max-w-5xl flex-col gap-3">
       <section class="base-container flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
         <div class="flex items-center gap-3">
           <span
@@ -58,8 +58,8 @@
         {{ notice }}
       </div>
 
-      <div class="grid gap-3 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
-        <section class="base-container p-4 lg:min-h-0 lg:overflow-y-auto">
+      <div class="grid items-start gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
+        <section class="base-container p-4">
           <h2 class="mb-4 text-base font-semibold">启动配置</h2>
           <div class="flex flex-col gap-3">
             <label class="form-control">
@@ -162,7 +162,7 @@
           </div>
         </section>
 
-        <section class="base-container flex min-h-[360px] flex-col p-4 lg:min-h-0">
+        <section class="base-container flex min-h-[360px] flex-col p-4 lg:h-full">
           <h2 class="mb-4 text-base font-semibold">内核日志</h2>
           <pre class="bg-base-300/60 text-base-content/80 max-h-[420px] min-h-0 flex-1 overflow-auto rounded-box p-3 text-xs leading-5 whitespace-pre-wrap lg:max-h-none">{{ runtime.logText || '暂无日志' }}</pre>
         </section>
