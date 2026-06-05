@@ -30,6 +30,10 @@ public sealed class MainForm : Form
     private bool _elevatedRetryPending;
     private bool _tunPermissionFailureSeen;
     private bool _stateRefreshPending;
+    private bool _dashboardStateDirty;
+    private bool _webViewSuspended;
+    private int _dashboardSuspendVersion;
+    private string? _pendingDashboardNotice;
     private readonly System.Windows.Forms.Timer _stateRefreshTimer = new() { Interval = 150 };
 
     public MainForm(bool startMinimized, bool startCoreAfterLaunch)
@@ -103,7 +107,15 @@ public sealed class MainForm : Form
             }
 
             _stateRefreshPending = false;
-            SendStateToDashboard();
+            if (ShouldHoldDashboardUpdates())
+            {
+                _dashboardStateDirty = true;
+            }
+            else
+            {
+                SendStateToDashboard();
+            }
+
             HandleTunPermissionFailure();
         };
         _iconCache.CacheChanged += (_, _) => BeginInvoke(new Action(SendStateToDashboard));
@@ -501,6 +513,12 @@ public sealed class MainForm : Form
         }
 
         _stateRefreshPending = true;
+        if (ShouldHoldDashboardUpdates() && !_elevatedRetryPending)
+        {
+            _dashboardStateDirty = true;
+            return;
+        }
+
         if (!_stateRefreshTimer.Enabled)
         {
             _stateRefreshTimer.Start();
@@ -532,6 +550,13 @@ public sealed class MainForm : Form
     {
         if (_webView.CoreWebView2 is null)
         {
+            _dashboardStateDirty = true;
+            return;
+        }
+
+        if (ShouldHoldDashboardUpdates())
+        {
+            _dashboardStateDirty = true;
             return;
         }
 
@@ -551,6 +576,14 @@ public sealed class MainForm : Form
             iconCacheMap = _iconCache.GetDashboardMap(_dashboardUri)
         };
         PostDashboardMessage(new { type = "state", state });
+        _dashboardStateDirty = false;
+
+        if (!string.IsNullOrWhiteSpace(_pendingDashboardNotice))
+        {
+            var message = _pendingDashboardNotice;
+            _pendingDashboardNotice = null;
+            PostDashboardMessage(new { type = "notice", message });
+        }
     }
 
     private Task ShowDashboardNoticeAsync(string message)
@@ -560,8 +593,104 @@ public sealed class MainForm : Form
             return Task.CompletedTask;
         }
 
+        if (ShouldHoldDashboardUpdates())
+        {
+            _pendingDashboardNotice = message;
+            return Task.CompletedTask;
+        }
+
         PostDashboardMessage(new { type = "notice", message });
         return Task.CompletedTask;
+    }
+
+    private bool ShouldHoldDashboardUpdates()
+    {
+        return _webViewSuspended
+            || _hiddenToTray
+            || !Visible
+            || WindowState == FormWindowState.Minimized;
+    }
+
+    private async void SuspendDashboard()
+    {
+        if (_webViewSuspended || _webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var coreWebView = _webView.CoreWebView2;
+        var suspendVersion = ++_dashboardSuspendVersion;
+        _stateRefreshTimer.Stop();
+        _dashboardStateDirty = true;
+
+        try
+        {
+            var suspended = await coreWebView.TrySuspendAsync();
+            if (suspendVersion != _dashboardSuspendVersion || !ShouldHoldDashboardUpdates())
+            {
+                if (suspended)
+                {
+                    coreWebView.Resume();
+                }
+
+                return;
+            }
+
+            _webViewSuspended = suspended;
+        }
+        catch
+        {
+            _webViewSuspended = false;
+        }
+    }
+
+    private void ResumeDashboard()
+    {
+        if (_webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        _dashboardSuspendVersion++;
+
+        try
+        {
+            if (_webViewSuspended)
+            {
+                _webView.CoreWebView2.Resume();
+                _webViewSuspended = false;
+            }
+        }
+        catch
+        {
+            _webViewSuspended = false;
+        }
+
+        FlushDashboardUpdates();
+    }
+
+    private void FlushDashboardUpdates()
+    {
+        if (ShouldHoldDashboardUpdates())
+        {
+            return;
+        }
+
+        if (_stateRefreshPending || _dashboardStateDirty)
+        {
+            _stateRefreshTimer.Stop();
+            _stateRefreshPending = false;
+            SendStateToDashboard();
+            HandleTunPermissionFailure();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_pendingDashboardNotice))
+        {
+            var message = _pendingDashboardNotice;
+            _pendingDashboardNotice = null;
+            PostDashboardMessage(new { type = "notice", message });
+        }
     }
 
     private void PostDashboardMessage(object message)
@@ -718,6 +847,7 @@ public sealed class MainForm : Form
         if (WindowState != FormWindowState.Minimized)
         {
             RememberTrayRestoreState();
+            FlushDashboardUpdates();
         }
 
     }
@@ -769,14 +899,15 @@ public sealed class MainForm : Form
         try
         {
             Opacity = 0;
-            ShowInTaskbar = false;
-            Hide();
-            if (WindowState == FormWindowState.Minimized)
+            _hiddenToTray = true;
+            if (WindowState != FormWindowState.Minimized)
             {
-                WindowState = FormWindowState.Normal;
+                WindowState = FormWindowState.Minimized;
             }
 
-            _hiddenToTray = true;
+            ShowInTaskbar = false;
+            Hide();
+            SuspendDashboard();
         }
         finally
         {
@@ -790,10 +921,12 @@ public sealed class MainForm : Form
         _trayMenu?.Close();
         if (Visible && WindowState != FormWindowState.Minimized)
         {
+            ResumeDashboard();
             Activate();
             return;
         }
 
+        ResumeDashboard();
         _trayTransitionInProgress = true;
         var previousOpacity = Opacity;
         try
@@ -813,6 +946,7 @@ public sealed class MainForm : Form
             }
 
             _hiddenToTray = false;
+            ResumeDashboard();
             Activate();
             BeginInvoke(new Action(() => Opacity = previousOpacity));
         }

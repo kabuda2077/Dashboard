@@ -5,12 +5,16 @@ namespace Dashboard;
 
 public sealed class TrayMenuForm : Form
 {
-    private const int CsDropShadow = 0x00020000;
-    private const int CornerRadius = 14;
-    private const int MenuWidth = 260;
-    private const int OuterPadding = 8;
-    private const int ItemHeight = 44;
-    private const int SeparatorHeight = 12;
+    private const int WsExLayered = 0x00080000;
+    private const int UlwAlpha = 0x00000002;
+    private const byte AcSrcOver = 0x00;
+    private const byte AcSrcAlpha = 0x01;
+    private const int ShadowPadding = 14;
+    private const int CornerRadius = 15;
+    private const int MenuWidth = 220;
+    private const int ContentPadding = 6;
+    private const int ItemHeight = 38;
+    private const int SeparatorHeight = 11;
 
     private readonly List<TrayMenuItem> _items;
     private readonly Font _menuFont;
@@ -19,19 +23,20 @@ public sealed class TrayMenuForm : Form
     public TrayMenuForm(IEnumerable<TrayMenuItem> items)
     {
         _items = items.ToList();
-        _menuFont = new Font("Segoe UI", 10f, FontStyle.Regular, GraphicsUnit.Point);
+        _menuFont = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold, GraphicsUnit.Point);
 
         AutoScaleMode = AutoScaleMode.None;
-        BackColor = Color.FromArgb(250, 250, 252);
-        DoubleBuffered = true;
+        BackColor = Color.Black;
         Font = _menuFont;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         TopMost = true;
 
-        var height = OuterPadding * 2 + _items.Sum(item => item.IsSeparator ? SeparatorHeight : ItemHeight);
-        Size = new Size(MenuWidth, height);
+        var height = ShadowPadding * 2
+            + ContentPadding * 2
+            + _items.Sum(item => item.IsSeparator ? SeparatorHeight : ItemHeight);
+        Size = new Size(MenuWidth + ShadowPadding * 2, height);
     }
 
     protected override CreateParams CreateParams
@@ -39,7 +44,7 @@ public sealed class TrayMenuForm : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ClassStyle |= CsDropShadow;
+            cp.ExStyle |= WsExLayered;
             return cp;
         }
     }
@@ -52,6 +57,8 @@ public sealed class TrayMenuForm : Form
         x = Math.Max(screen.Left + 8, x);
         y = Math.Max(screen.Top + 8, y);
         Location = new Point(x, y);
+        _ = Handle;
+        RenderLayeredMenu();
         Show();
         Activate();
     }
@@ -75,8 +82,10 @@ public sealed class TrayMenuForm : Form
     protected override void OnSizeChanged(EventArgs e)
     {
         base.OnSizeChanged(e);
-        using var region = CreateRoundRectRgn(0, 0, Width + 1, Height + 1, CornerRadius, CornerRadius);
-        Region = System.Drawing.Region.FromHrgn(region.Handle);
+        if (IsHandleCreated)
+        {
+            RenderLayeredMenu();
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -89,14 +98,14 @@ public sealed class TrayMenuForm : Form
         }
 
         _hoverIndex = nextHover;
-        Invalidate();
+        RenderLayeredMenu();
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
         _hoverIndex = -1;
-        Invalidate();
+        RenderLayeredMenu();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -120,15 +129,42 @@ public sealed class TrayMenuForm : Form
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e);
+        if (DesignMode)
+        {
+            base.OnPaint(e);
+        }
+    }
 
-        var g = e.Graphics;
+    private void RenderLayeredMenu()
+    {
+        if (!IsHandleCreated || Width <= 0 || Height <= 0)
+        {
+            return;
+        }
+
+        using var bitmap = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        using var g = Graphics.FromImage(bitmap);
+        g.Clear(Color.Transparent);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-        using var background = new SolidBrush(BackColor);
-        g.FillRectangle(background, ClientRectangle);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-        var y = OuterPadding;
+        var menuBounds = new Rectangle(ShadowPadding, ShadowPadding, MenuWidth, Height - ShadowPadding * 2);
+        DrawShadow(g, menuBounds);
+
+        using (var background = new SolidBrush(Color.White))
+        using (var path = RoundedRect(menuBounds, CornerRadius))
+        {
+            g.FillPath(background, path);
+        }
+
+        using (var borderPen = new Pen(Color.FromArgb(236, 238, 241)))
+        using (var borderPath = RoundedRect(Rectangle.Inflate(menuBounds, -1, -1), CornerRadius - 1))
+        {
+            g.DrawPath(borderPen, borderPath);
+        }
+
+        var y = ShadowPadding + ContentPadding;
         for (var i = 0; i < _items.Count; i++)
         {
             var item = _items[i];
@@ -139,34 +175,65 @@ public sealed class TrayMenuForm : Form
                 continue;
             }
 
-            DrawItem(g, item, i, new Rectangle(OuterPadding, y, Width - OuterPadding * 2, ItemHeight));
+            DrawItem(g, item, i, new Rectangle(
+                ShadowPadding + ContentPadding,
+                y,
+                MenuWidth - ContentPadding * 2,
+                ItemHeight));
             y += ItemHeight;
         }
+
+        ApplyLayeredBitmap(bitmap);
     }
 
     private void DrawItem(Graphics g, TrayMenuItem item, int index, Rectangle bounds)
     {
+        var itemBackColor = Color.White;
         if (index == _hoverIndex && item.Enabled)
         {
-            using var hoverBrush = new SolidBrush(Color.FromArgb(242, 242, 245));
-            using var path = RoundedRect(bounds, 8);
+            itemBackColor = Color.FromArgb(245, 246, 248);
+            using var hoverBrush = new SolidBrush(itemBackColor);
+            using var path = RoundedRect(bounds, 9);
             g.FillPath(hoverBrush, path);
         }
 
         var textColor = item.Enabled ? Color.FromArgb(39, 39, 42) : Color.FromArgb(161, 161, 170);
-        var textRect = new Rectangle(bounds.Left + 18, bounds.Top, bounds.Width - 36, bounds.Height);
-        TextRenderer.DrawText(g, item.Text, Font, textRect, textColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        var textRect = new Rectangle(bounds.Left + 20, bounds.Top, bounds.Width - 40, bounds.Height);
+        TextRenderer.DrawText(
+            g,
+            item.Text,
+            Font,
+            textRect,
+            textColor,
+            itemBackColor,
+            TextFormatFlags.Left
+                | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.EndEllipsis
+                | TextFormatFlags.NoPrefix
+                | TextFormatFlags.PreserveGraphicsClipping);
     }
 
     private void DrawSeparator(Graphics g, int y)
     {
-        using var pen = new Pen(Color.FromArgb(228, 228, 231));
-        g.DrawLine(pen, OuterPadding + 10, y + SeparatorHeight / 2, Width - OuterPadding - 10, y + SeparatorHeight / 2);
+        using var pen = new Pen(Color.FromArgb(229, 232, 236));
+        g.DrawLine(
+            pen,
+            ShadowPadding,
+            y + SeparatorHeight / 2,
+            ShadowPadding + MenuWidth,
+            y + SeparatorHeight / 2);
     }
 
     private int HitTest(Point point)
     {
-        var y = OuterPadding;
+        var contentLeft = ShadowPadding + ContentPadding;
+        var contentRight = ShadowPadding + MenuWidth - ContentPadding;
+        if (point.X < contentLeft || point.X >= contentRight)
+        {
+            return -1;
+        }
+
+        var y = ShadowPadding + ContentPadding;
         for (var i = 0; i < _items.Count; i++)
         {
             var height = _items[i].IsSeparator ? SeparatorHeight : ItemHeight;
@@ -179,6 +246,28 @@ public sealed class TrayMenuForm : Form
         }
 
         return -1;
+    }
+
+    private static void DrawShadow(Graphics g, Rectangle menuBounds)
+    {
+        var shadowBounds = menuBounds;
+        shadowBounds.Offset(0, 2);
+
+        var shadowLayers = new[]
+        {
+            (spread: 12, alpha: 2),
+            (spread: 9, alpha: 4),
+            (spread: 6, alpha: 5),
+            (spread: 3, alpha: 5)
+        };
+
+        foreach (var layer in shadowLayers)
+        {
+            var bounds = Rectangle.Inflate(shadowBounds, layer.spread, layer.spread);
+            using var brush = new SolidBrush(Color.FromArgb(layer.alpha, 24, 24, 27));
+            using var path = RoundedRect(bounds, CornerRadius + layer.spread);
+            g.FillPath(brush, path);
+        }
     }
 
     private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
@@ -198,35 +287,101 @@ public sealed class TrayMenuForm : Form
         return path;
     }
 
+    private void ApplyLayeredBitmap(Bitmap bitmap)
+    {
+        var screenDc = GetDC(IntPtr.Zero);
+        var memoryDc = CreateCompatibleDC(screenDc);
+        var bitmapHandle = bitmap.GetHbitmap(Color.FromArgb(0));
+        var oldBitmap = SelectObject(memoryDc, bitmapHandle);
+
+        try
+        {
+            var topLeft = new NativePoint(Left, Top);
+            var size = new NativeSize(bitmap.Width, bitmap.Height);
+            var source = new NativePoint(0, 0);
+            var blend = new BlendFunction
+            {
+                BlendOp = AcSrcOver,
+                BlendFlags = 0,
+                SourceConstantAlpha = 255,
+                AlphaFormat = AcSrcAlpha
+            };
+
+            UpdateLayeredWindow(Handle, screenDc, ref topLeft, ref size, memoryDc, ref source, 0, ref blend, UlwAlpha);
+        }
+        finally
+        {
+            SelectObject(memoryDc, oldBitmap);
+            DeleteObject(bitmapHandle);
+            DeleteDC(memoryDc);
+            ReleaseDC(IntPtr.Zero, screenDc);
+        }
+    }
+
     [DllImport("gdi32.dll")]
     private static extern bool DeleteObject(IntPtr hObject);
 
-    private sealed class SafeRegionHandle : IDisposable
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hObject);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UpdateLayeredWindow(
+        IntPtr hwnd,
+        IntPtr hdcDst,
+        ref NativePoint pptDst,
+        ref NativeSize psize,
+        IntPtr hdcSrc,
+        ref NativePoint pptSrc,
+        int crKey,
+        ref BlendFunction pblend,
+        int dwFlags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
     {
-        public SafeRegionHandle(IntPtr handle)
+        public NativePoint(int x, int y)
         {
-            Handle = handle;
+            X = x;
+            Y = y;
         }
 
-        public IntPtr Handle { get; }
-
-        public void Dispose()
-        {
-            if (Handle != IntPtr.Zero)
-            {
-                DeleteObject(Handle);
-            }
-        }
+        public int X;
+        public int Y;
     }
 
-    private static SafeRegionHandle CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height)
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeSize
     {
-        return new SafeRegionHandle(CreateRoundRectRgnNative(left, top, right, bottom, width, height));
+        public NativeSize(int cx, int cy)
+        {
+            Cx = cx;
+            Cy = cy;
+        }
+
+        public int Cx;
+        public int Cy;
     }
 
-    [DllImport("gdi32.dll", EntryPoint = "CreateRoundRectRgn", SetLastError = true)]
-    private static extern IntPtr CreateRoundRectRgnNative(int left, int top, int right, int bottom, int width, int height);
-
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct BlendFunction
+    {
+        public byte BlendOp;
+        public byte BlendFlags;
+        public byte SourceConstantAlpha;
+        public byte AlphaFormat;
+    }
 }
 
 public sealed record TrayMenuItem(string Text, Action? Action = null, bool Enabled = true, bool IsSeparator = false)
