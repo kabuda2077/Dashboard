@@ -161,9 +161,7 @@ public sealed class MainForm : Form
     {
         try
         {
-            Directory.CreateDirectory(AppSettings.WebView2Directory);
-            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: AppSettings.WebView2Directory);
-            await _webView.EnsureCoreWebView2Async(environment);
+            await _webView.EnsureCoreWebView2Async();
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
             _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
@@ -247,22 +245,19 @@ public sealed class MainForm : Form
                     SaveSettingsFromMessage(root, showMessage: false);
                     await UpgradeCoreAsync();
                     break;
-                case "reload":
-                    SaveSettingsFromMessage(root, showMessage: false);
-                    if (_mihomo.IsRunning)
-                    {
-                        _ = WaitForApiAndNotifyAsync();
-                    }
-                    else
-                    {
-                        await ShowDashboardNoticeAsync("请先启动内核，启动成功后即可使用面板。");
-                    }
-                    break;
                 case "browseCore":
                     BrowseCorePath();
                     break;
                 case "browseConfig":
                     BrowseConfigPath();
+                    break;
+                case "openCoreLocation":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    await OpenPathLocationAsync(_settings.CorePath, "内核文件");
+                    break;
+                case "openConfigLocation":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    await OpenPathLocationAsync(_settings.ConfigPath, "配置文件");
                     break;
             }
 
@@ -606,6 +601,41 @@ public sealed class MainForm : Form
             _settings.Save();
             RefreshIconCache();
         }
+    }
+
+    private async Task OpenPathLocationAsync(string path, string label)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            await ShowDashboardNoticeAsync($"请先设置{label}路径。");
+            return;
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        if (File.Exists(fullPath))
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{fullPath}\"")
+            {
+                UseShellExecute = true
+            });
+            return;
+        }
+
+        var directory = Directory.Exists(fullPath)
+            ? fullPath
+            : Path.GetDirectoryName(fullPath);
+
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{directory}\"")
+            {
+                UseShellExecute = true
+            });
+            await ShowDashboardNoticeAsync($"{label}不存在，已打开所在文件夹。");
+            return;
+        }
+
+        await ShowDashboardNoticeAsync($"找不到{label}所在位置。");
     }
 
     private void RefreshIconCache()

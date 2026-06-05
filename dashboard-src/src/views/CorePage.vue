@@ -58,8 +58,11 @@
         {{ notice }}
       </div>
 
-      <div class="grid items-stretch gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
-        <section class="base-container p-4 pb-5">
+      <div class="grid items-start gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
+        <section
+          ref="configPanelRef"
+          class="base-container p-4"
+        >
           <h2 class="mb-4 text-base font-semibold">启动配置</h2>
           <div class="flex flex-col gap-3">
             <label class="form-control">
@@ -75,6 +78,12 @@
                   @click="post({ type: 'browseCore' })"
                 >
                   选择
+                </button>
+                <button
+                  class="btn btn-sm"
+                  @click="post({ ...collect(), type: 'openCoreLocation' })"
+                >
+                  位置
                 </button>
               </div>
             </label>
@@ -93,6 +102,12 @@
                 >
                   选择
                 </button>
+                <button
+                  class="btn btn-sm"
+                  @click="post({ ...collect(), type: 'openConfigLocation' })"
+                >
+                  位置
+                </button>
               </div>
             </label>
 
@@ -104,12 +119,6 @@
                   class="input input-bordered input-sm min-w-0 flex-1"
                   type="text"
                 />
-                <button
-                  class="btn btn-sm"
-                  @click="post({ ...collect(), type: 'reload' })"
-                >
-                  刷新 UI
-                </button>
               </div>
             </label>
 
@@ -162,9 +171,20 @@
           </div>
         </section>
 
-        <section class="base-container flex min-h-[360px] min-w-0 flex-col p-4">
-          <h2 class="mb-4 text-base font-semibold">内核日志</h2>
-          <pre class="bg-base-300/60 text-base-content/80 h-[376px] max-h-[376px] overflow-auto rounded-box p-3 text-xs leading-5 whitespace-pre-wrap">{{ runtime.logText || '暂无日志' }}</pre>
+        <section
+          ref="logPanelRef"
+          class="base-container flex min-h-[360px] min-w-0 flex-col p-4"
+        >
+          <h2
+            ref="logTitleRef"
+            class="mb-4 text-base font-semibold"
+          >
+            内核日志
+          </h2>
+          <pre
+            class="bg-base-300/60 text-base-content/80 overflow-auto rounded-box p-3 text-xs leading-5 whitespace-pre-wrap"
+            :style="{ height: `${logHeight}px`, maxHeight: `${logHeight}px` }"
+          >{{ runtime.logText || '暂无日志' }}</pre>
         </section>
       </div>
     </div>
@@ -172,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 type CoreState = {
   isRunning?: boolean
@@ -231,7 +251,13 @@ const settings = reactive({
 })
 
 const notice = ref('')
+const configPanelRef = ref<HTMLElement>()
+const logPanelRef = ref<HTMLElement>()
+const logTitleRef = ref<HTMLElement>()
+const logHeight = ref(368)
 let noticeTimer: number | undefined
+let resizeObserver: ResizeObserver | undefined
+let syncFrame = 0
 
 const webviewWindow = window as WebViewWindow
 const post = (message: unknown) => webviewWindow.chrome?.webview?.postMessage(message)
@@ -277,6 +303,27 @@ const showNotice = (message: string) => {
   }, 2400)
 }
 
+const syncLogHeight = () => {
+  window.cancelAnimationFrame(syncFrame)
+  syncFrame = window.requestAnimationFrame(() => {
+    const configPanel = configPanelRef.value
+    const logPanel = logPanelRef.value
+    const logTitle = logTitleRef.value
+    if (!configPanel || !logPanel || !logTitle) {
+      return
+    }
+
+    const panelStyle = window.getComputedStyle(logPanel)
+    const titleStyle = window.getComputedStyle(logTitle)
+    const verticalPadding =
+      Number.parseFloat(panelStyle.paddingTop) + Number.parseFloat(panelStyle.paddingBottom)
+    const titleBlock =
+      logTitle.offsetHeight + Number.parseFloat(titleStyle.marginBottom)
+    const nextHeight = Math.round(configPanel.offsetHeight - verticalPadding - titleBlock)
+    logHeight.value = Math.max(280, nextHeight)
+  })
+}
+
 const handleHostMessage = (event: MessageEvent<HostMessage>) => {
   if (event.data?.type === 'state') {
     setState(event.data.state ?? {})
@@ -285,10 +332,17 @@ const handleHostMessage = (event: MessageEvent<HostMessage>) => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   webviewWindow.chrome?.webview?.addEventListener?.('message', handleHostMessage)
   webviewWindow.__mihomoControlSetState = setState
   webviewWindow.__mihomoControlNotice = showNotice
+  await nextTick()
+  syncLogHeight()
+  window.addEventListener('resize', syncLogHeight)
+  if (configPanelRef.value) {
+    resizeObserver = new ResizeObserver(syncLogHeight)
+    resizeObserver.observe(configPanelRef.value)
+  }
   post({ type: 'requestState' })
 })
 
@@ -300,6 +354,9 @@ onUnmounted(() => {
   if (webviewWindow.__mihomoControlNotice === showNotice) {
     delete webviewWindow.__mihomoControlNotice
   }
+  window.removeEventListener('resize', syncLogHeight)
+  resizeObserver?.disconnect()
+  window.cancelAnimationFrame(syncFrame)
   window.clearTimeout(noticeTimer)
 })
 </script>
