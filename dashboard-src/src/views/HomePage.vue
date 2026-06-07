@@ -102,7 +102,7 @@ import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
 import { useSwipeRouter } from '@/composables/swipe'
-import { PROXY_TAB_TYPE, ROUTE_ICON_MAP, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
+import { PROXY_TAB_TYPE, ROUTE_ICON_MAP, RULE_TAB_TYPE } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { showNotification } from '@/helper/notification'
 import { getLabelFromBackend, isMiddleScreen } from '@/helper/utils'
@@ -117,13 +117,11 @@ import { activeBackend, activeUuid, backendList } from '@/store/setup'
 import type { Backend } from '@/types'
 import { useDocumentVisibility, useElementBounding } from '@vueuse/core'
 import { ref, watch } from 'vue'
-import { RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterView, useRouter } from 'vue-router'
 
 const router = useRouter()
-const route = useRoute()
 const { swiperRef } = useSwipeRouter()
 const sidebarLayoutCollapsed = ref(isSidebarCollapsed.value)
-const initializedTasks = new Set<string>()
 
 const dockRef = ref<HTMLDivElement>()
 const { top: dockRefTop } = useElementBounding(dockRef)
@@ -156,60 +154,19 @@ watch(
   { immediate: true },
 )
 
-const ensureTask = (key: string, task: () => void) => {
-  if (initializedTasks.has(key)) return
-  initializedTasks.add(key)
-  task()
-}
-
-const initializeRouteData = () => {
-  if (!activeUuid.value) return
-
-  const routeName = route.name
-  if (!routeName || routeName === ROUTE_NAME.core) {
-    return
-  }
-
-  ensureTask('configs', fetchConfigs)
-
-  switch (routeName) {
-    case ROUTE_NAME.overview:
-      ensureTask('connections', initConnections)
-      ensureTask('proxies', fetchProxies)
-      ensureTask('statistics', initSatistic)
-      break
-    case ROUTE_NAME.proxies:
-      ensureTask('proxies', fetchProxies)
-      break
-    case ROUTE_NAME.connections:
-      ensureTask('connections', initConnections)
-      break
-    case ROUTE_NAME.rules:
-      ensureTask('rules', fetchRules)
-      break
-    case ROUTE_NAME.logs:
-      ensureTask('logs', initLogs)
-      break
-  }
-}
-
 watch(
   activeUuid,
   () => {
     if (!activeUuid.value) return
-    initializedTasks.clear()
     rulesTabShow.value = RULE_TAB_TYPE.RULES
     proxiesTabShow.value = PROXY_TAB_TYPE.PROXIES
-    initializeRouteData()
+    fetchConfigs()
+    fetchProxies()
+    fetchRules()
+    initConnections()
+    initLogs()
+    initSatistic()
   },
-  {
-    immediate: true,
-  },
-)
-
-watch(
-  () => route.name,
-  initializeRouteData,
   {
     immediate: true,
   },
@@ -282,8 +239,6 @@ watch(
 
 watch(documentVisible, () => {
   if (documentVisible.value !== 'visible') return
-  if (initializedTasks.has('proxies')) {
-    fetchProxies()
-  }
+  fetchProxies()
 })
 </script>

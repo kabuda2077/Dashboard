@@ -24,12 +24,11 @@ public sealed class MainForm : Form
     private bool _trayTransitionInProgress;
     private bool _allowClose;
     private bool _initialized;
-    private bool _dashboardInitialized;
-    private Task? _dashboardInitializationTask;
     private bool _startMinimized;
     private bool _startCoreAfterLaunch;
     private bool _coreUpgradeInProgress;
-    private bool _elevatedTaskStartPending;
+    private bool _elevatedRetryPending;
+    private bool _tunPermissionFailureSeen;
     private bool _stateRefreshPending;
     private bool _dashboardStateDirty;
     private bool _webViewSuspended;
@@ -73,16 +72,14 @@ public sealed class MainForm : Form
         }
 
         _initialized = true;
+        await InitializeWebViewAsync();
+        LoadDashboard();
         RefreshStatus();
         RefreshIconCache();
 
         if (_startMinimized)
         {
             HideToTray();
-        }
-        else
-        {
-            await EnsureDashboardInitializedAsync();
         }
 
         if (_settings.StartCoreOnLaunch || _startCoreAfterLaunch)
@@ -96,30 +93,6 @@ public sealed class MainForm : Form
         _webView.Dock = DockStyle.Fill;
         _webView.Margin = Padding.Empty;
         Controls.Add(_webView);
-    }
-
-    private Task EnsureDashboardInitializedAsync()
-    {
-        if (_dashboardInitialized)
-        {
-            return Task.CompletedTask;
-        }
-
-        if (_dashboardInitializationTask is not null)
-        {
-            return _dashboardInitializationTask;
-        }
-
-        _dashboardInitializationTask = InitializeDashboardAsync();
-        return _dashboardInitializationTask;
-    }
-
-    private async Task InitializeDashboardAsync()
-    {
-        await InitializeWebViewAsync();
-        LoadDashboard();
-        RefreshStatus();
-        _dashboardInitialized = true;
     }
 
     private void BindEvents()
@@ -143,6 +116,8 @@ public sealed class MainForm : Form
             {
                 SendStateToDashboard();
             }
+
+            HandleTunPermissionFailure();
         };
         _iconCache.CacheChanged += (_, _) => BeginInvoke(new Action(SendStateToDashboard));
     }
@@ -174,7 +149,7 @@ public sealed class MainForm : Form
     {
         _trayMenu?.Close();
 
-        var isRunning = IsCoreRunning();
+        var isRunning = _mihomo.IsRunning;
         _trayMenu = new TrayMenuForm(new[]
         {
             new TrayMenuItem("显示窗口", ShowFromTray),
@@ -347,24 +322,18 @@ public sealed class MainForm : Form
     {
         try
         {
-            if (IsCoreRunning())
+            if (!_mihomo.IsRunning && !IsRunningAsAdministrator())
             {
-                _mihomo.AddLog("mihomo is already running.");
+                _elevatedRetryPending = false;
+                _tunPermissionFailureSeen = false;
+                _ = ShowDashboardNoticeAsync("启动内核需要管理员权限，正在请求 UAC 提权启动。");
+                RelaunchAsAdministrator(startCore: true, startMinimized: ShouldKeepMinimizedForRelaunch(), elevatedRestart: true);
                 return;
             }
 
-            if (IsRunningAsAdministrator())
-            {
-                _mihomo.Start(_settings);
-            }
-            else
-            {
-                _mihomo.AddLog("正在通过最高权限计划任务启动 mihomo。");
-                ElevatedCoreTask.Run(_settings);
-                _elevatedTaskStartPending = true;
-                _mihomo.AddLog("mihomo started by elevated scheduled task.");
-            }
-
+            _elevatedRetryPending = !IsRunningAsAdministrator();
+            _tunPermissionFailureSeen = false;
+            _mihomo.Start(_settings);
             if (showTrayNotification)
             {
                 _trayIcon.ShowBalloonTip(1800, "Dashboard", "内核已启动", ToolTipIcon.Info);
@@ -375,6 +344,8 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            _elevatedRetryPending = false;
+            _tunPermissionFailureSeen = false;
             MessageBox.Show(this, ex.Message, "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -390,25 +361,10 @@ public sealed class MainForm : Form
 
     private void StopCore(bool showTrayNotification)
     {
-        var wasRunning = IsCoreRunning();
+        var wasRunning = _mihomo.IsRunning;
         try
         {
-            if (_mihomo.IsRunning)
-            {
-                _mihomo.Stop();
-            }
-            else if (ElevatedCoreTask.IsRunning())
-            {
-                ElevatedCoreTask.Stop();
-                _elevatedTaskStartPending = false;
-                _mihomo.AddLog("mihomo stopped.");
-            }
-            else
-            {
-                _elevatedTaskStartPending = false;
-                _mihomo.AddLog("mihomo is not running.");
-            }
-
+            _mihomo.Stop();
             if (showTrayNotification && wasRunning)
             {
                 _trayIcon.ShowBalloonTip(1800, "Dashboard", "内核已关闭", ToolTipIcon.Info);
@@ -428,13 +384,13 @@ public sealed class MainForm : Form
     {
         try
         {
-            if (!IsCoreRunning())
+            if (!_mihomo.IsRunning)
             {
                 StartCore();
                 return;
             }
 
-            StopCore();
+            _mihomo.Stop();
             StartCore();
             _ = ShowDashboardNoticeAsync("内核已重启。");
             if (showTrayNotification)
@@ -459,7 +415,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        var wasRunning = IsCoreRunning();
+        var wasRunning = _mihomo.IsRunning;
         var stoppedForUpgrade = false;
         _coreUpgradeInProgress = true;
         SendStateToDashboard();
@@ -469,9 +425,9 @@ public sealed class MainForm : Form
         {
             var result = await CoreUpdater.UpgradeLatestAsync(_settings.CorePath, beforeReplace: () =>
             {
-                if (wasRunning && IsCoreRunning())
+                if (wasRunning && _mihomo.IsRunning)
                 {
-                    StopCore();
+                    _mihomo.Stop();
                     stoppedForUpgrade = true;
                 }
             });
@@ -492,7 +448,7 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             MessageBox.Show(this, ex.Message, "升级内核失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            if (stoppedForUpgrade && !IsCoreRunning())
+            if (stoppedForUpgrade && !_mihomo.IsRunning)
             {
                 StartCore();
             }
@@ -520,7 +476,8 @@ public sealed class MainForm : Form
                 using var response = await client.GetAsync(endpoint);
                 if (response.IsSuccessStatusCode)
                 {
-                    _elevatedTaskStartPending = false;
+                    _elevatedRetryPending = false;
+                    _tunPermissionFailureSeen = false;
                     RefreshIconCache();
                     BeginInvoke(new Action(SendStateToDashboard));
                     return;
@@ -533,7 +490,8 @@ public sealed class MainForm : Form
             await Task.Delay(500);
         }
 
-        _elevatedTaskStartPending = false;
+        _elevatedRetryPending = false;
+        _tunPermissionFailureSeen = false;
 
         BeginInvoke(new Action(() =>
         {
@@ -543,31 +501,20 @@ public sealed class MainForm : Form
 
     private void RefreshStatus()
     {
-        var running = IsCoreRunning();
+        var running = _mihomo.IsRunning;
         _trayIcon.Text = running ? "Dashboard - 运行中" : "Dashboard - 未运行";
         SendStateToDashboard();
     }
 
-    private bool IsCoreRunning()
-    {
-        if (_mihomo.IsRunning)
-        {
-            return true;
-        }
-
-        if (ElevatedCoreTask.IsRunning())
-        {
-            _elevatedTaskStartPending = false;
-            return true;
-        }
-
-        return _elevatedTaskStartPending;
-    }
-
     private void QueueStateRefresh(string? logEntry = null)
     {
+        if (_elevatedRetryPending && IsTunPermissionFailure(logEntry))
+        {
+            _tunPermissionFailureSeen = true;
+        }
+
         _stateRefreshPending = true;
-        if (ShouldHoldDashboardUpdates())
+        if (ShouldHoldDashboardUpdates() && !_elevatedRetryPending)
         {
             _dashboardStateDirty = true;
             return;
@@ -577,6 +524,27 @@ public sealed class MainForm : Form
         {
             _stateRefreshTimer.Start();
         }
+    }
+
+    private void HandleTunPermissionFailure()
+    {
+        if (!_elevatedRetryPending || !_tunPermissionFailureSeen)
+        {
+            return;
+        }
+
+        _elevatedRetryPending = false;
+        _tunPermissionFailureSeen = false;
+        StopCore();
+        _ = ShowDashboardNoticeAsync("TUN 启动需要管理员权限，正在请求 UAC 提权启动内核。");
+        RelaunchAsAdministrator(startCore: true, startMinimized: ShouldKeepMinimizedForRelaunch(), elevatedRestart: true);
+    }
+
+    private static bool IsTunPermissionFailure(string? logEntry)
+    {
+        return !string.IsNullOrWhiteSpace(logEntry)
+            && (logEntry.Contains("Start TUN listening error", StringComparison.OrdinalIgnoreCase)
+                || logEntry.Contains("configure tun interface: Access is denied", StringComparison.OrdinalIgnoreCase));
     }
 
     private void SendStateToDashboard()
@@ -595,7 +563,7 @@ public sealed class MainForm : Form
 
         var state = new
         {
-            isRunning = IsCoreRunning(),
+            isRunning = _mihomo.IsRunning,
             processId = _mihomo.ProcessId,
             corePath = _settings.CorePath,
             configPath = _settings.ConfigPath,
@@ -714,6 +682,7 @@ public sealed class MainForm : Form
             _stateRefreshTimer.Stop();
             _stateRefreshPending = false;
             SendStateToDashboard();
+            HandleTunPermissionFailure();
             return;
         }
 
@@ -821,6 +790,48 @@ public sealed class MainForm : Form
         return principal.IsInRole(WindowsBuiltInRole.Administrator);
     }
 
+    private bool ShouldKeepMinimizedForRelaunch()
+    {
+        return _startMinimized
+            || _hiddenToTray
+            || !Visible
+            || !ShowInTaskbar
+            || WindowState == FormWindowState.Minimized;
+    }
+
+    private void RelaunchAsAdministrator(bool startCore, bool startMinimized, bool elevatedRestart)
+    {
+        try
+        {
+            var arguments = new List<string>();
+            if (startCore)
+            {
+                arguments.Add("--start-core");
+            }
+            if (startMinimized)
+            {
+                arguments.Add("--minimized");
+            }
+            if (elevatedRestart)
+            {
+                arguments.Add("--elevated-restart");
+            }
+
+            var startInfo = new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
+            {
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+            Process.Start(startInfo);
+            _allowClose = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"无法以管理员权限重启：{ex.Message}", "管理员重启失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
     protected override void OnLocationChanged(EventArgs e)
     {
         base.OnLocationChanged(e);
@@ -885,8 +896,10 @@ public sealed class MainForm : Form
         _trayTransitionInProgress = true;
         _trayMenu?.Close();
 
+        var previousOpacity = Opacity;
         try
         {
+            Opacity = 0;
             _hiddenToTray = true;
             if (WindowState != FormWindowState.Minimized)
             {
@@ -899,6 +912,7 @@ public sealed class MainForm : Form
         }
         finally
         {
+            Opacity = previousOpacity;
             _trayTransitionInProgress = false;
         }
     }
@@ -910,38 +924,32 @@ public sealed class MainForm : Form
         {
             ResumeDashboard();
             Activate();
-            _ = EnsureDashboardInitializedAsync();
             return;
         }
 
         ResumeDashboard();
         _trayTransitionInProgress = true;
+        var previousOpacity = Opacity;
         try
         {
-            _hiddenToTray = false;
-            Opacity = 1;
-            ShowInTaskbar = true;
-
+            Opacity = 0;
+            WindowState = FormWindowState.Normal;
             if (!_trayRestoreBounds.IsEmpty)
             {
                 Bounds = _trayRestoreBounds;
             }
 
+            ShowInTaskbar = true;
             Show();
-
             if (_trayRestoreWindowState == FormWindowState.Maximized)
             {
                 WindowState = FormWindowState.Maximized;
             }
-            else
-            {
-                WindowState = FormWindowState.Normal;
-            }
 
+            _hiddenToTray = false;
             ResumeDashboard();
             Activate();
-            BringToFront();
-            _ = EnsureDashboardInitializedAsync();
+            BeginInvoke(new Action(() => Opacity = previousOpacity));
         }
         finally
         {
@@ -959,11 +967,6 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
-            if (ElevatedCoreTask.IsRunning())
-            {
-                ElevatedCoreTask.Stop();
-            }
-
             _mihomo.Dispose();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();

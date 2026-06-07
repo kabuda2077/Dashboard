@@ -136,11 +136,6 @@ public sealed class MihomoManager : IDisposable
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void AddLog(string line)
-    {
-        AppendLog(line);
-    }
-
     public void Stop()
     {
         if (!IsRunning)
