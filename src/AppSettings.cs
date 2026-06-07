@@ -23,6 +23,7 @@ public sealed class AppSettings
     public bool StartCoreOnLaunch { get; set; }
     public bool MinimizeToTray { get; set; } = true;
     public bool Autostart { get; set; }
+    public string? ElevatedCoreTaskSignature { get; set; }
 
     public static string SettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDirectoryName);
