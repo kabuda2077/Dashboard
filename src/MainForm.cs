@@ -24,6 +24,8 @@ public sealed class MainForm : Form
     private bool _trayTransitionInProgress;
     private bool _allowClose;
     private bool _initialized;
+    private bool _dashboardInitialized;
+    private Task? _dashboardInitializationTask;
     private bool _startMinimized;
     private bool _startCoreAfterLaunch;
     private bool _coreUpgradeInProgress;
@@ -72,14 +74,16 @@ public sealed class MainForm : Form
         }
 
         _initialized = true;
-        await InitializeWebViewAsync();
-        LoadDashboard();
         RefreshStatus();
         RefreshIconCache();
 
         if (_startMinimized)
         {
             HideToTray();
+        }
+        else
+        {
+            await EnsureDashboardInitializedAsync();
         }
 
         if (_settings.StartCoreOnLaunch || _startCoreAfterLaunch)
@@ -93,6 +97,30 @@ public sealed class MainForm : Form
         _webView.Dock = DockStyle.Fill;
         _webView.Margin = Padding.Empty;
         Controls.Add(_webView);
+    }
+
+    private Task EnsureDashboardInitializedAsync()
+    {
+        if (_dashboardInitialized)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_dashboardInitializationTask is not null)
+        {
+            return _dashboardInitializationTask;
+        }
+
+        _dashboardInitializationTask = InitializeDashboardAsync();
+        return _dashboardInitializationTask;
+    }
+
+    private async Task InitializeDashboardAsync()
+    {
+        await InitializeWebViewAsync();
+        LoadDashboard();
+        RefreshStatus();
+        _dashboardInitialized = true;
     }
 
     private void BindEvents()
@@ -896,10 +924,8 @@ public sealed class MainForm : Form
         _trayTransitionInProgress = true;
         _trayMenu?.Close();
 
-        var previousOpacity = Opacity;
         try
         {
-            Opacity = 0;
             _hiddenToTray = true;
             if (WindowState != FormWindowState.Minimized)
             {
@@ -912,7 +938,6 @@ public sealed class MainForm : Form
         }
         finally
         {
-            Opacity = previousOpacity;
             _trayTransitionInProgress = false;
         }
     }
@@ -924,32 +949,38 @@ public sealed class MainForm : Form
         {
             ResumeDashboard();
             Activate();
+            _ = EnsureDashboardInitializedAsync();
             return;
         }
 
         ResumeDashboard();
         _trayTransitionInProgress = true;
-        var previousOpacity = Opacity;
         try
         {
-            Opacity = 0;
-            WindowState = FormWindowState.Normal;
+            _hiddenToTray = false;
+            Opacity = 1;
+            ShowInTaskbar = true;
+
             if (!_trayRestoreBounds.IsEmpty)
             {
                 Bounds = _trayRestoreBounds;
             }
 
-            ShowInTaskbar = true;
             Show();
+
             if (_trayRestoreWindowState == FormWindowState.Maximized)
             {
                 WindowState = FormWindowState.Maximized;
             }
+            else
+            {
+                WindowState = FormWindowState.Normal;
+            }
 
-            _hiddenToTray = false;
             ResumeDashboard();
             Activate();
-            BeginInvoke(new Action(() => Opacity = previousOpacity));
+            BringToFront();
+            _ = EnsureDashboardInitializedAsync();
         }
         finally
         {
