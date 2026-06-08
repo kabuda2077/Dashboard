@@ -37,6 +37,9 @@ public sealed class MainForm : Form
     private int _dashboardSuspendVersion;
     private string? _pendingDashboardNotice;
     private readonly System.Windows.Forms.Timer _stateRefreshTimer = new() { Interval = 150 };
+    private DateTime _lastStateRefresh = DateTime.MinValue;
+    private const int MinRefreshIntervalMs = 150;
+    private const int MaxRefreshDelayMs = 1000;
 
     public MainForm(bool startMinimized, bool startCoreAfterLaunch)
     {
@@ -129,23 +132,7 @@ public sealed class MainForm : Form
         _mihomo.LogReceived += (_, entry) => BeginInvoke(new Action(() => QueueStateRefresh(entry)));
         _stateRefreshTimer.Tick += (_, _) =>
         {
-            _stateRefreshTimer.Stop();
-            if (!_stateRefreshPending)
-            {
-                return;
-            }
-
-            _stateRefreshPending = false;
-            if (ShouldHoldDashboardUpdates())
-            {
-                _dashboardStateDirty = true;
-            }
-            else
-            {
-                SendStateToDashboard();
-            }
-
-            HandleTunPermissionFailure();
+            RefreshStateNow();
         };
         _iconCache.CacheChanged += (_, _) => BeginInvoke(new Action(SendStateToDashboard));
     }
@@ -202,9 +189,25 @@ public sealed class MainForm : Form
     {
         try
         {
-            await _webView.EnsureCoreWebView2Async();
+            // 创建优化的 WebView2 环境
+            var userDataFolder = Path.Combine(AppSettings.SettingsDirectory, "WebView2");
+            var environment = await CoreWebView2Environment.CreateAsync(
+                browserExecutableFolder: null,
+                userDataFolder: userDataFolder,
+                options: new CoreWebView2EnvironmentOptions
+                {
+                    // 优化浏览器参数：禁用不需要的功能，设置缓存大小
+                    AdditionalBrowserArguments = "--disable-features=msWebOOUI,msPdfOOUI --disk-cache-size=52428800 --enable-features=msWebView2EnableTrackingPrevention"
+                });
+
+            await _webView.EnsureCoreWebView2Async(environment);
+
+            // 配置 WebView2 设置
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+            _webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
+
+            // 绑定事件
             _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
             _webView.CoreWebView2.NavigationCompleted += (_, _) =>
             {
@@ -548,10 +551,50 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (!_stateRefreshTimer.Enabled)
+        var now = DateTime.UtcNow;
+        var elapsed = (now - _lastStateRefresh).TotalMilliseconds;
+
+        // 如果距离上次刷新太近，延迟刷新
+        if (elapsed < MinRefreshIntervalMs)
         {
-            _stateRefreshTimer.Start();
+            if (!_stateRefreshTimer.Enabled)
+            {
+                _stateRefreshTimer.Interval = Math.Max(50, MinRefreshIntervalMs - (int)elapsed);
+                _stateRefreshTimer.Start();
+            }
         }
+        else if (elapsed > MaxRefreshDelayMs)
+        {
+            // 如果太久没刷新，立即刷新
+            RefreshStateNow();
+        }
+        else
+        {
+            // 正常防抖
+            if (!_stateRefreshTimer.Enabled)
+            {
+                _stateRefreshTimer.Interval = MinRefreshIntervalMs;
+                _stateRefreshTimer.Start();
+            }
+        }
+    }
+
+    private void RefreshStateNow()
+    {
+        _stateRefreshTimer.Stop();
+        _stateRefreshPending = false;
+        _lastStateRefresh = DateTime.UtcNow;
+
+        if (ShouldHoldDashboardUpdates())
+        {
+            _dashboardStateDirty = true;
+        }
+        else
+        {
+            SendStateToDashboard();
+        }
+
+        HandleTunPermissionFailure();
     }
 
     private void HandleTunPermissionFailure()

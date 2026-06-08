@@ -17,6 +17,8 @@ public sealed class TrayMenuForm : Form
     private readonly List<TrayMenuItem> _items;
     private readonly Font _menuFont;
     private int _hoverIndex = -1;
+    private Bitmap? _menuBuffer;
+    private bool _bufferDirty = true;
 
     public TrayMenuForm(IEnumerable<TrayMenuItem> items)
     {
@@ -75,6 +77,7 @@ public sealed class TrayMenuForm : Form
         if (disposing)
         {
             _menuFont.Dispose();
+            _menuBuffer?.Dispose();
         }
 
         base.Dispose(disposing);
@@ -85,6 +88,7 @@ public sealed class TrayMenuForm : Form
         base.OnSizeChanged(e);
         using var region = CreateRoundRectRgn(0, 0, Width + 1, Height + 1, CornerRadius, CornerRadius);
         Region = Region.FromHrgn(region.Handle);
+        _bufferDirty = true;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -97,14 +101,19 @@ public sealed class TrayMenuForm : Form
         }
 
         _hoverIndex = nextHover;
+        _bufferDirty = true;
         Invalidate();
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        _hoverIndex = -1;
-        Invalidate();
+        if (_hoverIndex != -1)
+        {
+            _hoverIndex = -1;
+            _bufferDirty = true;
+            Invalidate();
+        }
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -130,13 +139,28 @@ public sealed class TrayMenuForm : Form
     {
         base.OnPaint(e);
 
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        // 使用双缓冲优化渲染
+        if (_menuBuffer == null || _bufferDirty)
+        {
+            _menuBuffer?.Dispose();
+            _menuBuffer = new Bitmap(Width, Height);
 
+            using var g = Graphics.FromImage(_menuBuffer);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            RenderMenu(g);
+            _bufferDirty = false;
+        }
+
+        e.Graphics.DrawImageUnscaled(_menuBuffer, 0, 0);
+    }
+
+    private void RenderMenu(Graphics g)
+    {
         using (var background = new SolidBrush(Color.White))
         {
-            g.FillRectangle(background, ClientRectangle);
+            g.FillRectangle(background, 0, 0, Width, Height);
         }
 
         var y = OuterPadding;

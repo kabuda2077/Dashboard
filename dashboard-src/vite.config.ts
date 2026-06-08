@@ -73,4 +73,47 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    target: 'es2020',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+        pure_funcs: ['console.log', 'console.info', 'console.debug'],
+      },
+      format: {
+        comments: false,
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('vue') || id.includes('vue-router') || id.includes('vue-i18n')) {
+              return 'vue-vendor'
+            }
+            if (id.includes('echarts') || id.includes('@heroicons') || id.includes('tippy')) {
+              return 'ui-vendor'
+            }
+            if (id.includes('axios') || id.includes('dayjs') || id.includes('lodash') || id.includes('dompurify')) {
+              return 'utils-vendor'
+            }
+            if (id.includes('@tanstack')) {
+              return 'table-vendor'
+            }
+          }
+        },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+    reportCompressedSize: false,
+    cssCodeSplit: true,
+  },
+  optimizeDeps: {
+    include: ['vue', 'vue-router', 'vue-i18n', 'echarts', 'axios', 'dayjs'],
+  },
 })

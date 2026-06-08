@@ -12,6 +12,32 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
+  <!-- Release 构建优化 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- 性能优化 -->
+    <TieredCompilation>true</TieredCompilation>
+    <TieredCompilationQuickJit>true</TieredCompilationQuickJit>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunShowWarnings>true</PublishReadyToRunShowWarnings>
+
+    <!-- 代码优化 -->
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+
+    <!-- 发布优化 -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!-- 编译器优化 -->
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+
+    <!-- 去除不必要的元数据 -->
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />

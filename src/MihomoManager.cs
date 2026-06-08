@@ -5,8 +5,8 @@ namespace Dashboard;
 
 public sealed class MihomoManager : IDisposable
 {
-    private const int MaxLogLength = 80_000;
-    private readonly StringBuilder _log = new();
+    private const int MaxLogLines = 500;
+    private readonly CircularBuffer<string> _logLines = new(MaxLogLines);
     private readonly object _processLock = new();
     private readonly HashSet<int> _stoppingProcessIds = new();
     private Process? _process;
@@ -41,24 +41,28 @@ public sealed class MihomoManager : IDisposable
     {
         get
         {
-            lock (_log)
-            {
-                return _log.ToString();
-            }
+            var lines = _logLines.GetAll();
+            return string.Join("", lines);
         }
     }
 
     public string GetLogTail(int maxLength)
     {
-        lock (_log)
-        {
-            if (_log.Length <= maxLength)
-            {
-                return _log.ToString();
-            }
+        var lines = _logLines.GetAll();
+        var sb = new StringBuilder(maxLength);
 
-            return _log.ToString(_log.Length - maxLength, maxLength);
+        // 从后往前拼接，直到达到长度限制
+        for (int i = lines.Count - 1; i >= 0 && sb.Length < maxLength; i--)
+        {
+            var line = lines[i];
+            if (sb.Length + line.Length > maxLength && sb.Length > 0)
+            {
+                break;
+            }
+            sb.Insert(0, line);
         }
+
+        return sb.ToString();
     }
 
     public void Start(AppSettings settings)
@@ -185,15 +189,7 @@ public sealed class MihomoManager : IDisposable
         }
 
         var entry = $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
-        lock (_log)
-        {
-            _log.Append(entry);
-            if (_log.Length > MaxLogLength)
-            {
-                _log.Remove(0, _log.Length - MaxLogLength);
-            }
-        }
-
+        _logLines.Add(entry);
         LogReceived?.Invoke(this, entry);
     }
 
@@ -282,5 +278,54 @@ public sealed class MihomoManager : IDisposable
         }
 
         process?.Dispose();
+    }
+
+    /// <summary>
+    /// 环形缓冲区，用于高效存储固定数量的日志行
+    /// </summary>
+    private sealed class CircularBuffer<T>
+    {
+        private readonly T[] _buffer;
+        private readonly object _lock = new();
+        private int _start;
+        private int _count;
+
+        public CircularBuffer(int capacity)
+        {
+            if (capacity <= 0)
+            {
+                throw new ArgumentException("Capacity must be positive", nameof(capacity));
+            }
+            _buffer = new T[capacity];
+        }
+
+        public void Add(T item)
+        {
+            lock (_lock)
+            {
+                if (_count < _buffer.Length)
+                {
+                    _buffer[_count++] = item;
+                }
+                else
+                {
+                    _buffer[_start] = item;
+                    _start = (_start + 1) % _buffer.Length;
+                }
+            }
+        }
+
+        public List<T> GetAll()
+        {
+            lock (_lock)
+            {
+                var result = new List<T>(_count);
+                for (int i = 0; i < _count; i++)
+                {
+                    result.Add(_buffer[(_start + i) % _buffer.Length]);
+                }
+                return result;
+            }
+        }
     }
 }

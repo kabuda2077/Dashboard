@@ -35,28 +35,51 @@ public sealed class ProxyGroupIconCache
 
     public void LoadExisting(string configPath)
     {
-        var iconUrls = ExtractProxyGroupIconUrls(configPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        // 异步加载图标缓存，不阻塞主线程
+        _ = Task.Run(() => LoadExistingAsync(configPath));
+    }
+
+    private async Task LoadExistingAsync(string configPath)
+    {
+        var iconUrls = await Task.Run(() =>
+            ExtractProxyGroupIconUrls(configPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+        );
+
         if (iconUrls.Length == 0)
         {
             return;
         }
 
+        // 并行检查文件存在性
+        var tasks = iconUrls.Select(async iconUrl =>
+        {
+            if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
+                || uri.Scheme is not ("http" or "https"))
+            {
+                return null;
+            }
+
+            var fileName = GetCacheFileName(uri);
+            var exists = await Task.Run(() =>
+                File.Exists(Path.Combine(CacheDirectory, fileName)));
+
+            return exists ? (iconUrl, uri, fileName) : ((string, Uri, string)?)null;
+        });
+
+        var results = await Task.WhenAll(tasks);
+
         lock (_sync)
         {
-            foreach (var iconUrl in iconUrls)
+            foreach (var result in results)
             {
-                if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
-                    || uri.Scheme is not ("http" or "https"))
+                if (result == null)
                 {
                     continue;
                 }
 
-                var fileName = GetCacheFileName(uri);
-                if (!File.Exists(Path.Combine(CacheDirectory, fileName)))
-                {
-                    continue;
-                }
-
+                var (iconUrl, uri, fileName) = result.Value;
                 foreach (var key in GetCacheKeys(iconUrl, uri))
                 {
                     _cachedFiles[key] = fileName;

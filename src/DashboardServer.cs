@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,8 +12,17 @@ public sealed class DashboardServer : IDisposable
 
     private readonly string _root;
     private readonly string _iconCacheRoot;
+    private readonly ConcurrentDictionary<string, CachedFile> _fileCache = new();
+    private readonly TimeSpan _cacheExpiration = TimeSpan.FromMinutes(5);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
+
+    private sealed class CachedFile
+    {
+        public required byte[] Content { get; init; }
+        public required string ContentType { get; init; }
+        public required DateTime CachedAt { get; init; }
+    }
 
     public DashboardServer(string root, string iconCacheRoot)
     {
@@ -120,8 +130,37 @@ public sealed class DashboardServer : IDisposable
                 candidate = Path.Combine(rootFullPath, "index.html");
             }
 
+            // 尝试从缓存获取
+            if (_fileCache.TryGetValue(candidate, out var cached))
+            {
+                var cacheAge = DateTime.UtcNow - cached.CachedAt;
+                if (cacheAge < _cacheExpiration)
+                {
+                    await WriteResponseAsync(stream, "200 OK", cached.ContentType, cached.Content);
+                    return;
+                }
+                else
+                {
+                    // 缓存过期，移除
+                    _fileCache.TryRemove(candidate, out _);
+                }
+            }
+
             var bytes = await File.ReadAllBytesAsync(candidate, token);
-            await WriteResponseAsync(stream, "200 OK", GetContentType(Path.GetExtension(candidate)), bytes);
+            var contentType = GetContentType(Path.GetExtension(candidate));
+
+            // 小于 1MB 的文件才缓存
+            if (bytes.Length < 1024 * 1024)
+            {
+                _fileCache[candidate] = new CachedFile
+                {
+                    Content = bytes,
+                    ContentType = contentType,
+                    CachedAt = DateTime.UtcNow
+                };
+            }
+
+            await WriteResponseAsync(stream, "200 OK", contentType, bytes);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -225,5 +264,6 @@ public sealed class DashboardServer : IDisposable
         _cts?.Cancel();
         _listener?.Stop();
         _cts?.Dispose();
+        _fileCache.Clear();
     }
 }
