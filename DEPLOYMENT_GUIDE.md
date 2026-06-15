@@ -13,8 +13,7 @@ powershell -ExecutionPolicy Bypass -File .\create-release.ps1
 1. ✅ 自动构建前端和后端
 2. ✅ 将 publish 目录打包成 ZIP
 3. ✅ 创建版本说明文件
-4. ✅ 保存到 `releases` 文件夹
-5. ✅ 自动打开文件夹供你复制
+4. ✅ 保存到 `artifacts\releases` 文件夹
 
 ---
 
@@ -25,7 +24,7 @@ powershell -ExecutionPolicy Bypass -File .\create-release.ps1
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 # 2. 打开 publish 目录
-explorer bin\Release\net9.0-windows\win-x64\publish
+explorer artifacts\publish\Dashboard-Release-win-x64
 ```
 
 然后：
@@ -71,8 +70,7 @@ Dashboard/
 │   │   ├── index.html
 │   │   ├── assets/
 │   │   └── ...
-│   ├── app.ico                # 应用图标
-│   └── tray.ico               # 托盘图标
+│   └── app.ico                # 应用和托盘图标
 └── ... (其他运行时文件)
 ```
 
@@ -118,7 +116,7 @@ Copy-Item "C:\Program Files\Dashboard" "C:\Program Files\Dashboard_backup_$(Get-
 ```powershell
 # 复制所有文件到目标目录
 # 替换 <目标目录> 为你的实际安装路径
-$source = "bin\Release\net9.0-windows\win-x64\publish\*"
+$source = "artifacts\publish\Dashboard-Release-win-x64\*"
 $destination = "<目标目录>"
 
 Copy-Item -Path $source -Destination $destination -Recurse -Force
@@ -169,7 +167,7 @@ if ($process) {
 
 # 4. 复制文件
 Write-Host "==> Copying files to $TargetDirectory..." -ForegroundColor Cyan
-$source = "bin\Release\net9.0-windows\win-x64\publish\*"
+$source = "artifacts\publish\Dashboard-Release-win-x64\*"
 Copy-Item -Path $source -Destination $TargetDirectory -Recurse -Force
 
 Write-Host "==> Deployment completed!" -ForegroundColor Green
@@ -263,4 +261,4 @@ powershell -ExecutionPolicy Bypass -File .\deploy-to-directory.ps1 -TargetDirect
 
 ---
 
-**需要帮助？** 查看 `releases` 文件夹中的 RELEASE_NOTES 文件获取更多信息。
+**需要帮助？** 查看 `artifacts\releases` 文件夹中的 RELEASE_NOTES 文件获取更多信息。

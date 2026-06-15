@@ -1,13 +1,8 @@
 <template>
   <CtrlsBar>
-    <div class="flex h-12 flex-row items-center gap-2 p-2 text-sm">
-      <span class="truncate overflow-hidden">
-        {{ getLabelFromBackend(activeBackend!) }}
-      </span>
-      <span class="mx-1">|</span>
-      <BackendVersion />
+    <div class="flex h-9 flex-row items-center justify-end gap-2 p-0 text-sm">
       <button
-        class="btn btn-circle btn-sm absolute top-2 right-2"
+        class="btn btn-circle btn-sm"
         @click="showCardSettingsDialog = true"
       >
         <Cog6ToothIcon class="h-4 w-4" />
@@ -18,11 +13,8 @@
 </template>
 
 <script setup lang="ts">
-import BackendVersion from '@/components/common/BackendVersion.vue'
 import OverviewCardSettingsDialog from '@/components/overview/OverviewCardSettingsDialog.vue'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { getLabelFromBackend } from '@/helper/utils'
-import { activeBackend } from '@/store/setup'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 import CtrlsBar from '../common/CtrlsBar.vue'

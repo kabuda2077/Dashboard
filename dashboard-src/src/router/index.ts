@@ -10,7 +10,6 @@ import LogsPage from '@/views/LogsPage.vue'
 import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
-import SettingsPage from '@/views/SettingsPage.vue'
 import SetupPage from '@/views/SetupPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
@@ -47,11 +46,6 @@ const childrenRouter = [
     name: ROUTE_NAME.rules,
     component: RulesPage,
   },
-  {
-    path: 'settings',
-    name: ROUTE_NAME.settings,
-    component: SettingsPage,
-  },
 ]
 
 const router = createRouter({
@@ -78,7 +72,9 @@ const router = createRouter({
 const title = useTitle('zashboard')
 const setTitleByName = (name: string | symbol | undefined) => {
   if (typeof name === 'string' && activeBackend.value) {
-    title.value = `zashboard | ${i18n.global.t(name)}`
+    const backend = activeBackend.value
+    const prefix = backend.label || `${backend.host}:${backend.port}`
+    title.value = `${prefix} | ${i18n.global.t(name)}`
   } else {
     title.value = 'zashboard'
   }
@@ -96,7 +92,10 @@ router.beforeEach((to, from) => {
     to.meta.transition = toIndex < fromIndex ? 'slide-right' : 'slide-left'
   }
 
-  if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)) {
+  if (
+    !activeBackend.value &&
+    ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)
+  ) {
     router.push({ name: ROUTE_NAME.setup })
   }
 })
@@ -105,7 +104,7 @@ router.afterEach((to) => {
   setTitleByName(to.name)
 })
 
-watch(language, () => {
+watch([language, activeBackend], () => {
   setTimeout(() => {
     setTitleByName(router.currentRoute.value.name)
   })

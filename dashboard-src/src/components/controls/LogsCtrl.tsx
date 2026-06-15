@@ -20,8 +20,8 @@ import {
   PauseIcon,
   PlayIcon,
   QuestionMarkCircleIcon,
+  TrashIcon,
   WrenchScrewdriverIcon,
-  XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash'
@@ -286,7 +286,7 @@ export default defineComponent({
             class="btn btn-circle btn-sm"
             onClick={() => (logs.value = [])}
           >
-            <XMarkIcon class="h-4 w-4" />
+            <TrashIcon class="h-4 w-4" />
           </button>
         </div>
       )
@@ -303,7 +303,7 @@ export default defineComponent({
           </div>
         </div>
       ) : (
-        <div class="flex items-center justify-between gap-2 p-2">
+        <div class="flex items-center gap-2 p-2">
           <div class="flex items-center gap-2">
             {levelSelect}
             <div class="join w-96">

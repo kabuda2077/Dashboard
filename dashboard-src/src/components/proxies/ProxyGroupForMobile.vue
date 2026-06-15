@@ -10,75 +10,27 @@
       class="bg-base-300/50 fixed inset-0 z-40 overflow-hidden"
     />
     <div
-      class="base-container absolute flex flex-col overflow-hidden transition-[width,transform,max-height] duration-200 ease-out will-change-transform"
+      class="base-container absolute flex flex-col gap-2 overflow-hidden p-2 transition-[width,transform,max-height] duration-200 ease-out will-change-transform"
       :class="modalMode && blurIntensity < 5 && 'backdrop-blur-sm!'"
       :style="cardStyle"
       @contextmenu.prevent.stop="handlerLatencyTest"
       @transitionend="handlerTransitionEnd"
       ref="cardRef"
     >
-      <div class="relative flex h-22 shrink-0 flex-col justify-between p-2">
-        <div
-          class="text-md truncate"
-          :class="proxyGroup.icon && 'pr-10'"
-        >
-          {{ proxyGroup.name }}
-        </div>
-        <div
-          class="text-base-content/60 flex min-w-0 items-center gap-2 truncate text-xs"
-          :class="proxyGroup.icon && 'pr-12'"
-        >
-          <span class="shrink-0 whitespace-nowrap">{{ proxyGroup.type }} · {{ proxiesCount }}</span>
-          <ProxyGroupFilter
-            v-if="displayContent"
-            class="min-w-0 flex-1"
-            :group-name="name"
-          />
-        </div>
-        <div class="flex items-center">
-          <div class="flex flex-1 items-center gap-1 truncate">
-            <button
-              v-if="manageHiddenGroup"
-              class="btn btn-circle btn-xs z-10"
-              @click.stop="handlerGroupToggle"
-            >
-              <EyeIcon
-                v-if="!hiddenGroup"
-                class="h-3 w-3"
-              />
-              <EyeSlashIcon
-                v-else
-                class="h-3 w-3"
-              />
-            </button>
-            <ProxyGroupNow
-              :name="proxyGroup.name"
-              :mobile="true"
-            />
-          </div>
-          <LatencyTag
-            :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10')"
-            :loading="isLatencyTesting"
-            :name="proxyGroup.now"
-            :group-name="proxyGroup.name"
-            @click.stop="handlerLatencyTest"
-          />
-        </div>
-        <ProxyIcon
-          v-if="proxyGroup?.icon"
-          :icon="proxyGroup.icon"
-          :size="40"
-          :margin="0"
-          class="absolute top-2 right-2"
-        />
-      </div>
+      <ProxyGroupHeaderForMobile
+        :name="name"
+        :proxies-count="proxiesCount"
+        :is-latency-testing="isLatencyTesting"
+        :display-content="displayContent"
+        @latency-test="handlerLatencyTest"
+      />
 
       <div
         v-if="displayContent"
-        class="will-change-opacity max-h-108 overflow-y-auto overscroll-contain p-2 transition-opacity duration-200 ease-out"
+        class="will-change-opacity max-h-108 overflow-y-auto overscroll-contain transition-opacity duration-200 ease-out"
         :class="[PROXIES_PARENT_CLASS]"
         :style="{
-          width: WIDTH_STYLE,
+          width: 'calc(100vw - 2.5rem)',
           opacity: contentOpacity,
           contain: 'layout style paint',
         }"
@@ -98,21 +50,14 @@
 import { useBounceOnVisible } from '@/composables/bouncein'
 import { disableProxiesPageScroll } from '@/composables/proxies'
 import { useRenderProxyList } from '@/composables/renderProxies'
-import { isHiddenGroup } from '@/helper'
 import { PROXIES_PARENT_CLASS } from '@/helper/utils'
-import { hiddenGroupMap, proxyGroupLatencyTest, proxyMap } from '@/store/proxies'
-import { blurIntensity, groupProxiesByProvider, manageHiddenGroup } from '@/store/settings'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
-import { twMerge } from 'tailwind-merge'
+import { proxyGroupLatencyTest, proxyMap } from '@/store/proxies'
+import { blurIntensity, groupProxiesByProvider } from '@/store/settings'
 import { computed, nextTick, ref } from 'vue'
-import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
-import ProxyGroupFilter from './ProxyGroupFilter.vue'
-import ProxyGroupNow from './ProxyGroupNow.vue'
-import ProxyIcon from './ProxyIcon.vue'
+import ProxyGroupHeaderForMobile from './ProxyGroupHeaderForMobile.vue'
 
-const WIDTH_STYLE = 'calc(100vw - 1.5rem)'
 const props = defineProps<{
   name: string
 }>()
@@ -198,7 +143,7 @@ const calcCardStyle = () => {
     }
 
     cardStyle.value = {
-      width: WIDTH_STYLE,
+      width: 'calc(100vw - 1.5rem)',
       maxHeight: `${innerHeight - verticalOffset - 112}px`,
       transform: `translate3d(0, ${transformValueY}px, 0) scale(1)`,
       transformOrigin,
@@ -249,16 +194,6 @@ const handlerLatencyTest = async () => {
   } catch {
     isLatencyTesting.value = false
   }
-}
-const hiddenGroup = computed({
-  get: () => isHiddenGroup(props.name),
-  set: (value: boolean) => {
-    hiddenGroupMap.value[props.name] = value
-  },
-})
-
-const handlerGroupToggle = () => {
-  hiddenGroup.value = !hiddenGroup.value
 }
 
 useBounceOnVisible(cardRef)

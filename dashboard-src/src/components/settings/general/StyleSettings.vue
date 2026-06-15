@@ -1,98 +1,82 @@
 <template>
-  <template v-if="hasVisibleStyleItems">
-    <div class="settings-section-label">
-      {{ $t('appearance') }}
+  <div class="settings-section-label">
+    {{ $t('appearance') }}
+  </div>
+  <div class="settings-grid">
+    <div class="setting-item">
+      <div class="setting-item-label">
+        {{ $t('autoSwitchTheme') }}
+      </div>
+      <input
+        type="checkbox"
+        v-model="autoTheme"
+        class="toggle"
+      />
     </div>
-    <div class="settings-grid">
-      <div
-        v-if="isVisibleAutoSwitchTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('autoSwitchTheme') }}
-        </div>
-        <input
-          type="checkbox"
-          v-model="autoTheme"
-          class="toggle"
+    <div class="setting-item">
+      <div class="setting-item-label">
+        {{ $t('defaultTheme') }}
+      </div>
+      <div class="join">
+        <ThemeSelector
+          class="w-38!"
+          v-model:value="defaultTheme"
         />
-      </div>
-      <div
-        v-if="isVisibleDefaultTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('defaultTheme') }}
-        </div>
-        <div class="join">
-          <ThemeSelector
-            class="w-38!"
-            v-model:value="defaultTheme"
-          />
-          <button
-            class="btn btn-sm join-item"
-            @click="customThemeModal = !customThemeModal"
-          >
-            <PlusIcon class="h-4 w-4" />
-          </button>
-        </div>
-        <CustomTheme v-model:value="customThemeModal" />
-      </div>
-      <div
-        v-if="autoTheme && isVisibleDarkTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('darkTheme') }}
-        </div>
-        <ThemeSelector v-model:value="darkTheme" />
-      </div>
-      <BackgroundSettings />
-      <div
-        v-if="isVisibleFonts"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('fonts') }}
-        </div>
-        <select
-          class="select select-sm w-48"
-          v-model="font"
+        <button
+          class="btn btn-sm join-item"
+          @click="customThemeModal = !customThemeModal"
         >
-          <option
-            v-for="opt in fontOptions"
-            :key="opt"
-            :value="opt"
-          >
-            {{ opt }}
-          </option>
-        </select>
+          <PlusIcon class="h-4 w-4" />
+        </button>
       </div>
-      <div
-        v-if="isVisibleEmoji"
-        class="setting-item"
-      >
-        <div class="setting-item-label">Emoji</div>
-        <select
-          class="select select-sm w-48"
-          v-model="emoji"
-        >
-          <option
-            v-for="opt in Object.values(EMOJIS)"
-            :key="opt"
-            :value="opt"
-          >
-            {{ opt }}
-          </option>
-        </select>
-      </div>
+      <CustomTheme v-model:value="customThemeModal" />
     </div>
-  </template>
+    <div
+      v-if="autoTheme"
+      class="setting-item"
+    >
+      <div class="setting-item-label">
+        {{ $t('darkTheme') }}
+      </div>
+      <ThemeSelector v-model:value="darkTheme" />
+    </div>
+    <BackgroundSettings />
+    <div class="setting-item">
+      <div class="setting-item-label">
+        {{ $t('fonts') }}
+      </div>
+      <select
+        class="select select-sm w-48"
+        v-model="font"
+      >
+        <option
+          v-for="opt in fontOptions"
+          :key="opt"
+          :value="opt"
+        >
+          {{ opt }}
+        </option>
+      </select>
+    </div>
+    <div class="setting-item">
+      <div class="setting-item-label">Emoji</div>
+      <select
+        class="select select-sm w-48"
+        v-model="emoji"
+      >
+        <option
+          v-for="opt in Object.values(EMOJIS)"
+          :key="opt"
+          :value="opt"
+        >
+          {{ opt }}
+        </option>
+      </select>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { useIsSettingVisible } from '@/composables/settings'
-import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { EMOJIS, FONTS } from '@/constant'
 import { autoTheme, darkTheme, defaultTheme, emoji, font } from '@/store/settings'
 import { PlusIcon } from '@heroicons/vue/24/outline'
@@ -102,25 +86,6 @@ import CustomTheme from './CustomTheme.vue'
 import ThemeSelector from './ThemeSelector.vue'
 
 const customThemeModal = ref(false)
-
-const k = GENERAL_ITEM_KEYS
-const isVisibleFonts = useIsSettingVisible(k.fonts)
-const isVisibleEmoji = useIsSettingVisible(k.emoji)
-const isVisibleCustomBackgroundURL = useIsSettingVisible(k.customBackgroundURL)
-const isVisibleDefaultTheme = useIsSettingVisible(k.defaultTheme)
-const isVisibleDarkTheme = useIsSettingVisible(k.darkTheme)
-const isVisibleAutoSwitchTheme = useIsSettingVisible(k.autoSwitchTheme)
-
-const hasVisibleStyleItems = computed(() => {
-  return (
-    isVisibleDefaultTheme.value ||
-    isVisibleAutoSwitchTheme.value ||
-    (autoTheme.value && isVisibleDarkTheme.value) ||
-    isVisibleCustomBackgroundURL.value ||
-    isVisibleFonts.value ||
-    isVisibleEmoji.value
-  )
-})
 
 const fontOptions = computed(() => {
   const mode = import.meta.env.MODE

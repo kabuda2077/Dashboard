@@ -1,10 +1,16 @@
 import type { Backend } from '@/types'
 import { useStorage } from '@vueuse/core'
 import { v4 as uuid } from 'uuid'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { sourceIPLabelList } from './settings'
 
 export const backendList = useStorage<Backend[]>('setup/api-list', [])
+
+export const showBackendSettingsDialog = ref(false)
+
+export const toggleBackendSettingsDialog = () => {
+  showBackendSettingsDialog.value = !showBackendSettingsDialog.value
+}
 export const activeUuid = useStorage<string>('setup/active-uuid', '')
 export const activeBackend = computed(() =>
   backendList.value.find((backend) => backend.uuid === activeUuid.value),
@@ -39,13 +45,20 @@ const isSameBackendEndpoint = (saved: Backend, backend: Omit<Backend, 'uuid'>) =
   )
 }
 
-export const addBackend = (backend: Omit<Backend, 'uuid'>) => {
+export const addBackend = (
+  backend: Omit<Backend, 'uuid'>,
+  options?: {
+    replaceExisting?: boolean
+  },
+) => {
   const matchingBackends = backendList.value.filter((end) => isSameBackendEndpoint(end, backend))
   const currentEnd = matchingBackends[0]
 
   if (currentEnd) {
     Object.assign(currentEnd, backend)
-    if (matchingBackends.length > 1) {
+    if (options?.replaceExisting) {
+      backendList.value = [currentEnd]
+    } else if (matchingBackends.length > 1) {
       const duplicateIds = new Set(matchingBackends.slice(1).map((end) => end.uuid))
       backendList.value = backendList.value.filter((end) => !duplicateIds.has(end.uuid))
     }
@@ -55,10 +68,16 @@ export const addBackend = (backend: Omit<Backend, 'uuid'>) => {
 
   const id = uuid()
 
-  backendList.value.push({
+  const nextBackend = {
     ...backend,
     uuid: id,
-  })
+  }
+
+  if (options?.replaceExisting) {
+    backendList.value = [nextBackend]
+  } else {
+    backendList.value.push(nextBackend)
+  }
   activeUuid.value = id
 }
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-base-150 grid w-full grid-cols-2 gap-2 rounded-lg p-2">
+  <div class="bg-base-200/45 grid w-full grid-cols-2 gap-2 rounded-lg p-2">
     <div
       v-for="stat in statistics"
       :key="stat.label"

@@ -229,7 +229,7 @@ export default defineComponent({
         ? `${t('searchProxyNode')} | Regex`
         : `${t('searchProxyGroup')} | Regex`
       const searchInput = (
-        <div class={['relative w-32 flex-1', isLargeCtrlsBar.value && 'max-w-80']}>
+        <div class={['relative', isLargeCtrlsBar.value ? 'w-80 max-w-[32vw]' : 'w-32 flex-1']}>
           <button
             class="btn btn-circle btn-ghost btn-xs absolute top-1/2 left-1 z-20 h-6 min-h-6 w-6 -translate-y-1/2 p-0"
             title={
@@ -351,7 +351,7 @@ export default defineComponent({
                 onClick={() => {
                   settingsModel.value = false
                   router.push({
-                    name: ROUTE_NAME.settings,
+                    name: ROUTE_NAME.core,
                     query: { scrollTo: SETTINGS_MENU_KEY.proxies },
                   })
                 }}
@@ -383,7 +383,7 @@ export default defineComponent({
         <div class="flex gap-2 p-2">
           {hasProviders.value && tabs}
           {modeSelect}
-          <div class="flex flex-1">{searchInput}</div>
+          {searchInput}
           {upgradeAllIcon}
           {settingsModal}
           {toggleCollapseAll}

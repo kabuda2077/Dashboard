@@ -10,31 +10,17 @@
     <AssemblyName>Dashboard</AssemblyName>
     <RootNamespace>Dashboard</RootNamespace>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AllowedReferenceRelatedFileExtensions>.pdb;.pri</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
 
   <!-- Release 构建优化 -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <!-- 性能优化 -->
-    <TieredCompilation>true</TieredCompilation>
-    <TieredCompilationQuickJit>true</TieredCompilationQuickJit>
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <PublishReadyToRunShowWarnings>true</PublishReadyToRunShowWarnings>
-
-    <!-- 代码优化 -->
     <Optimize>true</Optimize>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
-
-    <!-- 发布优化 -->
     <PublishSingleFile>false</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
-
-    <!-- 编译器优化 -->
-    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
-    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
-
-    <!-- 去除不必要的元数据 -->
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
   </PropertyGroup>
 
@@ -48,9 +34,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="resources\app.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="resources\tray.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

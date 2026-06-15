@@ -1,92 +1,102 @@
 <template>
   <div :class="{ 'opacity-50': isDisabled, 'scroller-item': 1 }">
     <div
-      class="hover:bg-base-200/40 flex flex-col gap-3 overflow-hidden px-3 py-2 text-sm transition-colors"
-      :class="{
-        'cursor-pointer': isSelectable,
-      }"
-      @click="clickHandler"
+      class="transparent-collapse collapse rounded-none!"
+      :class="isExpanded ? 'collapse-open' : 'collapse-close'"
     >
-      <div class="min-h-5 leading-5">
-        <span class="text-base-content/50 text-xs tabular-nums">
-          {{ index }}
-        </span>
-        <span class="text-base-content/80 ml-4 text-xs">
-          <HighlightText
-            :text="rule.type"
+      <div
+        class="collapse-title hover:bg-base-200/40 flex min-h-0 flex-col gap-3 overflow-hidden px-3 py-2 text-sm transition-colors"
+        :class="{
+          'cursor-pointer': isSelectable,
+        }"
+        @click="clickHandler"
+      >
+        <div class="min-h-5 leading-5">
+          <span class="text-base-content/50 text-xs tabular-nums">
+            {{ index }}
+          </span>
+          <span class="text-base-content/80 ml-4 text-xs">
+            <HighlightText
+              :text="rule.type"
+              :filter="rulesFilter"
+            />
+            <template v-if="rule.payload"> : </template>
+          </span>
+          <span
+            class="ml-2"
+            v-if="rule.payload"
+          >
+            <HighlightText
+              :text="rule.payload"
+              :filter="rulesFilter"
+            />
+          </span>
+          <span
+            v-if="typeof size === 'number' && size !== -1"
+            class="text-base-content/50 ml-1 text-xs tabular-nums"
+          >
+            ({{ size }})
+            <QuestionMarkCircleIcon
+              v-if="size === 0"
+              class="-mt-1 ml-1 inline-block h-4 w-4"
+              @mouseenter="showMMDBSizeTip"
+            />
+          </span>
+          <button
+            v-if="isUpdateableRuleSet"
+            :class="
+              twMerge(
+                'btn btn-circle btn-ghost btn-xs -mt-[2px] ml-1',
+                isUpdating ? 'animate-spin' : '',
+              )
+            "
+            @click.stop="updateRuleProviderClickHandler"
+          >
+            <ArrowPathIcon class="h-3.5 w-3.5 opacity-60" />
+          </button>
+          <InformationCircleIcon
+            v-if="rule.extra"
+            class="-mt-[2px] ml-1 inline-block h-4 w-4 opacity-60"
+            @mouseenter="showRuleHitInfoTip"
+            @click.stop
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <input
+            v-if="rule.uuid || rule.extra"
+            type="checkbox"
+            class="toggle toggle-sm"
+            :checked="!isDisabled"
+            @change="toggleRuleDisabledHandler"
+            @click.stop
+          />
+          <ProxyChainPath
+            :proxy="rule.proxy"
+            :selected="selected"
+            :collapsed="isCollapsed"
+            :show-now-node="displayNowNodeInRule"
+            :show-latency="displayLatencyInRule"
             :filter="rulesFilter"
+            :interactive="!isCollapsed"
+            @update:selected="selected = $event"
           />
-          <template v-if="rule.payload"> : </template>
-        </span>
-        <span
-          class="ml-2"
-          v-if="rule.payload"
-        >
-          <HighlightText
-            :text="rule.payload"
-            :filter="rulesFilter"
-          />
-        </span>
-        <span
-          v-if="typeof size === 'number' && size !== -1"
-          class="text-base-content/50 ml-1 text-xs tabular-nums"
-        >
-          ({{ size }})
-          <QuestionMarkCircleIcon
-            v-if="size === 0"
-            class="-mt-1 ml-1 inline-block h-4 w-4"
-            @mouseenter="showMMDBSizeTip"
-          />
-        </span>
-        <button
-          v-if="isUpdateableRuleSet"
-          :class="
-            twMerge(
-              'btn btn-circle btn-ghost btn-xs -mt-[2px] ml-1',
-              isUpdating ? 'animate-spin' : '',
-            )
-          "
-          @click.stop="updateRuleProviderClickHandler"
-        >
-          <ArrowPathIcon class="h-3.5 w-3.5 opacity-60" />
-        </button>
-        <InformationCircleIcon
-          v-if="rule.extra"
-          class="-mt-[2px] ml-1 inline-block h-4 w-4 opacity-60"
-          @mouseenter="showRuleHitInfoTip"
-          @click.stop
-        />
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <input
-          v-if="rule.uuid || rule.extra"
-          type="checkbox"
-          class="toggle toggle-sm"
-          :checked="!isDisabled"
-          @change="toggleRuleDisabledHandler"
-          @click.stop
-        />
-        <ProxyChainPath
-          :proxy="rule.proxy"
-          :selected="selected"
-          :collapsed="isCollapsed"
-          :show-now-node="displayNowNodeInRule"
-          :show-latency="displayLatencyInRule"
-          :filter="rulesFilter"
-          :interactive="!isCollapsed"
-          @update:selected="selected = $event"
-        />
+
+      <div
+        class="collapse-content p-0"
+        @transitionend="handlerExpandTransitionEnd"
+      >
+        <template v-if="showExpandedContent">
+          <div class="border-base-content/3 border-b"></div>
+          <ProxyGroup
+            :name="selected"
+            :force-open="true"
+            class="transparent-collapse bg-base-200/30"
+          />
+        </template>
       </div>
     </div>
-
-    <template v-if="isSelectable && !isCollapsed">
-      <div class="border-base-content/3 border-b"></div>
-      <ProxyGroup
-        :name="selected"
-        :force-open="true"
-        class="transparent-collapse bg-base-200/40! rounded-none!"
-      />
-    </template>
   </div>
 </template>
 
@@ -116,7 +126,7 @@ import {
 import dayjs from 'dayjs'
 import { twMerge } from 'tailwind-merge'
 import type { Ref } from 'vue'
-import { computed, createApp, defineComponent, h, inject, ref } from 'vue'
+import { computed, createApp, defineComponent, h, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HighlightText from '../common/HighlightText.vue'
 import ProxyChainPath from '../common/ProxyChainPath.vue'
@@ -132,6 +142,21 @@ const ruleKey = computed(() => `${props.index}-${props.rule.payload}`)
 const isCollapsed = computed(() => expandedRule.value !== ruleKey.value)
 const isSelectable = computed(() => proxyGroupList.value.includes(props.rule.proxy))
 const selected = ref('')
+
+const isExpanded = computed(() => isSelectable.value && !isCollapsed.value)
+const showExpandedContent = ref(isExpanded.value)
+
+watch(isExpanded, (value) => {
+  if (value) {
+    showExpandedContent.value = true
+  }
+})
+
+const handlerExpandTransitionEnd = () => {
+  if (!isExpanded.value) {
+    showExpandedContent.value = false
+  }
+}
 
 const { t } = useI18n()
 const { showTip } = useTooltip()

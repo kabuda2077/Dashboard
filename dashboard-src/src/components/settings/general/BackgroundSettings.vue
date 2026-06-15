@@ -1,80 +1,76 @@
 <template>
-  <template v-if="isVisibleCustomBackgroundURL">
-    <div class="setting-item">
-      <div class="setting-item-label">
-        {{ $t('customBackgroundURL') }}
-      </div>
-      <div class="join">
-        <TextInput
-          class="join-item w-38"
-          v-model="customBackgroundURL"
-          :clearable="true"
-          @update:modelValue="handlerBackgroundURLChange"
-        />
-        <button
-          class="btn join-item btn-sm"
-          @click="handlerClickUpload"
-        >
-          <ArrowUpTrayIcon class="h-4 w-4" />
-        </button>
-      </div>
+  <div class="setting-item">
+    <div class="setting-item-label">
+      {{ $t('customBackgroundURL') }}
+    </div>
+    <div class="join">
+      <TextInput
+        class="join-item w-38"
+        v-model="customBackgroundURL"
+        :clearable="true"
+        @update:modelValue="handlerBackgroundURLChange"
+      />
       <button
-        class="btn btn-circle join-item btn-sm"
-        v-if="customBackgroundURL"
-        @click="displayBgProperty = !displayBgProperty"
+        class="btn join-item btn-sm"
+        @click="handlerClickUpload"
       >
-        <AdjustmentsHorizontalIcon class="h-4 w-4" />
+        <ArrowUpTrayIcon class="h-4 w-4" />
       </button>
-      <input
-        ref="inputFileRef"
-        type="file"
-        accept="image/*"
-        class="hidden"
-        @change="handlerFileChange"
-      />
     </div>
-    <div
-      v-if="customBackgroundURL && displayBgProperty && isVisibleTransparent"
-      class="setting-item"
+    <button
+      class="btn btn-circle join-item btn-sm"
+      v-if="customBackgroundURL"
+      @click="displayBgProperty = !displayBgProperty"
     >
-      <div class="setting-item-label">
-        {{ $t('transparent') }}
-      </div>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        v-model="dashboardTransparent"
-        class="range max-w-64"
-        @touchstart.passive.stop
-        @touchmove.passive.stop
-        @touchend.passive.stop
-      />
+      <AdjustmentsHorizontalIcon class="h-4 w-4" />
+    </button>
+    <input
+      ref="inputFileRef"
+      type="file"
+      accept="image/*"
+      class="hidden"
+      @change="handlerFileChange"
+    />
+  </div>
+  <div
+    v-if="customBackgroundURL && displayBgProperty"
+    class="setting-item"
+  >
+    <div class="setting-item-label">
+      {{ $t('transparent') }}
     </div>
-    <div
-      v-if="customBackgroundURL && displayBgProperty && isVisibleBlurIntensity"
-      class="setting-item"
-    >
-      <div class="setting-item-label">
-        {{ $t('blurIntensity') }}
-      </div>
-      <input
-        type="range"
-        min="0"
-        max="40"
-        v-model="blurIntensity"
-        class="range max-w-64"
-        @touchstart.stop
-        @touchmove.stop
-        @touchend.stop
-      />
+    <input
+      type="range"
+      min="0"
+      max="100"
+      v-model="dashboardTransparent"
+      class="range max-w-64"
+      @touchstart.passive.stop
+      @touchmove.passive.stop
+      @touchend.passive.stop
+    />
+  </div>
+  <div
+    v-if="customBackgroundURL && displayBgProperty"
+    class="setting-item"
+  >
+    <div class="setting-item-label">
+      {{ $t('blurIntensity') }}
     </div>
-  </template>
+    <input
+      type="range"
+      min="0"
+      max="40"
+      v-model="blurIntensity"
+      class="range max-w-64"
+      @touchstart.stop
+      @touchmove.stop
+      @touchend.stop
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { useIsSettingVisible } from '@/composables/settings'
-import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
 import {
   autoTheme,
@@ -92,11 +88,6 @@ import TextInput from '../../common/TextInput.vue'
 type BackgroundToneTheme = 'light' | 'dark'
 
 const { t } = useI18n()
-
-const k = GENERAL_ITEM_KEYS
-const isVisibleCustomBackgroundURL = useIsSettingVisible(k.customBackgroundURL)
-const isVisibleTransparent = useIsSettingVisible(k.transparent)
-const isVisibleBlurIntensity = useIsSettingVisible(k.blurIntensity)
 
 const displayBgProperty = ref(false)
 const inputFileRef = ref<HTMLInputElement>()

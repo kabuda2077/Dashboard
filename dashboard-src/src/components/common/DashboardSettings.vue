@@ -1,5 +1,5 @@
 <template>
-  <div class="settings-section-label flex items-center justify-between gap-3">
+  <div class="settings-section-label flex items-center justify-between gap-3 !pt-0">
     <span>{{ $t('dashboardSettingsJsonFile') }}</span>
     <button
       class="btn btn-xs"
@@ -111,11 +111,7 @@ import {
 } from '@/helper/autoImportSettings'
 import { showNotification } from '@/helper/notification'
 import { useTooltip } from '@/helper/tooltip'
-import {
-  applyDashboardSettingsToStorage,
-  exportSettings,
-  resetSettings,
-} from '@/helper/utils'
+import { applyDashboardSettingsToStorage, exportSettings, resetSettings } from '@/helper/utils'
 import {
   ArrowDownCircleIcon,
   ArrowDownTrayIcon,

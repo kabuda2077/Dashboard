@@ -193,6 +193,7 @@ const ru: LANG_MESSAGE = {
   hideLogRegex: 'Скрыть журнал Regex',
   hideLogTip:
     'Используйте регистронезависимое регулярное выражение, чтобы найти и скрыть нежелательные записи журнала.',
+  sameConnectionLogs: 'Журналы одного соединения',
   loadBalance: 'Балансировка нагрузки',
   label: 'Метка',
   optional: 'Необязательно',
@@ -231,6 +232,7 @@ const ru: LANG_MESSAGE = {
   toggleSidebar: 'Переключить боковую панель',
   switchToPreviousBackend: 'Переключиться на предыдущий бэкенд',
   switchToNextBackend: 'Переключиться на следующий бэкенд',
+  openBackendSettings: 'Открыть настройки бэкенда',
   keyboardShortcutsConflict:
     'Обнаружены повторяющиеся горячие клавиши: {keys}. Сработает только первое совпадение.',
   resetKeyboardShortcuts: 'Сбросить горячие клавиши',
@@ -300,12 +302,8 @@ const ru: LANG_MESSAGE = {
   ruleHitCountCard: 'Статистика попаданий/промахов правил',
   latency: 'Задержка',
   icon: 'Иконка',
-  settingsVisibility: 'Видимость настроек',
   ports: 'Порты',
   actions: 'Действия',
-  showAllPreset: 'Показать все',
-  minimalPreset: 'Минимальный вид',
-  settingsPageTwoColumns: 'Двухколоночный режим',
   aggregateBy: 'Агрегация по',
   aggregateBySourceIP: 'По исходному IP',
   aggregateByDestination: 'По назначению',

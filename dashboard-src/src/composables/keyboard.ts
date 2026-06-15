@@ -1,15 +1,11 @@
 import { renderRoutes } from '@/helper'
-import { showNotification } from '@/helper/notification'
-import { getLabelFromBackend } from '@/helper/utils'
 import { isSidebarCollapsed, keyboardShortcuts } from '@/store/settings'
-import { activeBackend, switchActiveBackend } from '@/store/setup'
+import { activeBackend } from '@/store/setup'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 export enum KEYBOARD_SHORTCUT_ACTION {
   TOGGLE_SIDEBAR = 'sidebar:toggle',
-  BACKEND_PREVIOUS = 'backend:previous',
-  BACKEND_NEXT = 'backend:next',
   PAGE_1 = 'page:1',
   PAGE_2 = 'page:2',
   PAGE_3 = 'page:3',
@@ -42,14 +38,6 @@ export const KEYBOARD_SHORTCUTS = {
   [KEYBOARD_SHORTCUT_ACTION.TOGGLE_SIDEBAR]: {
     defaultKey: 'B',
     label: 'toggleSidebar',
-  },
-  [KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS]: {
-    defaultKey: 'P',
-    label: 'switchToPreviousBackend',
-  },
-  [KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT]: {
-    defaultKey: 'N',
-    label: 'switchToNextBackend',
   },
   [KEYBOARD_SHORTCUT_ACTION.PAGE_1]: {
     defaultKey: '1',
@@ -154,9 +142,11 @@ export const useKeyboardShortcuts = () => {
   })
 
   const getShortcutKey = (action: string) => {
-    return (
-      normalizedCustomShortcuts.value[action] || normalizeShortcut(getDefaultShortcutKey(action))
-    )
+    if (action in normalizedCustomShortcuts.value) {
+      return normalizedCustomShortcuts.value[action]
+    }
+
+    return normalizeShortcut(getDefaultShortcutKey(action))
   }
 
   return {
@@ -188,7 +178,6 @@ export const useKeyboard = () => {
     const target = event.target as HTMLElement | null
     if (
       target instanceof HTMLInputElement ||
-      target instanceof HTMLSelectElement ||
       target instanceof HTMLTextAreaElement ||
       target?.isContentEditable
     ) {
@@ -204,44 +193,6 @@ export const useKeyboard = () => {
     if (action === KEYBOARD_SHORTCUT_ACTION.TOGGLE_SIDEBAR) {
       event.preventDefault()
       isSidebarCollapsed.value = !isSidebarCollapsed.value
-      return
-    }
-
-    if (action === KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS) {
-      if (!activeBackend.value) {
-        return
-      }
-
-      event.preventDefault()
-      const backend = switchActiveBackend(-1)
-      if (backend) {
-        showNotification({
-          content: 'backendSwitchTo',
-          params: {
-            backend: getLabelFromBackend(backend),
-          },
-          type: 'alert-success',
-        })
-      }
-      return
-    }
-
-    if (action === KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT) {
-      if (!activeBackend.value) {
-        return
-      }
-
-      event.preventDefault()
-      const backend = switchActiveBackend(1)
-      if (backend) {
-        showNotification({
-          content: 'backendSwitchTo',
-          params: {
-            backend: getLabelFromBackend(backend),
-          },
-          type: 'alert-success',
-        })
-      }
       return
     }
 

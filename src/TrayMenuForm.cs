@@ -9,8 +9,9 @@ public sealed class TrayMenuForm : Form
     private const int DwmWindowCornerPreference = 33;
     private const int DwmCornerRound = 2;
     private const int CornerRadius = 14;
-    private const int MenuWidth = 220;
-    private const int OuterPadding = 6;
+    private const int MenuWidth = 190;
+    private const int OuterPadding = 5;
+    private const int TextHorizontalPadding = 14;
     private const int ItemHeight = 38;
     private const int SeparatorHeight = 11;
 
@@ -191,7 +192,11 @@ public sealed class TrayMenuForm : Form
         }
 
         var textColor = item.Enabled ? Color.FromArgb(24, 24, 27) : Color.FromArgb(161, 161, 170);
-        var textRect = new Rectangle(bounds.Left + 20, bounds.Top, bounds.Width - 40, bounds.Height);
+        var textRect = new Rectangle(
+            bounds.Left + TextHorizontalPadding,
+            bounds.Top,
+            bounds.Width - TextHorizontalPadding * 2,
+            bounds.Height);
         TextRenderer.DrawText(
             g,
             item.Text,

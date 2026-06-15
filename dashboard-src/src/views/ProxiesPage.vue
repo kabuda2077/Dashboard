@@ -5,7 +5,7 @@
     :class="[disableProxiesPageTextSelect ? 'select-none' : '']"
   >
     <ProxiesCtrl />
-    <div class="flex min-h-0 w-full flex-1">
+    <div class="relative flex min-h-0 w-full flex-1">
       <FolderManagerPanel v-if="foldersUiVisible && folderManagerOpen" />
       <div
         class="max-md:scrollbar-hidden relative h-full min-w-0 flex-1"
@@ -16,7 +16,7 @@
       >
         <FolderTopBar v-if="foldersUiVisible" />
         <template v-if="displayTwoColumns">
-          <div class="grid grid-cols-2 gap-3 p-3 md:pr-1">
+          <div class="grid grid-cols-2 gap-3 p-3">
             <div
               v-for="idx in [0, 1]"
               :key="idx"
@@ -32,7 +32,7 @@
           </div>
         </template>
         <div
-          class="grid grid-cols-1 gap-3 p-3 md:pr-1"
+          class="grid grid-cols-1 gap-3 p-3"
           v-else
         >
           <component

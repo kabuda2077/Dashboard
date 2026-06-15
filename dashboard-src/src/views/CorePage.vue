@@ -1,133 +1,129 @@
 <template>
-  <div class="h-full overflow-x-hidden overflow-y-auto p-3">
-    <div class="mx-auto flex max-w-5xl flex-col gap-3">
-      <section class="base-container flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-        <div class="flex items-center gap-3">
+  <div class="h-full overflow-x-hidden overflow-y-auto">
+    <CtrlsBar>
+      <div
+        ref="statusRowRef"
+        class="flex min-h-9 max-w-full min-w-0 items-center gap-2 text-sm"
+        :style="{
+          transform: `translateX(${statusOffset}px)`,
+          width: topControlsWidth ? `${topControlsWidth}px` : undefined,
+          maxWidth: '100%',
+        }"
+      >
+        <div class="relative flex h-9 min-w-0 flex-1 items-center">
           <span
-            class="h-3 w-3 rounded-full"
-            :class="runtime.isRunning ? 'bg-success shadow-success/30 shadow-[0_0_0_4px]' : 'bg-warning shadow-warning/30 shadow-[0_0_0_4px]'"
+            ref="statusDotRef"
+            class="absolute top-1/2 -left-7 h-3 w-3 -translate-y-1/2 rounded-full"
+            :class="
+              runtime.isRunning
+                ? 'bg-success shadow-success/30 shadow-[0_0_0_4px]'
+                : 'bg-warning shadow-warning/30 shadow-[0_0_0_4px]'
+            "
           />
-          <div>
-            <h1 class="text-2xl font-semibold">Mihomo Core</h1>
-            <p class="text-base-content/60 mt-1 text-sm">
-              {{ runtime.isRunning ? `运行中 / PID ${runtime.processId ?? ''}` : '未运行' }}
-            </p>
+          <div
+            class="border-base-content/20 bg-base-100 flex h-9 w-full min-w-0 items-center gap-3 rounded-lg border px-3 pr-4 shadow-xs"
+          >
+            <span class="font-semibold whitespace-nowrap">Mihomo Core</span>
+            <span class="text-base-content/60 text-xs whitespace-nowrap">
+              {{ runtimeStatusText }}
+            </span>
           </div>
         </div>
 
-        <div class="flex flex-wrap gap-2">
+        <div class="flex h-[34px] shrink-0 items-center gap-2">
           <button
-            class="btn btn-primary btn-sm"
+            class="btn btn-primary btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
             :disabled="runtime.isRunning || runtime.isCoreUpgrading"
             @click="startCore"
           >
-            启动内核
+            <PlayIcon class="h-3.5 w-3.5" />
+            启动
           </button>
           <button
-            class="btn btn-sm"
-            :disabled="!runtime.isRunning || runtime.isCoreUpgrading"
-            @click="post({ ...collect(), type: 'restart' })"
-          >
-            重启内核
-          </button>
-          <button
-            class="btn btn-warning btn-sm"
+            class="btn btn-warning btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
             :disabled="!runtime.isRunning || runtime.isCoreUpgrading"
             @click="post({ type: 'stop' })"
           >
-            停止内核
-          </button>
-          <button
-            class="btn btn-secondary btn-sm"
-            :disabled="runtime.isCoreUpgrading"
-            @click="post({ ...collect(), type: 'upgradeCore' })"
-          >
-            <span
-              v-if="runtime.isCoreUpgrading"
-              class="loading loading-spinner loading-xs"
-            />
-            {{ runtime.isCoreUpgrading ? '升级中' : '升级内核' }}
+            <StopIcon class="h-3.5 w-3.5" />
+            停止
           </button>
         </div>
-      </section>
-
-      <div
-        v-if="notice"
-        class="alert alert-info py-2 text-sm"
-      >
-        {{ notice }}
       </div>
-
-      <div class="grid items-start gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
-        <section
-          ref="configPanelRef"
-          class="base-container p-4"
-        >
-          <h2 class="mb-4 text-base font-semibold">启动配置</h2>
-          <div class="flex flex-col gap-3">
-            <label class="form-control">
-              <span class="label-text mb-1">内核路径</span>
-              <div class="flex gap-2">
+    </CtrlsBar>
+    <div
+      class="mx-auto flex w-full max-w-7xl flex-col gap-3 p-3"
+      :style="padding"
+    >
+      <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-12">
+        <section class="rounded-lg p-2">
+          <h2 class="mt-1 mb-3 px-1 text-lg font-semibold">启动配置</h2>
+          <div
+            ref="configPanelRef"
+            class="settings-grid"
+          >
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">内核路径</div>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="settings.corePath"
-                  class="input input-bordered input-sm min-w-0 flex-1"
+                  class="input input-sm bg-base-200/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
                   type="text"
                 />
                 <button
-                  class="btn btn-sm"
+                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
                   @click="post({ type: 'browseCore' })"
                 >
                   选择
                 </button>
                 <button
-                  class="btn btn-sm"
+                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
                   @click="post({ ...collect(), type: 'openCoreLocation' })"
                 >
                   位置
                 </button>
               </div>
-            </label>
+            </div>
 
-            <label class="form-control">
-              <span class="label-text mb-1">配置文件</span>
-              <div class="flex gap-2">
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">配置文件</div>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="settings.configPath"
-                  class="input input-bordered input-sm min-w-0 flex-1"
+                  class="input input-sm bg-base-200/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
                   type="text"
                 />
                 <button
-                  class="btn btn-sm"
+                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
                   @click="post({ type: 'browseConfig' })"
                 >
                   选择
                 </button>
                 <button
-                  class="btn btn-sm"
+                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
                   @click="post({ ...collect(), type: 'openConfigLocation' })"
                 >
                   位置
                 </button>
               </div>
-            </label>
+            </div>
 
-            <label class="form-control">
-              <span class="label-text mb-1">API 地址</span>
-              <div class="flex gap-2">
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">API 地址</div>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="settings.apiUrl"
-                  class="input input-bordered input-sm min-w-0 flex-1"
+                  class="input input-sm bg-base-200/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
                   type="text"
                 />
               </div>
-            </label>
+            </div>
 
-            <label class="form-control">
-              <span class="label-text mb-1">Secret</span>
-              <div class="flex gap-2">
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">Secret</div>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="settings.secret"
-                  class="input input-bordered input-sm min-w-0 flex-1"
+                  class="input input-sm bg-base-200/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
                   type="text"
                 />
                 <button
@@ -137,62 +133,80 @@
                   保存
                 </button>
               </div>
-            </label>
+            </div>
 
-            <div class="mt-2 flex flex-col gap-3">
-              <label class="flex items-center justify-between gap-3">
-                <span class="text-sm">启动软件时自动启动内核</span>
-                <input
-                  v-model="settings.startCoreOnLaunch"
-                  class="toggle toggle-sm"
-                  type="checkbox"
-                  @change="saveSettings"
-                />
-              </label>
-              <label class="flex items-center justify-between gap-3">
-                <span class="text-sm">关闭窗口时隐藏到托盘</span>
-                <input
-                  v-model="settings.minimizeToTray"
-                  class="toggle toggle-sm"
-                  type="checkbox"
-                  @change="saveSettings"
-                />
-              </label>
-              <label class="flex items-center justify-between gap-3">
-                <span class="text-sm">开机自启</span>
-                <input
-                  v-model="settings.autostart"
-                  class="toggle toggle-sm"
-                  type="checkbox"
-                  @change="saveSettings"
-                />
-              </label>
+            <div class="setting-item">
+              <div class="setting-item-label">启动软件时自动启动内核</div>
+              <input
+                v-model="settings.startCoreOnLaunch"
+                class="toggle"
+                type="checkbox"
+                @change="saveSettings"
+              />
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-label">关闭窗口时隐藏到托盘</div>
+              <input
+                v-model="settings.minimizeToTray"
+                class="toggle"
+                type="checkbox"
+                @change="saveSettings"
+              />
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-label">轻量模式</div>
+              <input
+                v-model="settings.lightweightMode"
+                class="toggle"
+                type="checkbox"
+                @change="saveSettings"
+              />
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-label">开机自启</div>
+              <input
+                v-model="settings.autostart"
+                class="toggle"
+                type="checkbox"
+                @change="saveSettings"
+              />
             </div>
           </div>
         </section>
 
-        <section
-          ref="logPanelRef"
-          class="base-container flex min-h-[360px] min-w-0 flex-col p-4"
-        >
-          <h2
-            ref="logTitleRef"
-            class="mb-4 text-base font-semibold"
+        <section class="rounded-lg p-2">
+          <h2 class="mt-1 mb-3 px-1 text-lg font-semibold">内核日志</h2>
+          <div
+            ref="logPanelRef"
+            class="settings-grid p-4"
+            :style="logPanelHeight ? { height: `${logPanelHeight}px` } : undefined"
           >
-            内核日志
-          </h2>
-          <pre
-            class="bg-base-300/60 text-base-content/80 overflow-auto rounded-box p-3 text-xs leading-5 whitespace-pre-wrap"
-            :style="{ height: `${logHeight}px`, maxHeight: `${logHeight}px` }"
-          >{{ runtime.logText || '暂无日志' }}</pre>
+            <pre
+              class="bg-base-200/60 text-base-content/80 rounded-box h-full min-h-0 overflow-auto p-3 text-xs leading-5 whitespace-pre-wrap"
+              >{{ runtime.logText || '暂无日志' }}</pre
+            >
+          </div>
         </section>
       </div>
+
+      <SettingsContent
+        embedded
+        id-prefix="core-settings"
+        :scroll-to="settingsScrollTo"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import CtrlsBar from '@/components/common/CtrlsBar.vue'
+import SettingsContent from '@/components/settings/SettingsContent.vue'
+import { coreHostActionsKey } from '@/composables/coreHostActions'
+import { usePaddingForViews } from '@/composables/paddingViews'
+import { showNotification } from '@/helper/notification'
+import { PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
+import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 
 type CoreState = {
   isRunning?: boolean
@@ -203,6 +217,7 @@ type CoreState = {
   secret?: string
   startCoreOnLaunch?: boolean
   minimizeToTray?: boolean
+  lightweightMode?: boolean
   autostart?: boolean
   isCoreUpgrading?: boolean
   logText?: string
@@ -233,6 +248,11 @@ type WebViewWindow = Window & {
   __mihomoControlNotice?: (message: string) => void
 }
 
+const { padding } = usePaddingForViews({
+  offsetTop: 12,
+  offsetBottom: 0,
+})
+
 const runtime = reactive({
   isRunning: false,
   processId: null as number | null,
@@ -247,20 +267,38 @@ const settings = reactive({
   secret: '',
   startCoreOnLaunch: false,
   minimizeToTray: true,
+  lightweightMode: true,
   autostart: false,
 })
 
-const notice = ref('')
 const configPanelRef = ref<HTMLElement>()
 const logPanelRef = ref<HTMLElement>()
-const logTitleRef = ref<HTMLElement>()
-const logHeight = ref(368)
-let noticeTimer: number | undefined
+const statusRowRef = ref<HTMLElement>()
+const statusDotRef = ref<HTMLElement>()
+const logPanelHeight = ref<number | null>(null)
+const topControlsWidth = ref<number | null>(null)
+const statusOffset = ref(45)
+const statusDotInset = 28
+const statusDotOpticalOffset = 2
+const windowControlsReserve = 176
+const chromeRightPadding = 12
 let resizeObserver: ResizeObserver | undefined
 let syncFrame = 0
 
 const webviewWindow = window as WebViewWindow
 const post = (message: unknown) => webviewWindow.chrome?.webview?.postMessage(message)
+const route = useRoute()
+const settingsScrollTo = computed(() =>
+  typeof route.query.scrollTo === 'string' ? route.query.scrollTo : null,
+)
+
+const runtimeStatusText = computed(() => {
+  if (!runtime.isRunning) {
+    return '未运行'
+  }
+
+  return runtime.processId ? `运行中 / PID ${runtime.processId}` : '运行中'
+})
 
 const collect = () => ({
   type: 'save',
@@ -270,6 +308,7 @@ const collect = () => ({
   secret: settings.secret,
   startCoreOnLaunch: settings.startCoreOnLaunch,
   minimizeToTray: settings.minimizeToTray,
+  lightweightMode: settings.lightweightMode,
   autostart: settings.autostart,
 })
 
@@ -277,9 +316,24 @@ const startCore = () => {
   post({ ...collect(), type: 'start' })
 }
 
+const restartCore = () => {
+  post({ ...collect(), type: 'restart' })
+}
+
+const upgradeCore = () => {
+  post({ ...collect(), type: 'upgradeCore' })
+}
+
 const saveSettings = () => {
   post(collect())
 }
+
+provide(coreHostActionsKey, {
+  isRunning: computed(() => runtime.isRunning),
+  isCoreUpgrading: computed(() => runtime.isCoreUpgrading),
+  restartCore,
+  upgradeCore,
+})
 
 const setState = (state: CoreState) => {
   runtime.isRunning = !!state.isRunning
@@ -292,15 +346,36 @@ const setState = (state: CoreState) => {
   settings.secret = state.secret ?? ''
   settings.startCoreOnLaunch = !!state.startCoreOnLaunch
   settings.minimizeToTray = !!state.minimizeToTray
+  settings.lightweightMode = state.lightweightMode ?? true
   settings.autostart = !!state.autostart
 }
 
+const getNoticeType = (message: string) => {
+  if (message.startsWith('操作失败') || message.includes('失败')) {
+    return 'alert-error'
+  }
+
+  if (message.startsWith('正在')) {
+    return 'alert-info'
+  }
+
+  if (message.includes('管理员权限') || message.includes('UAC')) {
+    return 'alert-warning'
+  }
+
+  return 'alert-success'
+}
+
 const showNotice = (message: string) => {
-  notice.value = message
-  window.clearTimeout(noticeTimer)
-  noticeTimer = window.setTimeout(() => {
-    notice.value = ''
-  }, 2400)
+  if (!message) {
+    return
+  }
+
+  showNotification({
+    content: message,
+    key: `core-host-${message}`,
+    type: getNoticeType(message),
+  })
 }
 
 const syncLogHeight = () => {
@@ -308,19 +383,32 @@ const syncLogHeight = () => {
   syncFrame = window.requestAnimationFrame(() => {
     const configPanel = configPanelRef.value
     const logPanel = logPanelRef.value
-    const logTitle = logTitleRef.value
-    if (!configPanel || !logPanel || !logTitle) {
+    if (!configPanel) {
       return
     }
 
-    const panelStyle = window.getComputedStyle(logPanel)
-    const titleStyle = window.getComputedStyle(logTitle)
-    const verticalPadding =
-      Number.parseFloat(panelStyle.paddingTop) + Number.parseFloat(panelStyle.paddingBottom)
-    const titleBlock =
-      logTitle.offsetHeight + Number.parseFloat(titleStyle.marginBottom)
-    const nextHeight = Math.round(configPanel.offsetHeight - verticalPadding - titleBlock)
-    logHeight.value = Math.max(280, nextHeight)
+    const statusDot = statusDotRef.value
+    const statusRow = statusRowRef.value
+    const panelRect = configPanel.getBoundingClientRect()
+    let offsetDelta = 0
+
+    if (statusDot) {
+      const dotLeft = statusDot.getBoundingClientRect().left
+      offsetDelta = Math.round(panelRect.left - dotLeft + statusDotOpticalOffset)
+      statusOffset.value += offsetDelta
+    }
+
+    const desiredWidth = Math.round(panelRect.width - statusDotInset - statusDotOpticalOffset)
+    const rowLeft = statusRow
+      ? statusRow.getBoundingClientRect().left + offsetDelta
+      : panelRect.left + statusDotInset + statusDotOpticalOffset
+    const availableRight = window.innerWidth - windowControlsReserve - chromeRightPadding
+    const availableWidth = Math.floor(availableRight - rowLeft)
+    topControlsWidth.value = Math.max(280, Math.min(desiredWidth, availableWidth))
+
+    if (logPanel) {
+      logPanelHeight.value = Math.round(configPanel.offsetHeight)
+    }
   })
 }
 
@@ -357,6 +445,5 @@ onUnmounted(() => {
   window.removeEventListener('resize', syncLogHeight)
   resizeObserver?.disconnect()
   window.cancelAnimationFrame(syncFrame)
-  window.clearTimeout(noticeTimer)
 })
 </script>

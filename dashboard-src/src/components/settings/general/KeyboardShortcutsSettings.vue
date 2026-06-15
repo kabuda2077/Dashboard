@@ -90,18 +90,6 @@ const shortcuts = computed(() => {
       key: getShortcutKey(KEYBOARD_SHORTCUT_ACTION.TOGGLE_SIDEBAR),
       label: KEYBOARD_SHORTCUTS[KEYBOARD_SHORTCUT_ACTION.TOGGLE_SIDEBAR].label,
     },
-    {
-      action: KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS,
-      defaultKey: getDefaultShortcutKey(KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS),
-      key: getShortcutKey(KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS),
-      label: KEYBOARD_SHORTCUTS[KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS].label,
-    },
-    {
-      action: KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT,
-      defaultKey: getDefaultShortcutKey(KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT),
-      key: getShortcutKey(KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT),
-      label: KEYBOARD_SHORTCUTS[KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT].label,
-    },
     ...PAGE_SHORTCUT_ACTIONS.filter(
       (action) => !!renderRoutes.value[PAGE_SHORTCUT_ACTION_INDEX_MAP[action]!],
     ).map((action) => ({

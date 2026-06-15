@@ -37,6 +37,15 @@ const style = computed(() => {
     marginRight: `${props.margin}px`,
   }
 })
+
+type HostWindow = Window & {
+  __mihomoIconCache?: Record<string, string>
+}
+
+const icon = computed(() => {
+  return (window as HostWindow).__mihomoIconCache?.[props.icon] || props.icon
+})
+
 const DOM_STARTS_WITH = 'data:image/svg+xml,'
 const isDom = computed(() => {
   return props.icon.startsWith(DOM_STARTS_WITH)

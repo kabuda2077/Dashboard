@@ -1,5 +1,13 @@
 bin/
 obj/
+artifacts/
+publish/
+publish-*/
+releases/
+dashboard-native/
+.dotnet/
+.dotnet-install.ps1
+.tmp/
 .vs/
 *.user
 *.suo

@@ -1,133 +1,140 @@
 <template>
   <!-- backend -->
-  <div
-    v-if="hasVisibleItems"
-    class="flex flex-col gap-3 text-sm"
-  >
-    <div class="flex items-center gap-2 px-1">
-      <div class="indicator">
-        <a
-          class="flex cursor-pointer items-center gap-2 text-lg font-semibold"
-          :href="
-            isSingBox
-              ? 'https://github.com/sagernet/sing-box'
-              : MIHOMO_CHANNEL[mihomo?.[0] ?? MIHOMO.Meta].url
-          "
-          target="_blank"
-        >
-          {{ $t('backend') }}
-          <BackendVersion class="text-sm font-normal" />
-        </a>
-      </div>
+  <div class="rounded-lg p-2 text-sm">
+    <div class="mt-1 mb-3 px-1 text-lg font-semibold">
+      <a
+        class="inline-flex cursor-pointer items-center gap-2"
+        :href="
+          isSingBox
+            ? 'https://github.com/sagernet/sing-box'
+            : MIHOMO_CHANNEL[mihomo?.[0] ?? MIHOMO.Meta].url
+        "
+        target="_blank"
+      >
+        {{ $t('backend') }}
+        <BackendVersion class="text-sm font-normal" />
+      </a>
     </div>
 
-    <div
-      class="settings-grid"
-      v-if="isVisibleActions || isVisibleBackendSwitch || isVisibleDnsQuery"
-    >
-      <div
-        v-if="isVisibleBackendSwitch"
-        class="setting-item p-4"
-      >
-        <BackendSwitch />
-      </div>
-
-      <div
-        v-if="isVisibleActions"
-        class="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-2"
-      >
-        <template v-if="!isSingBox || displayAllFeatures">
-          <button
-            class="btn btn-sm"
-            @click="handlerClickReloadConfigs"
+    <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-12">
+      <div>
+        <div
+          v-if="configs"
+          class="settings-grid"
+        >
+          <div
+            v-if="configs?.tun && canShowTunMode"
+            class="setting-item"
           >
-            <span
-              v-if="isConfigReloading"
-              class="loading loading-spinner loading-md"
-            ></span>
-            {{ $t('reloadConfigs') }}
-          </button>
-          <button
-            class="btn btn-sm"
-            @click="handlerClickUpdateGeo"
-          >
-            <span
-              v-if="isGeoUpdating"
-              class="loading loading-spinner loading-md"
-            ></span>
-            {{ $t('updateGeoDatabase') }}
-          </button>
-        </template>
-        <button
-          class="btn btn-sm"
-          @click="handleFlushDNSCache"
-        >
-          {{ $t('flushDNSCache') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handleFlushFakeIP"
-        >
-          {{ $t('flushFakeIP') }}
-        </button>
-        <button
-          v-if="hasSmartGroup"
-          class="btn btn-sm"
-          @click="handleFlushSmartWeights"
-        >
-          {{ $t('flushSmartWeights') }}
-        </button>
-      </div>
-
-      <div
-        v-if="isVisibleDnsQuery"
-        class="setting-item flex-col items-start py-3"
-      >
-        <div class="flex w-full flex-col">
-          <div class="settings-section-label">
-            {{ $t('DNSQuery') }}
+            <div class="setting-item-label">
+              {{ $t('tunMode') }}
+            </div>
+            <input
+              class="toggle"
+              type="checkbox"
+              v-model="configs.tun.enable"
+              @change="hanlderTunModeChange"
+            />
           </div>
-          <DnsQuery />
+          <div
+            v-if="configs"
+            class="setting-item"
+          >
+            <div class="setting-item-label">
+              {{ $t('allowLan') }}
+            </div>
+            <input
+              class="toggle"
+              type="checkbox"
+              v-model="configs['allow-lan']"
+              @change="handlerAllowLanChange"
+            />
+          </div>
+        </div>
+
+        <div class="settings-section-label">操作</div>
+        <div class="settings-grid">
+          <div class="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-2">
+            <button
+              v-if="coreHostActions"
+              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              :disabled="!coreHostActions.isRunning.value || coreHostActions.isCoreUpgrading.value"
+              @click="coreHostActions.restartCore"
+            >
+              重启内核
+            </button>
+            <button
+              v-if="coreHostActions"
+              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              :disabled="coreHostActions.isCoreUpgrading.value"
+              @click="coreHostActions.upgradeCore"
+            >
+              <span
+                v-if="coreHostActions.isCoreUpgrading.value"
+                class="loading loading-spinner loading-xs"
+              />
+              {{ coreHostActions.isCoreUpgrading.value ? '升级中' : '升级内核' }}
+            </button>
+            <template v-if="!isSingBox || displayAllFeatures">
+              <button
+                class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                @click="handlerClickReloadConfigs"
+              >
+                <span
+                  v-if="isConfigReloading"
+                  class="loading loading-spinner loading-md"
+                ></span>
+                {{ $t('reloadConfigs') }}
+              </button>
+              <button
+                class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                @click="handlerClickUpdateGeo"
+              >
+                <span
+                  v-if="isGeoUpdating"
+                  class="loading loading-spinner loading-md"
+                ></span>
+                {{ $t('updateGeoDatabase') }}
+              </button>
+            </template>
+            <button
+              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              @click="handleFlushDNSCache"
+            >
+              {{ $t('flushDNSCache') }}
+            </button>
+            <button
+              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              @click="handleFlushFakeIP"
+            >
+              {{ $t('flushFakeIP') }}
+            </button>
+            <button
+              v-if="hasSmartGroup"
+              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              @click="handleFlushSmartWeights"
+            >
+              {{ $t('flushSmartWeights') }}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div
-      v-if="!isSingBox && configs && hasVisibleSettings"
-      class="grid"
-    >
-      <div class="settings-section-label">
-        {{ $t('settings') }}
-      </div>
-      <div class="settings-grid">
-        <BackendPortsGrid v-if="isVisiblePorts" />
+      <div>
         <div
-          v-if="configs?.tun && canShowTunMode"
-          class="setting-item"
+          v-if="!isSingBox && configs"
+          class="settings-grid"
         >
-          <div class="setting-item-label">
-            {{ $t('tunMode') }}
-          </div>
-          <input
-            class="toggle"
-            type="checkbox"
-            v-model="configs.tun.enable"
-            @change="hanlderTunModeChange"
-          />
+          <BackendPortsGrid v-if="!isSingBox && configs" />
         </div>
-        <div
-          v-if="isVisibleAllowLan"
-          class="setting-item"
-        >
-          <div class="setting-item-label">
-            {{ $t('allowLan') }}
+
+        <div class="settings-section-label">
+          {{ $t('DNSQuery') }}
+        </div>
+        <div class="settings-grid">
+          <div class="p-3">
+            <DnsQuery />
           </div>
-          <input
-            class="toggle"
-            type="checkbox"
-            v-model="configs['allow-lan']"
-            @change="handlerAllowLanChange"
-          />
         </div>
       </div>
     </div>
@@ -146,10 +153,8 @@ import {
 } from '@/api'
 import BackendVersion from '@/components/common/BackendVersion.vue'
 import BackendPortsGrid from '@/components/settings/backend/BackendPortsGrid.vue'
-import BackendSwitch from '@/components/settings/backend/BackendSwitch.vue'
 import DnsQuery from '@/components/settings/backend/DnsQuery.vue'
-import { useIsSettingVisible } from '@/composables/settings'
-import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
+import { coreHostActionsKey } from '@/composables/coreHostActions'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { configs, fetchConfigs, updateConfigs } from '@/store/config'
@@ -157,37 +162,10 @@ import { fetchProxies, hasSmartGroup } from '@/store/proxies'
 import { fetchRules } from '@/store/rules'
 import { displayAllFeatures } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 
-const k = BACKEND_ITEM_KEYS
-const isVisibleBackendSwitch = useIsSettingVisible(k.backend)
-const isVisiblePorts = useIsSettingVisible(k.ports)
-const isVisibleTunMode = useIsSettingVisible(k.tunMode)
-const isVisibleAllowLan = useIsSettingVisible(k.allowLan)
-const isVisibleActions = useIsSettingVisible(k.actions)
-const isVisibleDnsQuery = useIsSettingVisible(k.DNSQuery)
-const canShowTunMode = computed(
-  () => isVisibleTunMode.value && !activeBackend.value?.disableTunMode,
-)
-
-const hasVisibleItems = computed(() => {
-  return (
-    isVisibleBackendSwitch.value ||
-    hasVisibleSettings.value ||
-    isVisibleActions.value ||
-    isVisibleDnsQuery.value
-  )
-})
-
-const hasVisibleSettings = computed(() => {
-  return (
-    !isSingBox.value &&
-    !!configs.value &&
-    (isVisiblePorts.value ||
-      (configs.value.tun && canShowTunMode.value) ||
-      isVisibleAllowLan.value)
-  )
-})
+const coreHostActions = inject(coreHostActionsKey, null)
+const canShowTunMode = computed(() => !activeBackend.value?.disableTunMode)
 
 const reloadAll = () => {
   fetchConfigs()

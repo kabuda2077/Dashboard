@@ -63,22 +63,12 @@ const handlerSearchInputClick = (e: Event) => {
     return
   }
   const PopContent = defineComponent({
-    props: {
-      menus: {
-        type: Array,
-        default: () => [],
-      },
-      menusDeleteable: {
-        type: Boolean,
-        default: false,
-      },
-    },
-    setup(props: { menus: string[]; menusDeleteable: boolean }) {
+    setup() {
       return () =>
         h(
           'div',
           { class: 'max-h-64 overflow-y-auto overflow-x-hidden scrollbar-hidden min-w-24 py-1' },
-          props.menus.map((item) =>
+          (props.menus ?? []).map((item) =>
             h(
               'div',
               {
@@ -103,7 +93,7 @@ const handlerSearchInputClick = (e: Event) => {
                     class: 'h-3 w-3 transition-transform hover:scale-125',
                     onClick: (e) => {
                       const target = e.target as HTMLElement
-                      const nextMenus = props.menus.filter((menu) => menu !== item)
+                      const nextMenus = (props.menus ?? []).filter((menu) => menu !== item)
 
                       emits('update:menus', nextMenus)
                       if (!nextMenus.length) {
@@ -120,10 +110,7 @@ const handlerSearchInputClick = (e: Event) => {
     },
   })
   const mountEl = document.createElement('div')
-  const app = createApp(PopContent, {
-    menus: props.menus,
-    menusDeleteable: props.menusDeleteable,
-  })
+  const app = createApp(PopContent)
 
   app.mount(mountEl)
 

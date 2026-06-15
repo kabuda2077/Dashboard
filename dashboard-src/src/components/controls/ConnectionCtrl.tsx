@@ -21,8 +21,8 @@ import {
   PauseIcon,
   PlayIcon,
   QuestionMarkCircleIcon,
+  TrashIcon,
   WrenchScrewdriverIcon,
-  XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -141,7 +141,7 @@ export default defineComponent({
                 onClick={() => {
                   settingsModel.value = false
                   router.push({
-                    name: ROUTE_NAME.settings,
+                    name: ROUTE_NAME.core,
                     query: { scrollTo: SETTINGS_MENU_KEY.connections },
                   })
                 }}
@@ -195,7 +195,7 @@ export default defineComponent({
             class="btn btn-circle btn-sm"
             onClick={handlerClickCloseAll}
           >
-            <XMarkIcon class="h-4 w-4" />
+            <TrashIcon class="h-4 w-4" />
           </button>
         </>
       )

@@ -1,6 +1,9 @@
 <template>
   <div
-    class="bg-base-100 scrollbar-hidden border-base-300/50 sticky top-3 z-10 m-3 mb-0 flex items-center gap-1 overflow-x-auto rounded-xl p-1 shadow"
+    ref="topBarRef"
+    class="bg-base-100/80 scrollbar-hidden border-base-300/50 sticky z-10 flex items-center gap-1 overflow-x-auto shadow backdrop-blur-xl transition-all duration-300"
+    :class="isStuck ? 'm-0 rounded-none px-4 pt-2 pb-1.5' : 'mx-3 mt-3 rounded-xl p-1'"
+    style="top: -1px"
     @touchstart="disableSwipe = true"
     @touchend="disableSwipe = false"
     @touchcancel="disableSwipe = false"
@@ -57,10 +60,24 @@ import {
   VIRTUAL_UNCAT,
 } from '@/store/proxyFolders'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import FolderItem from './FolderItem.vue'
 import { displayFolderName } from './folderName'
 
 const foldersSorted = computed(() => [...folders.value].sort((a, b) => a.order - b.order))
 const totalCount = computed(() => proxyGroupList.value.length)
+
+const topBarRef = ref<HTMLElement | null>(null)
+const isStuck = ref(false)
+let observer: IntersectionObserver | null = null
+
+onMounted(() => {
+  if (!topBarRef.value) return
+  observer = new IntersectionObserver(([entry]) => (isStuck.value = entry.intersectionRatio < 1), {
+    threshold: [1],
+  })
+  observer.observe(topBarRef.value)
+})
+
+onBeforeUnmount(() => observer?.disconnect())
 </script>

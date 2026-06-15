@@ -1,25 +1,25 @@
 <template>
   <div
     ref="containerRef"
-    class="border-base-content/8 grid gap-2 border-b p-3 last:border-b-0"
+    class="border-base-content/8 grid min-h-[5.5rem] items-center gap-2 border-b p-2 last:border-b-0"
   >
     <div :class="gridClass">
       <div
         v-for="(port, index) in ports"
         :key="port.key"
-        class="rounded-box bg-base-200/50 grid gap-1.5 p-2.5"
+        class="rounded-box bg-base-200/60 grid gap-1 p-2"
         :class="getPortTileLayoutClass(index)"
       >
         <label
           :for="`port-${port.key}`"
-          class="text-base-content/55 truncate text-xs font-semibold"
+          class="text-base-content/60 truncate text-xs font-semibold"
         >
           {{ $t(port.label) }}
         </label>
         <input
           :id="`port-${port.key}`"
           :value="configs?.[port.key] ?? ''"
-          class="input input-sm border-transparent text-center shadow-none"
+          class="input input-sm bg-base-100 border-transparent text-center shadow-none"
           type="number"
           inputmode="numeric"
           min="0"

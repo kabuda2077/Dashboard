@@ -15,6 +15,7 @@ public sealed class ProxyGroupIconCache
 
     public ProxyGroupIconCache()
     {
+        AppSettings.MigrateLegacyDataDirectory("icon-cache");
         Directory.CreateDirectory(CacheDirectory);
     }
 

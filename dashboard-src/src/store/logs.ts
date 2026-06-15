@@ -16,6 +16,11 @@ export const logLevel = useStorage<string>('config/log-level', LOG_LEVEL.Info)
 export const logFilterRegex = useStorage<string>('config/log-filter-regex', '')
 export const logFilterEnabled = useStorage<boolean>('config/log-filter-enabled', false)
 
+// sing-box 日志以连接 id 开头，如 [3829292130 5ms] router: match[0]
+export const getLogConnectionID = (payload: string) => {
+  return payload.match(/^\[(\d+)\s[^\]]*\]/)?.[1] ?? null
+}
+
 let cancel: () => void
 let logsTemp: LogWithSeq[] = []
 

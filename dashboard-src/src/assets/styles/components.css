@@ -26,7 +26,7 @@ div {
 
 .settings-section-label {
   @apply px-1 pt-5 pb-1.5 text-xs font-semibold tracking-wider uppercase first:pt-2;
-  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
+  color: color-mix(in srgb, var(--color-base-content) 60%, transparent);
 }
 .settings-grid {
   @apply bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl;

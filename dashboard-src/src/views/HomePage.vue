@@ -1,34 +1,35 @@
 <template>
   <div
-    class="bg-base-200 home-page flex size-full"
+    class="home-page flex size-full bg-base-200"
     :class="sidebarLayoutCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'"
   >
     <div
       v-if="!isMiddleScreen"
-      class="relative z-40 flex-none overflow-visible transition-none"
+      class="relative z-40 flex-none overflow-visible transition-[width] duration-320 ease-[cubic-bezier(0.34,0.1,0.2,1)]"
       :class="sidebarLayoutCollapsed ? 'w-18' : 'w-64'"
     >
-      <SideBar
-        class="absolute inset-y-0 left-0"
-        @transitionend="syncSidebarLayoutState"
-      />
+      <SideBar class="absolute inset-y-0 left-0" />
     </div>
     <RouterView v-slot="{ Component, route }">
       <div
         class="relative flex-1 overflow-hidden"
         ref="swiperRef"
       >
-        <div class="absolute flex h-full w-full flex-col overflow-y-auto">
-          <Transition
-            :name="(route.meta.transition as string) || 'fade'"
-            v-if="isMiddleScreen"
+        <div class="absolute flex h-full w-full flex-col overflow-hidden">
+          <div
+            class="relative min-h-0 flex-1 overflow-hidden"
           >
-            <Component :is="Component" />
-          </Transition>
-          <Component
-            v-else
-            :is="Component"
-          />
+            <Transition
+              :name="(route.meta.transition as string) || 'fade'"
+              v-if="isMiddleScreen"
+            >
+              <Component :is="Component" />
+            </Transition>
+            <Component
+              v-else
+              :is="Component"
+            />
+          </div>
         </div>
 
         <template v-if="isMiddleScreen">
@@ -74,38 +75,16 @@
       </div>
     </RouterView>
 
-    <DialogWrapper v-model="autoSwitchBackendDialog">
-      <div class="mb-2">
-        {{ $t('currentBackendUnavailable') }}
-      </div>
-      <div class="flex justify-end gap-2">
-        <button
-          class="btn btn-sm"
-          @click="autoSwitchBackendDialog = false"
-        >
-          {{ $t('cancel') }}
-        </button>
-        <button
-          class="btn btn-primary btn-sm"
-          @click="autoSwitchBackend"
-        >
-          {{ $t('confirm') }}
-        </button>
-      </div>
-    </DialogWrapper>
   </div>
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable } from '@/api'
-import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
 import { useSwipeRouter } from '@/composables/swipe'
 import { PROXY_TAB_TYPE, ROUTE_ICON_MAP, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
 import { renderRoutes } from '@/helper'
-import { showNotification } from '@/helper/notification'
-import { getLabelFromBackend, isMiddleScreen } from '@/helper/utils'
+import { isMiddleScreen } from '@/helper/utils'
 import { fetchConfigs } from '@/store/config'
 import { initConnections } from '@/store/connections'
 import { initLogs } from '@/store/logs'
@@ -113,8 +92,7 @@ import { initSatistic } from '@/store/overview'
 import { fetchProxies, proxiesTabShow } from '@/store/proxies'
 import { fetchRules, rulesTabShow } from '@/store/rules'
 import { isSidebarCollapsed } from '@/store/settings'
-import { activeBackend, activeUuid, backendList } from '@/store/setup'
-import type { Backend } from '@/types'
+import { activeUuid } from '@/store/setup'
 import { useDocumentVisibility, useElementBounding } from '@vueuse/core'
 import { ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
@@ -128,14 +106,8 @@ const initializedTasks = new Set<string>()
 const dockRef = ref<HTMLDivElement>()
 const { top: dockRefTop } = useElementBounding(dockRef)
 
-const syncSidebarLayoutState = () => {
-  sidebarLayoutCollapsed.value = isSidebarCollapsed.value
-}
-
 watch(isSidebarCollapsed, (value) => {
-  if (value) {
-    sidebarLayoutCollapsed.value = true
-  }
+  sidebarLayoutCollapsed.value = value
 })
 
 watch(
@@ -215,70 +187,7 @@ watch(
   },
 )
 
-const autoSwitchBackendDialog = ref(false)
-
-const autoSwitchBackend = async () => {
-  const otherEnds = backendList.value.filter((end) => end.uuid !== activeUuid.value)
-
-  autoSwitchBackendDialog.value = false
-  const avaliable = await Promise.race<Backend>(
-    otherEnds.map((end) => {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          reject()
-        }, 10000)
-        isBackendAvailable(end).then((res) => {
-          if (res) {
-            resolve(end)
-          }
-        })
-      })
-    }),
-  )
-
-  if (avaliable) {
-    activeUuid.value = avaliable.uuid
-    showNotification({
-      content: 'backendSwitchTo',
-      params: {
-        backend: getLabelFromBackend(avaliable),
-      },
-      type: 'alert-success',
-    })
-  }
-}
-
 const documentVisible = useDocumentVisibility()
-
-watch(
-  documentVisible,
-  async () => {
-    if (
-      !activeBackend.value ||
-      backendList.value.length < 2 ||
-      documentVisible.value !== 'visible'
-    ) {
-      return
-    }
-    try {
-      const activeBackendUuid = activeBackend.value.uuid
-      const isAvailable = await isBackendAvailable(activeBackend.value)
-
-      if (activeBackendUuid !== activeUuid.value) {
-        return
-      }
-
-      if (!isAvailable) {
-        autoSwitchBackendDialog.value = true
-      }
-    } catch {
-      autoSwitchBackendDialog.value = true
-    }
-  },
-  {
-    immediate: true,
-  },
-)
 
 watch(documentVisible, () => {
   if (documentVisible.value !== 'visible') return

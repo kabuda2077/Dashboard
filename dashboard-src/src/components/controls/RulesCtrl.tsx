@@ -167,7 +167,6 @@ export default defineComponent({
         <div class="flex flex-wrap items-center gap-2 p-2">
           {hasProviders.value && tabs}
           {searchInput}
-          <div class="flex-1"></div>
           {upgradeAllIcon}
           {settingsModal}
         </div>

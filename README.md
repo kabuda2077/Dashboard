@@ -58,10 +58,20 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 输出目录：
 
 ```text
-bin\Release\net9.0-windows\win-x64\publish
+artifacts\publish\Dashboard-Release-win-x64
 ```
 
-发布时请完整复制整个 `publish` 文件夹，不要只复制单独的 `Dashboard.exe`。
+发布时请完整复制这个文件夹里的所有内容，不要只复制单独的 `Dashboard.exe`。
+
+## 产物目录规范
+
+- `bin/`、`obj/`: .NET 临时编译产物，自动生成，不手动复制。
+- `dashboard-src/dist/`: 前端临时构建产物，自动生成。
+- `resources/dashboard/`: 桌面程序内置的前端静态资源，会被打包进发布版。
+- `artifacts/publish/Dashboard-Release-win-x64/`: 可直接全选复制覆盖安装目录的完整发布文件。
+- `artifacts/releases/`: `create-release.ps1` 生成的 ZIP 和发布说明。
+
+根目录不要再放 `publish`、`publish-lightmode`、`releases` 这类临时目录。
 
 ## 开发运行
 

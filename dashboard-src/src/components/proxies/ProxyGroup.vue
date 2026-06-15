@@ -6,49 +6,21 @@
     @contextmenu.prevent.stop="handlerLatencyTest"
   >
     <template v-slot:title>
-      <div class="relative flex w-full items-center gap-2 overflow-hidden">
-        <ProxyName
-          :name="name"
-          :icon-size="proxyGroupIconSize"
-          :icon-margin="proxyGroupIconMargin"
-        />
-        <span
-          class="text-base-content/60 min-w-0 flex-1 truncate text-xs tabular-nums"
-          @mouseenter="checkTruncation"
-        >
-          · {{ proxyGroup.type }} · {{ proxiesCount }}
-        </span>
-        <ProxyGroupFilter :group-name="name" />
-        <button
-          v-if="manageHiddenGroup"
-          class="btn btn-circle btn-xs"
-          @click.stop="handlerGroupToggle"
-        >
-          <EyeIcon
-            v-if="!hiddenGroup"
-            class="h-3 w-3"
-          />
-          <EyeSlashIcon
-            v-else
-            class="text-warning h-3 w-3"
-          />
-        </button>
-        <LatencyTag
-          :class="twMerge('bg-base-200/50 hover:bg-base-200')"
-          :loading="isLatencyTesting"
-          :name="proxyGroup.now"
-          :group-name="proxyGroup.name"
-          @click.stop="handlerLatencyTest"
-        />
-      </div>
-      <div class="text-base-content/80 mt-1.5 flex items-center gap-2">
-        <div class="flex flex-1 items-center gap-2 truncate text-sm">
-          <ProxyGroupNow :name="name" />
-        </div>
-        <div class="min-w-12 shrink-0 text-right text-xs">
-          {{ prettyBytesHelper(downloadTotal) }}/s
-        </div>
-      </div>
+      <ProxyGroupHeaderForMobile
+        v-if="isMiddleScreen"
+        :name="name"
+        :proxies-count="proxiesCount"
+        :is-latency-testing="isLatencyTesting"
+        :display-content="true"
+        @latency-test="handlerLatencyTest"
+      />
+      <ProxyGroupHeader
+        v-else
+        :name="name"
+        :proxies-count="proxiesCount"
+        :is-latency-testing="isLatencyTesting"
+        @latency-test="handlerLatencyTest"
+      />
     </template>
     <template v-slot:preview>
       <ProxyPreview
@@ -72,32 +44,15 @@
 <script setup lang="ts">
 import { useBounceOnVisible } from '@/composables/bouncein'
 import { useRenderProxyList } from '@/composables/renderProxies'
-import { isHiddenGroup } from '@/helper'
-import { checkTruncation } from '@/helper/tooltip'
-import { prettyBytesHelper } from '@/helper/utils'
-import { activeConnections } from '@/store/connections'
-import {
-  handlerProxySelect,
-  hiddenGroupMap,
-  proxyGroupLatencyTest,
-  proxyMap,
-} from '@/store/proxies'
-import {
-  groupProxiesByProvider,
-  manageHiddenGroup,
-  proxyGroupIconMargin,
-  proxyGroupIconSize,
-} from '@/store/settings'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
-import { twMerge } from 'tailwind-merge'
+import { isMiddleScreen } from '@/helper/utils'
+import { handlerProxySelect, proxyGroupLatencyTest, proxyMap } from '@/store/proxies'
+import { groupProxiesByProvider } from '@/store/settings'
 import { computed, ref } from 'vue'
 import CollapseCard from '../common/CollapseCard.vue'
-import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
-import ProxyGroupFilter from './ProxyGroupFilter.vue'
-import ProxyGroupNow from './ProxyGroupNow.vue'
-import ProxyName from './ProxyName.vue'
+import ProxyGroupHeader from './ProxyGroupHeader.vue'
+import ProxyGroupHeaderForMobile from './ProxyGroupHeaderForMobile.vue'
 import ProxyPreview from './ProxyPreview.vue'
 
 const props = defineProps<{
@@ -118,24 +73,6 @@ const handlerLatencyTest = async () => {
   } catch {
     isLatencyTesting.value = false
   }
-}
-const downloadTotal = computed(() => {
-  const speed = activeConnections.value
-    .filter((conn) => conn.chains.includes(props.name))
-    .reduce((total, conn) => total + conn.downloadSpeed, 0)
-
-  return speed
-})
-
-const hiddenGroup = computed({
-  get: () => isHiddenGroup(props.name),
-  set: (value: boolean) => {
-    hiddenGroupMap.value[props.name] = value
-  },
-})
-
-const handlerGroupToggle = () => {
-  hiddenGroup.value = !hiddenGroup.value
 }
 
 useBounceOnVisible()

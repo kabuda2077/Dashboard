@@ -14,25 +14,31 @@ public sealed class AppSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public string CorePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "cores", "mihomo.exe");
+    public string CorePath { get; set; } = @"E:\APP\Dashboard\mihomo\mihomo.exe";
     public string ConfigPath { get; set; } = DefaultConfigPath;
     public string DashboardApiUrl { get; set; } = "http://127.0.0.1:9090";
-    [JsonIgnore]
     public string Secret { get; set; } = "";
     public string? ProtectedSecret { get; set; }
     public bool StartCoreOnLaunch { get; set; }
     public bool MinimizeToTray { get; set; } = true;
+    public bool LightweightMode { get; set; } = true;
     public bool Autostart { get; set; }
 
-    public static string SettingsDirectory =>
+    public static string AppDirectory => ResolveAppDirectory();
+
+    public static string SettingsDirectory => AppDirectory;
+
+    private static string LegacyDashboardSettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDirectoryName);
 
-    private static string LegacySettingsDirectory =>
+    private static string LegacyMihomoSettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), LegacyAppDirectoryName);
 
     public static string SettingsPath => Path.Combine(SettingsDirectory, "settings.json");
 
-    private static string LegacySettingsPath => Path.Combine(LegacySettingsDirectory, "settings.json");
+    private static string LegacyDashboardSettingsPath => Path.Combine(LegacyDashboardSettingsDirectory, "settings.json");
+
+    private static string LegacyMihomoSettingsPath => Path.Combine(LegacyMihomoSettingsDirectory, "settings.json");
 
     public static AppSettings Load()
     {
@@ -71,20 +77,69 @@ public sealed class AppSettings
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
     }
 
-    private static string DefaultConfigPath => Path.Combine(AppContext.BaseDirectory, "config.yaml");
+    private static string DefaultConfigPath => @"E:\APP\Dashboard\mihomo\config.yaml";
 
-    private static string LegacyDefaultConfigPath => Path.Combine(AppContext.BaseDirectory, "config", "config.yaml");
+    private static string LegacyDefaultConfigPath => Path.Combine(AppDirectory, "config", "config.yaml");
+
+    private static string ResolveAppDirectory()
+    {
+        var baseDirectory = Path.GetFullPath(AppContext.BaseDirectory);
+        var trimmedBaseDirectory = baseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (Path.GetFileName(trimmedBaseDirectory).Equals("EBWebView", StringComparison.OrdinalIgnoreCase))
+        {
+            return Directory.GetParent(trimmedBaseDirectory)?.FullName ?? baseDirectory;
+        }
+
+        return baseDirectory;
+    }
 
     private static void MigrateLegacySettingsFile()
     {
-        if (File.Exists(SettingsPath) || !File.Exists(LegacySettingsPath))
+        if (File.Exists(SettingsPath))
+        {
+            return;
+        }
+
+        var legacyPath = new[] { LegacyDashboardSettingsPath, LegacyMihomoSettingsPath }
+            .FirstOrDefault(File.Exists);
+        if (legacyPath is null)
         {
             return;
         }
 
         try
         {
-            File.Copy(LegacySettingsPath, SettingsPath, overwrite: false);
+            File.Copy(legacyPath, SettingsPath, overwrite: false);
+        }
+        catch
+        {
+        }
+    }
+
+    public static void MigrateLegacyDataDirectory(string directoryName)
+    {
+        var targetDirectory = Path.Combine(SettingsDirectory, directoryName);
+        var legacyDirectory = new[] { LegacyDashboardSettingsDirectory, LegacyMihomoSettingsDirectory }
+            .Select(directory => Path.Combine(directory, directoryName))
+            .FirstOrDefault(Directory.Exists);
+        if (legacyDirectory is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(targetDirectory);
+            foreach (var sourcePath in Directory.EnumerateFiles(legacyDirectory, "*", SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(legacyDirectory, sourcePath);
+                var targetPath = Path.Combine(targetDirectory, relativePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(targetPath) ?? targetDirectory);
+                if (!File.Exists(targetPath))
+                {
+                    File.Copy(sourcePath, targetPath);
+                }
+            }
         }
         catch
         {
@@ -106,6 +161,8 @@ public sealed class AppSettings
 
     private bool RestoreSecret(string json)
     {
+        TryReadStringProperty(json, nameof(Secret), out var portableSecret);
+
         if (!string.IsNullOrWhiteSpace(ProtectedSecret))
         {
             try
@@ -114,18 +171,18 @@ public sealed class AppSettings
             }
             catch
             {
-                Secret = "";
+                Secret = portableSecret;
             }
 
-            return false;
+            return string.IsNullOrWhiteSpace(portableSecret) && !string.IsNullOrWhiteSpace(Secret);
         }
 
-        if (!TryReadStringProperty(json, nameof(Secret), out var legacySecret))
+        if (string.IsNullOrWhiteSpace(portableSecret))
         {
             return false;
         }
 
-        Secret = legacySecret;
+        Secret = portableSecret;
         return true;
     }
 

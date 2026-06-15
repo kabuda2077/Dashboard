@@ -7,6 +7,7 @@
       <TextInput
         v-model="form.name"
         placeholder="Domain Name"
+        input-class="bg-base-200/60 border-transparent shadow-none focus:border-transparent"
         :clearable="true"
         :menus="dnsQueryNameHistory"
         :menus-deleteable="true"
@@ -16,45 +17,48 @@
         v-model="form.type"
         class="w-28"
         placeholder="Type"
+        input-class="bg-base-200/60 border-transparent shadow-none focus:border-transparent"
         :menus="['A', 'AAAA', 'HTTPS']"
       />
       <button
         type="submit"
-        class="btn join-item btn-sm"
+        class="btn join-item btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
       >
         {{ $t('DNSQuery') }}
       </button>
     </form>
     <div
       v-if="resultList?.length"
-      class="bg-base-200/30 max-h-96 overflow-y-auto rounded-sm"
+      class="max-h-96 overflow-y-auto"
     >
       <div
         v-for="(item, index) in resultList"
         :key="`${item.name}-${item.type}-${item.data}-${index}`"
-        class="border-base-300/30 flex items-center justify-between gap-4 p-2 not-last:border-b"
+        class="btn btn-sm rounded-box bg-base-200/60 pointer-events-none h-auto min-h-10 w-full justify-between border-none px-3 py-2 font-normal shadow-none not-last:mb-2"
       >
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <span
-              class="bg-base-200 text-base-content/70 rounded-full px-2 py-0.5 text-[11px] font-medium"
-            >
-              {{ getDnsTypeLabel(item.type) }}
-            </span>
-            <span class="text-base-content truncate text-sm font-medium">
-              {{ item.name }}
-            </span>
-          </div>
-          <div class="text-base-content/50 mt-1 text-xs">TTL {{ item.TTL }}</div>
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <span
+            class="bg-base-100/70 text-base-content/60 flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full border border-transparent px-2 text-[11px] leading-none font-medium"
+          >
+            {{ getDnsTypeLabel(item.type) }}
+          </span>
+          <span class="text-base-content truncate text-sm leading-5 font-medium">
+            {{ formatDnsName(item.name) }}
+          </span>
+          <span class="text-base-content/60 shrink-0 text-xs leading-5 font-normal">
+            TTL {{ item.TTL }}
+          </span>
         </div>
-        <div class="text-base-content max-w-[50%] text-right text-sm leading-5 break-all">
+        <div
+          class="text-base-content max-w-[50%] shrink-0 text-right text-sm leading-5 font-medium break-all"
+        >
           {{ item.data }}
         </div>
       </div>
     </div>
     <div
       v-if="details"
-      class="text-base-content/70 flex flex-wrap gap-x-3 gap-y-1 text-xs"
+      class="text-base-content/60 flex flex-wrap gap-x-3 gap-y-1 text-xs"
     >
       <div
         v-if="details?.country"
@@ -101,6 +105,7 @@ const details = ref<IPInfo | null>(null)
 const resultList = ref<DNSQuery['Answer']>([])
 const dnsQueryNameHistory = useStorage<string[]>('cache/dns-query-name-history', [])
 const getDnsTypeLabel = (type: number) => DNS_TYPE_LABELS[type] ?? `TYPE ${type}`
+const formatDnsName = (name: string) => name.replace(/\.$/, '')
 const updateDnsQueryNameHistory = (history: string[]) => {
   dnsQueryNameHistory.value = history
 }

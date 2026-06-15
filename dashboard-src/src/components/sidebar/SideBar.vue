@@ -1,12 +1,12 @@
 <template>
   <div
     ref="sidebarRef"
-    class="sidebar border-base-300/30 bg-base-200 text-base-content scrollbar-hidden h-full overflow-x-hidden border-r p-2 transition-[width,padding] duration-320 ease-[cubic-bezier(0.34,0.1,0.2,1)]"
+    class="sidebar border-base-border bg-base-150 text-base-content scrollbar-hidden h-full overflow-x-hidden border-r p-2 transition-[width,padding] duration-320 ease-[cubic-bezier(0.34,0.1,0.2,1)]"
     :class="isSidebarCollapsed ? 'w-18 px-0' : 'w-64'"
     @transitionend="handleTransitionEnd"
   >
     <div :class="twMerge('flex h-full flex-col gap-2', isSidebarCollapsed ? 'w-18 px-0' : 'w-60')">
-      <ul class="menu w-full flex-1">
+      <ul class="menu w-full flex-1 gap-1">
         <li
           v-for="r in renderRoutes"
           :key="r"
@@ -41,7 +41,7 @@
       </template>
       <template v-else>
         <OverviewCarousel />
-        <CommonSidebar class="base-container" />
+        <CommonSidebar class="border-base-border bg-base-100/70 rounded-xl border shadow-none" />
       </template>
     </div>
   </div>

@@ -22,6 +22,7 @@ public sealed class DashboardServer : IDisposable
         public required byte[] Content { get; init; }
         public required string ContentType { get; init; }
         public required DateTime CachedAt { get; init; }
+        public required DateTime LastWriteTimeUtc { get; init; }
     }
 
     public DashboardServer(string root, string iconCacheRoot)
@@ -130,33 +131,30 @@ public sealed class DashboardServer : IDisposable
                 candidate = Path.Combine(rootFullPath, "index.html");
             }
 
-            // 尝试从缓存获取
+            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(candidate);
             if (_fileCache.TryGetValue(candidate, out var cached))
             {
                 var cacheAge = DateTime.UtcNow - cached.CachedAt;
-                if (cacheAge < _cacheExpiration)
+                if (cacheAge < _cacheExpiration && cached.LastWriteTimeUtc == lastWriteTimeUtc)
                 {
                     await WriteResponseAsync(stream, "200 OK", cached.ContentType, cached.Content);
                     return;
                 }
-                else
-                {
-                    // 缓存过期，移除
-                    _fileCache.TryRemove(candidate, out _);
-                }
+
+                _fileCache.TryRemove(candidate, out _);
             }
 
             var bytes = await File.ReadAllBytesAsync(candidate, token);
             var contentType = GetContentType(Path.GetExtension(candidate));
 
-            // 小于 1MB 的文件才缓存
-            if (bytes.Length < 1024 * 1024)
+            if (ShouldCacheStaticFile(candidate, bytes.Length))
             {
                 _fileCache[candidate] = new CachedFile
                 {
                     Content = bytes,
                     ContentType = contentType,
-                    CachedAt = DateTime.UtcNow
+                    CachedAt = DateTime.UtcNow,
+                    LastWriteTimeUtc = lastWriteTimeUtc
                 };
             }
 
@@ -218,6 +216,20 @@ public sealed class DashboardServer : IDisposable
     }
 
     private const string IconCacheRequestPrefix = "__mihomo/icon-cache/";
+
+    private static bool ShouldCacheStaticFile(string path, int byteLength)
+    {
+        if (byteLength >= 1024 * 1024)
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileName(path);
+        return !fileName.Equals("index.html", StringComparison.OrdinalIgnoreCase)
+            && !fileName.Equals("sw.js", StringComparison.OrdinalIgnoreCase)
+            && !fileName.Equals("registerSW.js", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsIconCacheRequest(string requestPath)
     {

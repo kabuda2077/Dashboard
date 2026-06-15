@@ -6,7 +6,6 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $sourceFile = Join-Path $root "resources\dashboard\favicon.ico"
 $outDir = Join-Path $root "resources"
 $outFile = Join-Path $outDir "app.ico"
-$trayFile = Join-Path $outDir "tray.ico"
 
 if (-not (Test-Path $sourceFile)) {
     throw "zashboard favicon not found: $sourceFile"
@@ -141,7 +140,7 @@ $images = foreach ($size in $sizes) {
     }
 }
 
-$trayImages = foreach ($image in $images) {
+$whiteImages = foreach ($image in $images) {
     [PSCustomObject]@{
         Size = $image.Size
         Bytes = ConvertTo-SolidColorPngBytes -SourceBytes $image.Bytes -Color ([System.Drawing.Color]::White)
@@ -149,8 +148,6 @@ $trayImages = foreach ($image in $images) {
 }
 
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-Write-IcoFile -Path $outFile -Images $images
-Write-IcoFile -Path $trayFile -Images $trayImages
+Write-IcoFile -Path $outFile -Images $whiteImages
 
-Write-Host "Synced zashboard icon to $outFile"
-Write-Host "Synced white tray icon to $trayFile"
+Write-Host "Synced white app icon to $outFile"

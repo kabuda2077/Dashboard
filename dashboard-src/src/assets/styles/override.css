@@ -77,6 +77,61 @@
   @apply text-sm;
 }
 
+.ctrls-bar {
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.ctrls-bar > * {
+  padding: 0 !important;
+}
+
+.ctrls-bar .btn.btn-sm,
+.ctrls-bar .select.select-sm,
+.ctrls-bar .input.input-sm,
+.ctrls-bar .tabs.tabs-xs,
+.ctrls-bar .tabs.tabs-xs .tab {
+  height: 2.25rem;
+  min-height: 2.25rem;
+}
+
+.ctrls-bar .tabs.tabs-xs {
+  @apply border-base-content/20 bg-base-100 rounded-lg border shadow-none;
+  align-items: center;
+  gap: 0;
+  padding: 0.125rem;
+}
+
+.ctrls-bar .tabs.tabs-xs .tab {
+  align-items: center;
+  border-radius: 0.5rem;
+  display: inline-flex;
+  height: 1.875rem;
+  justify-content: center;
+  line-height: 1;
+  min-height: 1.875rem;
+}
+
+.ctrls-bar :is(.btn, .input, .select, .tab):focus,
+.ctrls-bar :is(.btn, .input, .select, .tab):focus-visible,
+.ctrls-bar .tabs.tabs-xs:focus-within {
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
+.ctrls-bar :is(.input.input-sm, .select.select-sm):focus,
+.ctrls-bar :is(.input.input-sm, .select.select-sm):focus-visible {
+  border-color: color-mix(in srgb, var(--color-base-content) 20%, transparent) !important;
+}
+
+.ctrls-bar .btn.btn-circle.btn-sm {
+  @apply bg-base-100 shadow-xs hover:bg-base-200;
+  width: 2.25rem;
+}
+
 @for $i from 0 to 100 {
   .custom-background.custom-background-$(i) {
     .bg-base-100,
@@ -87,7 +142,6 @@
     .select,
     .toggle,
     .settings-menu,
-    .ctrls-bar,
     .settings-grid,
     .base-container,
     .btn:not(.btn-ghost, .btn-neutral, .btn-primary),

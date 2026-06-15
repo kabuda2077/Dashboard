@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
@@ -14,9 +15,9 @@ public sealed class MainForm : Form
     private readonly DashboardServer _dashboardServer;
     private readonly Uri _dashboardUri;
     private readonly Icon _appIcon;
-    private readonly Icon _trayIconImage;
     private readonly NotifyIcon _trayIcon;
-    private readonly WebView2 _webView = new();
+    private Panel _contentPanel = null!;
+    private WebView2? _webView;
     private TrayMenuForm? _trayMenu;
     private Rectangle _trayRestoreBounds;
     private FormWindowState _trayRestoreWindowState = FormWindowState.Normal;
@@ -38,8 +39,53 @@ public sealed class MainForm : Form
     private string? _pendingDashboardNotice;
     private readonly System.Windows.Forms.Timer _stateRefreshTimer = new() { Interval = 150 };
     private DateTime _lastStateRefresh = DateTime.MinValue;
+    private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
+    private const int ResizeBorderThickness = 8;
+    private const int MaximizedContentPadding = 8;
     private const int MinRefreshIntervalMs = 150;
     private const int MaxRefreshDelayMs = 1000;
+
+    private const int WM_NCHITTEST = 0x0084;
+    private const int WM_NCCALCSIZE = 0x0083;
+    private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int HTCLIENT = 1;
+    private const int HTCAPTION = 2;
+    private const int HTLEFT = 10;
+    private const int HTRIGHT = 11;
+    private const int HTTOP = 12;
+    private const int HTTOPLEFT = 13;
+    private const int HTTOPRIGHT = 14;
+    private const int HTBOTTOM = 15;
+    private const int HTBOTTOMLEFT = 16;
+    private const int HTBOTTOMRIGHT = 17;
+
+    private const int CS_DROPSHADOW = 0x00020000;
+    private const int DWMWA_NCRENDERING_POLICY = 2;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMNCRP_ENABLED = 2;
+    private const int DWMWCP_DEFAULT = 0;
+    private const int DWMWCP_DONOTROUND = 1;
+    private const int DWMWCP_ROUND = 2;
+    private const int WS_CAPTION = 0x00C00000;
+    private const int WS_THICKFRAME = 0x00040000;
+    private const int WS_SYSMENU = 0x00080000;
+    private const int WS_MINIMIZEBOX = 0x00020000;
+    private const int WS_MAXIMIZEBOX = 0x00010000;
+    private const int SW_SHOWMAXIMIZED = 3;
+    private const int SW_MINIMIZE = 6;
+    private const int SW_RESTORE = 9;
+    private const int TrayHideAnimationDelayMs = 220;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ClassStyle |= CS_DROPSHADOW;
+            cp.Style |= WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+            return cp;
+        }
+    }
 
     public MainForm(bool startMinimized, bool startCoreAfterLaunch)
     {
@@ -48,18 +94,17 @@ public sealed class MainForm : Form
         _settings = AppSettings.Load();
         SyncAutostartSetting();
         _iconCache.LoadExisting(_settings.ConfigPath);
-        _dashboardServer = new DashboardServer(Path.Combine(AppContext.BaseDirectory, "resources", "dashboard"), _iconCache.CacheDirectory);
+        _dashboardServer = new DashboardServer(Path.Combine(AppSettings.AppDirectory, "resources", "dashboard"), _iconCache.CacheDirectory);
         _dashboardUri = _dashboardServer.Start();
 
         Text = "Dashboard";
-        FormBorderStyle = FormBorderStyle.Sizable;
+        FormBorderStyle = FormBorderStyle.None;
         BackColor = Color.FromArgb(244, 244, 245);
         MinimumSize = new Size(1120, 720);
         Size = new Size(1360, 840);
         _trayRestoreBounds = Bounds;
         StartPosition = FormStartPosition.CenterScreen;
         _appIcon = LoadAppIcon();
-        _trayIconImage = LoadTrayIcon(_appIcon);
         Icon = _appIcon;
 
         _trayIcon = CreateTrayIcon();
@@ -82,7 +127,7 @@ public sealed class MainForm : Form
 
         if (_startMinimized)
         {
-            HideToTray();
+            HideToTray(animate: false);
         }
         else
         {
@@ -97,19 +142,96 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        _webView.Dock = DockStyle.Fill;
-        _webView.Margin = Padding.Empty;
-        Controls.Add(_webView);
+        _contentPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        Controls.Add(_contentPanel);
+        EnsureWebViewCreated();
+    }
+
+    private void ToggleMaximize()
+    {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            WindowState = FormWindowState.Normal;
+            return;
+        }
+
+        UpdateMaximizedBounds();
+        WindowState = FormWindowState.Maximized;
+    }
+
+    private void BeginWindowDrag()
+    {
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        ReleaseCapture();
+        _ = SendMessage(Handle, WM_NCLBUTTONDOWN, new IntPtr(HTCAPTION), IntPtr.Zero);
+    }
+
+    private void BeginWindowResize(JsonElement root)
+    {
+        if (!IsHandleCreated || WindowState == FormWindowState.Maximized)
+        {
+            return;
+        }
+
+        var hitTest = GetResizeHitTest(GetString(root, "edge", string.Empty));
+        if (hitTest == HTCLIENT)
+        {
+            return;
+        }
+
+        BeginWindowResize(hitTest);
+    }
+
+    private void BeginWindowResize(int hitTest)
+    {
+        if (!IsHandleCreated || WindowState == FormWindowState.Maximized || hitTest == HTCLIENT)
+        {
+            return;
+        }
+
+        ReleaseCapture();
+        _ = SendMessage(Handle, WM_NCLBUTTONDOWN, new IntPtr(hitTest), IntPtr.Zero);
+    }
+
+    private static int GetResizeHitTest(string edge)
+    {
+        return edge switch
+        {
+            "left" => HTLEFT,
+            "right" => HTRIGHT,
+            "top" => HTTOP,
+            "bottom" => HTBOTTOM,
+            "topLeft" => HTTOPLEFT,
+            "topRight" => HTTOPRIGHT,
+            "bottomLeft" => HTBOTTOMLEFT,
+            "bottomRight" => HTBOTTOMRIGHT,
+            _ => HTCLIENT
+        };
+    }
+
+    private void UpdateMaximizedBounds()
+    {
+        var screen = Screen.FromHandle(Handle);
+        MaximizedBounds = screen.WorkingArea;
     }
 
     private Task EnsureDashboardInitializedAsync()
     {
-        if (_dashboardInitialized)
+        if (_dashboardInitialized && HasDashboardWebView())
         {
             return Task.CompletedTask;
         }
 
-        if (_dashboardInitializationTask is not null)
+        if (_dashboardInitializationTask is { IsCompleted: false })
         {
             return _dashboardInitializationTask;
         }
@@ -120,7 +242,12 @@ public sealed class MainForm : Form
 
     private async Task InitializeDashboardAsync()
     {
-        await InitializeWebViewAsync();
+        if (!await InitializeWebViewAsync())
+        {
+            _dashboardInitializationTask = null;
+            return;
+        }
+
         LoadDashboard();
         RefreshStatus();
         _dashboardInitialized = true;
@@ -141,7 +268,7 @@ public sealed class MainForm : Form
     {
         var icon = new NotifyIcon
         {
-            Icon = _trayIconImage,
+            Icon = _appIcon,
             Text = "Dashboard",
             Visible = true
         };
@@ -149,15 +276,65 @@ public sealed class MainForm : Form
         {
             if (e.Button == MouseButtons.Left)
             {
-                ShowFromTray();
+                OpenTrayWindow();
             }
             else if (e.Button == MouseButtons.Right)
             {
                 ShowTrayMenu(Cursor.Position);
             }
         };
-        icon.DoubleClick += (_, _) => ShowFromTray();
         return icon;
+    }
+
+    private void OpenTrayWindow()
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _lastTrayIconToggleAt).TotalMilliseconds < 250)
+        {
+            return;
+        }
+
+        _lastTrayIconToggleAt = now;
+        ShowFromTray();
+    }
+
+    private void MinimizeToTaskbar()
+    {
+        if (_trayTransitionInProgress)
+        {
+            return;
+        }
+
+        _hiddenToTray = false;
+        ShowInTaskbar = true;
+        MinimizeWindowWithAnimation();
+    }
+
+    private void MinimizeWindowWithAnimation()
+    {
+        if (!IsHandleCreated)
+        {
+            WindowState = FormWindowState.Minimized;
+            return;
+        }
+
+        _ = ShowWindowAsync(Handle, SW_MINIMIZE);
+    }
+
+    private void RestoreWindowWithAnimation()
+    {
+        if (!IsHandleCreated)
+        {
+            WindowState = _trayRestoreWindowState == FormWindowState.Maximized
+                ? FormWindowState.Maximized
+                : FormWindowState.Normal;
+            return;
+        }
+
+        var command = _trayRestoreWindowState == FormWindowState.Maximized
+            ? SW_SHOWMAXIMIZED
+            : SW_RESTORE;
+        _ = ShowWindowAsync(Handle, command);
     }
 
     private void ShowTrayMenu(Point location)
@@ -168,7 +345,6 @@ public sealed class MainForm : Form
         _trayMenu = new TrayMenuForm(new[]
         {
             new TrayMenuItem("显示窗口", ShowFromTray),
-            new TrayMenuItem("启动内核", () => StartCore(showTrayNotification: true), Enabled: !isRunning && !_coreUpgradeInProgress),
             new TrayMenuItem("重启内核", () => RestartCore(showTrayNotification: true), Enabled: isRunning && !_coreUpgradeInProgress),
             new TrayMenuItem("停止内核", () => StopCore(showTrayNotification: true), Enabled: isRunning && !_coreUpgradeInProgress),
             TrayMenuItem.Separator(),
@@ -185,50 +361,79 @@ public sealed class MainForm : Form
         _trayMenu.ShowNear(location);
     }
 
-    private async Task InitializeWebViewAsync()
+    private void EnsureWebViewCreated()
     {
+        if (_webView is not null && !_webView.IsDisposed)
+        {
+            return;
+        }
+
+        _webView = new WebView2
+        {
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty
+        };
+        _contentPanel.Controls.Add(_webView);
+        _webView.BringToFront();
+    }
+
+    private bool HasDashboardWebView()
+    {
+        return _webView?.CoreWebView2 is not null;
+    }
+
+    private static string WebViewUserDataDirectory => AppSettings.AppDirectory;
+
+    private async Task<bool> InitializeWebViewAsync()
+    {
+        EnsureWebViewCreated();
+        var webView = _webView;
+        if (webView is null)
+        {
+            return false;
+        }
+
         try
         {
-            // 创建优化的 WebView2 环境
-            var userDataFolder = Path.Combine(AppSettings.SettingsDirectory, "WebView2");
+            Directory.CreateDirectory(WebViewUserDataDirectory);
             var environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
-                userDataFolder: userDataFolder,
-                options: new CoreWebView2EnvironmentOptions
-                {
-                    // 优化浏览器参数：禁用不需要的功能，设置缓存大小
-                    AdditionalBrowserArguments = "--disable-features=msWebOOUI,msPdfOOUI --disk-cache-size=52428800 --enable-features=msWebView2EnableTrackingPrevention"
-                });
+                userDataFolder: WebViewUserDataDirectory);
+            await webView.EnsureCoreWebView2Async(environment);
+            if (!ReferenceEquals(webView, _webView) || webView.CoreWebView2 is null)
+            {
+                return false;
+            }
 
-            await _webView.EnsureCoreWebView2Async(environment);
+            webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+            webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+            webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
 
-            // 配置 WebView2 设置
-            _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-            _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-            _webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
-
-            // 绑定事件
-            _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-            _webView.CoreWebView2.NavigationCompleted += (_, _) =>
+            webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            webView.CoreWebView2.NavigationCompleted += (_, _) =>
             {
                 SendStateToDashboard();
             };
+
+            return true;
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, $"WebView2 初始化失败：{ex.Message}", "缺少 WebView2 Runtime", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
         }
     }
 
     private void LoadDashboard()
     {
-        if (_webView.CoreWebView2 is null)
+        var coreWebView = _webView?.CoreWebView2;
+        if (coreWebView is null)
         {
             return;
         }
 
         var uri = new Uri(_dashboardUri, $"?{BuildDashboardQuery()}#/core");
-        _webView.CoreWebView2.Navigate(uri.ToString());
+        coreWebView.Navigate(uri.ToString());
     }
 
     private string BuildDashboardQuery()
@@ -269,6 +474,25 @@ public sealed class MainForm : Form
 
             switch (type)
             {
+                case "windowDrag":
+                    BeginWindowDrag();
+                    return;
+                case "windowResize":
+                    BeginWindowResize(root);
+                    return;
+                case "windowToggleMaximize":
+                    ToggleMaximize();
+                    SendWindowChromeState();
+                    return;
+                case "windowMinimize":
+                    MinimizeToTaskbar();
+                    return;
+                case "windowClose":
+                    Close();
+                    return;
+                case "requestWindowState":
+                    SendWindowChromeState();
+                    return;
                 case "requestState":
                     break;
                 case "save":
@@ -321,6 +545,7 @@ public sealed class MainForm : Form
         _settings.Secret = GetString(root, "secret", _settings.Secret);
         _settings.StartCoreOnLaunch = GetBool(root, "startCoreOnLaunch", _settings.StartCoreOnLaunch);
         _settings.MinimizeToTray = GetBool(root, "minimizeToTray", _settings.MinimizeToTray);
+        _settings.LightweightMode = GetBool(root, "lightweightMode", _settings.LightweightMode);
         if (root.TryGetProperty("autostart", out var autostart) && autostart.ValueKind is JsonValueKind.True or JsonValueKind.False)
         {
             _settings.Autostart = autostart.GetBoolean();
@@ -620,7 +845,7 @@ public sealed class MainForm : Form
 
     private void SendStateToDashboard()
     {
-        if (_webView.CoreWebView2 is null)
+        if (!HasDashboardWebView())
         {
             _dashboardStateDirty = true;
             return;
@@ -642,8 +867,10 @@ public sealed class MainForm : Form
             secret = _settings.Secret,
             startCoreOnLaunch = _settings.StartCoreOnLaunch,
             minimizeToTray = _settings.MinimizeToTray,
+            lightweightMode = _settings.LightweightMode,
             autostart = _settings.Autostart,
             isCoreUpgrading = _coreUpgradeInProgress,
+            isWindowMaximized = WindowState == FormWindowState.Maximized,
             logText = _mihomo.GetLogTail(8000),
             iconCacheMap = _iconCache.GetDashboardMap(_dashboardUri)
         };
@@ -660,12 +887,13 @@ public sealed class MainForm : Form
 
     private Task ShowDashboardNoticeAsync(string message)
     {
-        if (_webView.CoreWebView2 is null)
+        if (ShouldHoldDashboardUpdates())
         {
+            _pendingDashboardNotice = message;
             return Task.CompletedTask;
         }
 
-        if (ShouldHoldDashboardUpdates())
+        if (!HasDashboardWebView())
         {
             _pendingDashboardNotice = message;
             return Task.CompletedTask;
@@ -673,6 +901,20 @@ public sealed class MainForm : Form
 
         PostDashboardMessage(new { type = "notice", message });
         return Task.CompletedTask;
+    }
+
+    private void SendWindowChromeState()
+    {
+        if (!HasDashboardWebView() || ShouldHoldDashboardUpdates())
+        {
+            return;
+        }
+
+        PostDashboardMessage(new
+        {
+            type = "windowState",
+            isMaximized = WindowState == FormWindowState.Maximized
+        });
     }
 
     private bool ShouldHoldDashboardUpdates()
@@ -685,12 +927,12 @@ public sealed class MainForm : Form
 
     private async void SuspendDashboard()
     {
-        if (_webViewSuspended || _webView.CoreWebView2 is null)
+        var coreWebView = _webView?.CoreWebView2;
+        if (_webViewSuspended || coreWebView is null)
         {
             return;
         }
 
-        var coreWebView = _webView.CoreWebView2;
         var suspendVersion = ++_dashboardSuspendVersion;
         _stateRefreshTimer.Stop();
         _dashboardStateDirty = true;
@@ -718,7 +960,8 @@ public sealed class MainForm : Form
 
     private void ResumeDashboard()
     {
-        if (_webView.CoreWebView2 is null)
+        var coreWebView = _webView?.CoreWebView2;
+        if (coreWebView is null)
         {
             return;
         }
@@ -729,7 +972,7 @@ public sealed class MainForm : Form
         {
             if (_webViewSuspended)
             {
-                _webView.CoreWebView2.Resume();
+                coreWebView.Resume();
                 _webViewSuspended = false;
             }
         }
@@ -739,6 +982,27 @@ public sealed class MainForm : Form
         }
 
         FlushDashboardUpdates();
+    }
+
+    private void DisposeDashboardView()
+    {
+        _dashboardSuspendVersion++;
+        _stateRefreshTimer.Stop();
+        _stateRefreshPending = false;
+        _dashboardStateDirty = true;
+        _webViewSuspended = false;
+        _dashboardInitialized = false;
+        _dashboardInitializationTask = null;
+
+        var webView = _webView;
+        if (webView is null)
+        {
+            return;
+        }
+
+        _contentPanel.Controls.Remove(webView);
+        _webView = null;
+        webView.Dispose();
     }
 
     private void FlushDashboardUpdates()
@@ -767,12 +1031,13 @@ public sealed class MainForm : Form
 
     private void PostDashboardMessage(object message)
     {
-        if (_webView.CoreWebView2 is null)
+        var coreWebView = _webView?.CoreWebView2;
+        if (coreWebView is null)
         {
             return;
         }
 
-        _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
+        coreWebView.PostWebMessageAsJson(JsonSerializer.Serialize(message));
     }
 
     private void BrowseCorePath()
@@ -906,6 +1171,7 @@ public sealed class MainForm : Form
     protected override void OnLocationChanged(EventArgs e)
     {
         base.OnLocationChanged(e);
+        UpdateMaximizedBounds();
         if (WindowState == FormWindowState.Normal)
         {
             RememberTrayRestoreState();
@@ -915,11 +1181,17 @@ public sealed class MainForm : Form
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        ApplyWindowChrome();
 
         if (WindowState != FormWindowState.Minimized)
         {
+            ResumeDashboard();
             RememberTrayRestoreState();
-            FlushDashboardUpdates();
+            SendWindowChromeState();
+        }
+        else
+        {
+            SuspendDashboard();
         }
 
     }
@@ -956,7 +1228,7 @@ public sealed class MainForm : Form
         return closeReason is CloseReason.UserClosing or CloseReason.None;
     }
 
-    private void HideToTray()
+    private async void HideToTray(bool animate = true)
     {
         if (_hiddenToTray || _trayTransitionInProgress)
         {
@@ -970,14 +1242,28 @@ public sealed class MainForm : Form
         try
         {
             _hiddenToTray = true;
-            if (WindowState != FormWindowState.Minimized)
+            if (animate && Visible && WindowState != FormWindowState.Minimized)
+            {
+                ShowInTaskbar = true;
+                MinimizeWindowWithAnimation();
+                await Task.Delay(TrayHideAnimationDelayMs);
+            }
+            else if (WindowState != FormWindowState.Minimized)
             {
                 WindowState = FormWindowState.Minimized;
             }
 
+            if (IsDisposed)
+            {
+                return;
+            }
+
             ShowInTaskbar = false;
             Hide();
-            SuspendDashboard();
+            if (_settings.LightweightMode)
+            {
+                DisposeDashboardView();
+            }
         }
         finally
         {
@@ -987,11 +1273,17 @@ public sealed class MainForm : Form
 
     public void ShowFromTray()
     {
+        if (_trayTransitionInProgress)
+        {
+            return;
+        }
+
         _trayMenu?.Close();
         if (Visible && WindowState != FormWindowState.Minimized)
         {
             ResumeDashboard();
             Activate();
+            BringToFront();
             _ = EnsureDashboardInitializedAsync();
             return;
         }
@@ -1004,22 +1296,18 @@ public sealed class MainForm : Form
             Opacity = 1;
             ShowInTaskbar = true;
 
-            if (!_trayRestoreBounds.IsEmpty)
+            if (_trayRestoreWindowState != FormWindowState.Maximized && !_trayRestoreBounds.IsEmpty)
             {
                 Bounds = _trayRestoreBounds;
             }
 
-            Show();
-
-            if (_trayRestoreWindowState == FormWindowState.Maximized)
+            if (!Visible)
             {
-                WindowState = FormWindowState.Maximized;
-            }
-            else
-            {
-                WindowState = FormWindowState.Normal;
+                WindowState = FormWindowState.Minimized;
+                Show();
             }
 
+            RestoreWindowWithAnimation();
             ResumeDashboard();
             Activate();
             BringToFront();
@@ -1046,10 +1334,9 @@ public sealed class MainForm : Form
             _trayIcon.Dispose();
             _stateRefreshTimer.Dispose();
             _trayMenu?.Dispose();
-            _trayIconImage.Dispose();
             _appIcon.Dispose();
             _dashboardServer.Dispose();
-            _webView.Dispose();
+            DisposeDashboardView();
         }
 
         base.Dispose(disposing);
@@ -1057,18 +1344,10 @@ public sealed class MainForm : Form
 
     private static Icon LoadAppIcon()
     {
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "resources", "app.ico");
+        var iconPath = Path.Combine(AppSettings.AppDirectory, "resources", "app.ico");
         return File.Exists(iconPath)
             ? new Icon(iconPath)
             : Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? (Icon)SystemIcons.Application.Clone();
-    }
-
-    private static Icon LoadTrayIcon(Icon fallback)
-    {
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "resources", "tray.ico");
-        return File.Exists(iconPath)
-            ? new Icon(iconPath)
-            : (Icon)fallback.Clone();
     }
 
     private void SyncAutostartSetting()
@@ -1085,6 +1364,118 @@ public sealed class MainForm : Form
             _settings.Autostart = true;
             _settings.Save();
         }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        UpdateMaximizedBounds();
+        ApplyWindowChrome();
+    }
+
+    private void ApplyWindowChrome()
+    {
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        var renderingPolicy = DWMNCRP_ENABLED;
+        _ = DwmSetWindowAttribute(Handle, DWMWA_NCRENDERING_POLICY, ref renderingPolicy, sizeof(int));
+
+        var cornerPreference = WindowState == FormWindowState.Maximized
+            ? DWMWCP_DONOTROUND
+            : DWMWCP_ROUND;
+        _ = DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPreference, sizeof(int));
+
+        var margins = WindowState == FormWindowState.Maximized
+            ? DwmMargins.Empty
+            : new DwmMargins(1);
+        _ = DwmExtendFrameIntoClientArea(Handle, ref margins);
+
+        _contentPanel.Padding = WindowState == FormWindowState.Maximized
+            ? new Padding(MaximizedContentPadding)
+            : Padding.Empty;
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
+        {
+            m.Result = IntPtr.Zero;
+            return;
+        }
+
+        if (m.Msg == WM_NCHITTEST)
+        {
+            var clientPoint = PointToClient(GetScreenPointFromLParam(m.LParam));
+            m.Result = HitTestClientPoint(clientPoint);
+            return;
+        }
+
+        base.WndProc(ref m);
+    }
+
+    private IntPtr HitTestClientPoint(Point point)
+    {
+        if (WindowState != FormWindowState.Maximized)
+        {
+            var left = point.X >= 0 && point.X < ResizeBorderThickness;
+            var right = point.X <= ClientSize.Width && point.X >= ClientSize.Width - ResizeBorderThickness;
+            var top = point.Y >= 0 && point.Y < ResizeBorderThickness;
+            var bottom = point.Y <= ClientSize.Height && point.Y >= ClientSize.Height - ResizeBorderThickness;
+
+            if (top && left) return HTTOPLEFT;
+            if (top && right) return HTTOPRIGHT;
+            if (bottom && left) return HTBOTTOMLEFT;
+            if (bottom && right) return HTBOTTOMRIGHT;
+            if (left) return HTLEFT;
+            if (right) return HTRIGHT;
+            if (top) return HTTOP;
+            if (bottom) return HTBOTTOM;
+        }
+
+        return HTCLIENT;
+    }
+
+    private static Point GetScreenPointFromLParam(IntPtr lParam)
+    {
+        var value = lParam.ToInt64();
+        return new Point(unchecked((short)(value & 0xffff)), unchecked((short)((value >> 16) & 0xffff)));
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref DwmMargins margins);
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DwmMargins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
+
+        public DwmMargins(int width)
+        {
+            Left = width;
+            Right = width;
+            Top = width;
+            Bottom = width;
+        }
+
+        public static DwmMargins Empty => new();
     }
 
 }
