@@ -44,6 +44,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
+import DropdownSelect from '../common/DropdownSelect.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({
@@ -81,9 +82,14 @@ export default defineComponent({
     const needTranslateModes = computed(() => {
       return every(modeList.value, (mode) => defaultModes.includes(mode.toLowerCase()))
     })
+    const modeSelectOptions = computed(() =>
+      modeList.value.map((mode) => ({
+        label: needTranslateModes.value ? t(mode.toLowerCase()) : mode,
+        value: mode,
+      })),
+    )
 
-    const handlerModeChange = (e: Event) => {
-      const mode = (e.target as HTMLSelectElement).value
+    const handlerModeChange = (mode: string) => {
       updateConfigs({ mode })
       if (isSingBox.value && automaticDisconnection.value) {
         activeConnections.value.forEach((connection) => {
@@ -159,22 +165,12 @@ export default defineComponent({
         </button>
       )
       const modeSelect = configs.value && (
-        <select
-          class={['select select-sm', isLargeCtrlsBar.value ? 'min-w-40' : 'min-w-24']}
-          v-model={configs.value.mode}
-          onChange={handlerModeChange}
-        >
-          {modeList.value.map((mode) => {
-            return (
-              <option
-                key={mode}
-                value={mode}
-              >
-                {needTranslateModes.value ? t(mode.toLowerCase()) : mode}
-              </option>
-            )
-          })}
-        </select>
+        <DropdownSelect
+          class={isLargeCtrlsBar.value ? 'min-w-40' : 'min-w-24'}
+          modelValue={configs.value.mode}
+          options={modeSelectOptions.value}
+          onUpdate:modelValue={(value) => handlerModeChange(value as string)}
+        />
       )
       const sort = (
         <select

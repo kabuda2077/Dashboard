@@ -24,11 +24,12 @@ import {
   TrashIcon,
   WrenchScrewdriverIcon,
 } from '@heroicons/vue/24/outline'
-import { defineComponent, ref } from 'vue'
+import { computed, defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
+import DropdownSelect from '../common/DropdownSelect.vue'
 import TextInput from '../common/TextInput.vue'
 import ConnectionCardSettings from '../settings/connections/ConnectionCardSettings.vue'
 import TableSettings from '../settings/connections/TableSettings.vue'
@@ -58,23 +59,22 @@ export default defineComponent({
     const settingsModel = ref(false)
     const { showTip, updateTip } = useTooltip()
     const { isLargeCtrlsBar } = useCtrlsBar(() => (isConnectionCard.value ? 860 : 720))
+    const sortOptions = computed(() =>
+      (Object.values(SORT_TYPE) as string[]).map((opt) => ({
+        label: t(opt) || opt,
+        value: opt,
+      })),
+    )
 
     return () => {
       const sortForCards = (
         <div class={`join flex-1 ${isLargeCtrlsBar.value ? 'min-w-46' : ''}`}>
-          <select
-            class="join-item select select-sm flex-1"
-            v-model={connectionSortType.value}
-          >
-            {(Object.values(SORT_TYPE) as string[]).map((opt) => (
-              <option
-                key={opt}
-                value={opt}
-              >
-                {t(opt) || opt}
-              </option>
-            ))}
-          </select>
+          <DropdownSelect
+            class="join-item flex-1"
+            modelValue={connectionSortType.value}
+            options={sortOptions.value}
+            onUpdate:modelValue={(value) => (connectionSortType.value = value as SORT_TYPE)}
+          />
           <button
             class="btn join-item btn-sm"
             onClick={() => {

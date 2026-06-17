@@ -34,7 +34,7 @@
       @click.stop="emit('latency-test')"
     />
   </div>
-  <div class="text-base-content/60 mt-1.5 flex items-center gap-2">
+  <div class="mt-1.5 flex items-center gap-2">
     <div class="flex flex-1 items-center gap-2 truncate text-sm">
       <ProxyGroupNow :name="name" />
     </div>

@@ -11,20 +11,20 @@
         :class="
           isNowAGroup && 'hover:bg-base-300 hover:-mx-1 hover:rounded-lg hover:px-1 hover:shadow'
         "
-        class="text-base-content/60 text-xs md:text-sm"
+        class="text-xs md:text-sm"
         @click="handlerClickNow"
       />
       <template v-if="finalOutbound && displayFinalOutbound">
         <ArrowRightCircleIcon class="h-4 w-4 shrink-0" />
         <ProxyName
           :name="finalOutbound"
-          class="text-base-content/60 text-xs md:text-sm"
+          class="text-xs md:text-sm"
         />
       </template>
     </template>
     <template v-else-if="proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance">
       <CheckCircleIcon class="h-4 w-4 shrink-0" />
-      <span class="text-base-content/60 text-xs md:text-sm">
+      <span class="text-xs md:text-sm">
         {{ $t('loadBalance') }}
       </span>
     </template>

@@ -29,6 +29,7 @@ import { computed, defineComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
+import DropdownSelect from '../common/DropdownSelect.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({
@@ -105,6 +106,28 @@ export default defineComponent({
         types: types.sort(),
       }
     })
+    const logLevelOptions = computed(() =>
+      logLevels.value.map((level) => ({
+        label: level,
+        value: level,
+      })),
+    )
+    const logTypeOptions = computed(() => [
+      {
+        label: t('all'),
+        value: '',
+      },
+      ...logFilterOptions.value.levels.map((level) => ({
+        key: `level-${level}`,
+        label: level,
+        value: level,
+      })),
+      ...logFilterOptions.value.types.map((type) => ({
+        key: `type-${type}`,
+        label: type,
+        value: type,
+      })),
+    ])
 
     const downloadAllLogs = () => {
       const blob = new Blob(
@@ -134,20 +157,15 @@ export default defineComponent({
 
     return () => {
       const levelSelect = (
-        <select
-          class={['join-item select select-sm min-w-30']}
-          v-model={logLevel.value}
-          onChange={initLogs}
-        >
-          {logLevels.value.map((opt) => (
-            <option
-              key={opt}
-              value={opt}
-            >
-              {opt}
-            </option>
-          ))}
-        </select>
+        <DropdownSelect
+          class="join-item min-w-30"
+          modelValue={logLevel.value}
+          options={logLevelOptions.value}
+          onUpdate:modelValue={(value) => {
+            logLevel.value = value as LOG_LEVEL
+            initLogs()
+          }}
+        />
       )
       const searchInput = (
         <TextInput
@@ -163,35 +181,14 @@ export default defineComponent({
       )
 
       const logTypeSelect = (
-        <select
+        <DropdownSelect
           class={[
-            'select select-sm',
             isLargeCtrlsBar.value ? 'w-36' : 'w-24 max-w-40 flex-1',
           ]}
-          v-model={logTypeFilter.value}
-        >
-          <option value="">{t('all')}</option>
-          <optgroup label={t('logLevel')}>
-            {logFilterOptions.value.levels.map((opt) => (
-              <option
-                key={opt}
-                value={opt}
-              >
-                {opt}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label={t('logType')}>
-            {logFilterOptions.value.types.map((opt) => (
-              <option
-                key={opt}
-                value={opt}
-              >
-                {opt}
-              </option>
-            ))}
-          </optgroup>
-        </select>
+          modelValue={logTypeFilter.value}
+          options={logTypeOptions.value}
+          onUpdate:modelValue={(value) => (logTypeFilter.value = value as string)}
+        />
       )
 
       const settingsModal = (
