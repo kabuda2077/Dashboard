@@ -86,6 +86,7 @@ Existing settings definitions:
 - `settings-section-label`: `text-xs font-semibold tracking-wider uppercase`, color equivalent to `base-content/60`.
 - `setting-item-label`: `text-sm font-medium`.
 - Small inputs/buttons/selects/tabs are normalized to `text-sm`.
+- Toggles use the shared `.toggle` utility: `bg-base-100`, `border-base-border`, and a `base-content` thumb.
 
 Use `text-base-content/60` for read-only or low-priority content that must remain readable, such as core paths and log text. Use `text-base-content/40` sparingly for decorative separators like arrows.
 

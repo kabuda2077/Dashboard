@@ -5,7 +5,8 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $sourceFile = Join-Path $root "resources\dashboard\favicon.ico"
 $outDir = Join-Path $root "resources"
-$outFile = Join-Path $outDir "app.ico"
+$appIconFile = Join-Path $outDir "app.ico"
+$trayIconFile = Join-Path $outDir "tray.ico"
 
 if (-not (Test-Path $sourceFile)) {
     throw "zashboard favicon not found: $sourceFile"
@@ -91,6 +92,55 @@ function ConvertTo-SolidColorPngBytes {
     return ,$result
 }
 
+function New-AppIconPngBytes {
+    param(
+        [byte[]]$SourceBytes,
+        [int]$Size
+    )
+
+    $sourceStream = [System.IO.MemoryStream]::new($SourceBytes)
+    $sourceBitmap = [System.Drawing.Bitmap]::new($sourceStream)
+    $bitmap = [System.Drawing.Bitmap]::new($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $graphics.Clear([System.Drawing.Color]::Transparent)
+
+    $backgroundInset = [Math]::Max(0, [int][Math]::Round($Size * 0.02))
+    $backgroundSize = $Size - ($backgroundInset * 2)
+    $radius = [Math]::Max(3, [int][Math]::Round($Size * 0.22))
+    $backgroundRect = [System.Drawing.RectangleF]::new($backgroundInset, $backgroundInset, $backgroundSize, $backgroundSize)
+    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
+    $diameter = $radius * 2
+    $path.AddArc($backgroundRect.Left, $backgroundRect.Top, $diameter, $diameter, 180, 90)
+    $path.AddArc($backgroundRect.Right - $diameter, $backgroundRect.Top, $diameter, $diameter, 270, 90)
+    $path.AddArc($backgroundRect.Right - $diameter, $backgroundRect.Bottom - $diameter, $diameter, $diameter, 0, 90)
+    $path.AddArc($backgroundRect.Left, $backgroundRect.Bottom - $diameter, $diameter, $diameter, 90, 90)
+    $path.CloseFigure()
+
+    $backgroundBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 29, 29, 31))
+    $graphics.FillPath($backgroundBrush, $path)
+
+    $iconSize = [Math]::Max(1, [int][Math]::Round($Size * 0.62))
+    $iconOffset = [Math]::Round(($Size - $iconSize) / 2)
+    $graphics.DrawImage($sourceBitmap, $iconOffset, $iconOffset, $iconSize, $iconSize)
+
+    $outStream = [System.IO.MemoryStream]::new()
+    $bitmap.Save($outStream, [System.Drawing.Imaging.ImageFormat]::Png)
+    $result = $outStream.ToArray()
+
+    $outStream.Dispose()
+    $backgroundBrush.Dispose()
+    $path.Dispose()
+    $graphics.Dispose()
+    $bitmap.Dispose()
+    $sourceBitmap.Dispose()
+    $sourceStream.Dispose()
+
+    return ,$result
+}
+
 function Write-IcoFile {
     param(
         [string]$Path,
@@ -147,7 +197,16 @@ $whiteImages = foreach ($image in $images) {
     }
 }
 
-New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-Write-IcoFile -Path $outFile -Images $whiteImages
+$appImages = foreach ($image in $whiteImages) {
+    [PSCustomObject]@{
+        Size = $image.Size
+        Bytes = New-AppIconPngBytes -SourceBytes $image.Bytes -Size $image.Size
+    }
+}
 
-Write-Host "Synced white app icon to $outFile"
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+Write-IcoFile -Path $appIconFile -Images $appImages
+Write-IcoFile -Path $trayIconFile -Images $whiteImages
+
+Write-Host "Synced app icon to $appIconFile"
+Write-Host "Synced tray icon to $trayIconFile"

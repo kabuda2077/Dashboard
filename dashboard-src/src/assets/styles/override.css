@@ -44,6 +44,11 @@
   @apply border-none;
 }
 
+@utility toggle {
+  @apply border-base-border bg-base-100 shadow-none;
+  --input-color: var(--color-base-content);
+}
+
 @utility tabs {
   .tab {
     @apply px-2;

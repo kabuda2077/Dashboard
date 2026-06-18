@@ -49,10 +49,5 @@ if ((Test-Path $runtimeDir) -and (Test-Path $rootWebViewLoader)) {
     Remove-Item -LiteralPath $runtimeDir -Recurse -Force
 }
 
-$publishedAppIcon = Join-Path $publishDir 'resources\app.ico'
-if (Test-Path $publishedAppIcon) {
-    Remove-Item -LiteralPath $publishedAppIcon -Force
-}
-
 Write-Host ""
 Write-Host "Publish completed: $publishDir" -ForegroundColor Green
