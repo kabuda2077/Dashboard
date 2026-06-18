@@ -1,6 +1,7 @@
+import { hasSingboxChannel } from '@/composables/backendCapability'
 import { MIHOMO, ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
-import { getUrlFromBackend } from '@/helper/utils'
+import { getSingboxUrlFromBackend, getUrlFromBackend } from '@/helper/utils'
 import router from '@/router'
 import { activeBackend, activeUuid } from '@/store/setup'
 import type {
@@ -23,7 +24,7 @@ axios.interceptors.request.use((config) => {
   return config
 })
 
-const ignoreNotificationUrls = ['/delay', '/weights']
+const ignoreNotificationUrls = ['/delay', '/weights', '/storage/zashboard']
 
 axios.interceptors.response.use(
   null,
@@ -253,15 +254,43 @@ export const fetchLogsAPI = <T>(params: Record<string, string> = {}) => {
   return createWebSocket<T>('logs', params)
 }
 
+const createSingboxStat = <T>(kind: 'memory' | 'traffic') => {
+  const data = ref<T>()
+  let closer: (() => void) | null = null
+  let cancelled = false
+
+  import('./singbox/subscriptions').then((m) => {
+    if (cancelled) return
+    const sub = kind === 'memory' ? m.subscribeSingboxMemory() : m.subscribeSingboxTraffic()
+    if (!sub) return
+    watch(sub.data, (value) => (data.value = value as T), { immediate: true })
+    closer = sub.close
+  })
+
+  return {
+    data,
+    close: () => {
+      cancelled = true
+      closer?.()
+    },
+  }
+}
+
 export const fetchMemoryAPI = <T>() => {
+  if (__SINGBOX_NATIVE__ && hasSingboxChannel.value) {
+    return createSingboxStat<T>('memory')
+  }
   return createWebSocket<T>('memory')
 }
 
 export const fetchTrafficAPI = <T>() => {
+  if (__SINGBOX_NATIVE__ && hasSingboxChannel.value) {
+    return createSingboxStat<T>('traffic')
+  }
   return createWebSocket<T>('traffic')
 }
 
-export const isBackendAvailable = async (backend: Backend, timeout: number = 10000) => {
+const probeClashChannel = async (backend: Backend, timeout: number) => {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
@@ -281,3 +310,11 @@ export const isBackendAvailable = async (backend: Backend, timeout: number = 100
     clearTimeout(timeoutId)
   }
 }
+
+export const isSingboxChannelAvailable = (backend: Backend, timeout: number = 10000) => {
+  if (!__SINGBOX_NATIVE__ || !getSingboxUrlFromBackend(backend)) return Promise.resolve(false)
+  return import('./singbox/client').then((m) => m.probeSingboxChannel(backend, timeout))
+}
+
+export const isBackendAvailable = (backend: Backend, timeout: number = 10000) =>
+  probeClashChannel(backend, timeout)

@@ -1,3 +1,4 @@
+import { capabilities } from '@/composables/backendCapability'
 import { NOT_CONNECTED, PROXY_CHAIN_DIRECTION, PROXY_TYPE, ROUTE_NAME } from '@/constant'
 import { timeSaved } from '@/store/overview'
 import { hiddenGroupMap, proxyMap } from '@/store/proxies'
@@ -132,17 +133,26 @@ export const getColorForLatency = (latency: number) => {
   if (latency === NOT_CONNECTED) {
     return ''
   } else if (latency < lowLatency.value) {
-    return 'text-green-500'
+    return 'text-low-latency'
   } else if (latency < mediumLatency.value) {
-    return 'text-yellow-500'
+    return 'text-medium-latency'
   } else {
-    return 'text-red-500'
+    return 'text-high-latency'
   }
 }
 
 export const renderRoutes = computed(() => {
+  const caps = capabilities.value
+  const routeCapable: Partial<Record<ROUTE_NAME, boolean>> = {
+    [ROUTE_NAME.rules]: caps.rules,
+    [ROUTE_NAME.tools]: caps.tools,
+  }
+
   return Object.values(ROUTE_NAME).filter((r) => {
-    return ![ROUTE_NAME.setup, !splitOverviewPage.value && ROUTE_NAME.overview].includes(r)
+    if (r === ROUTE_NAME.setup) return false
+    if (!splitOverviewPage.value && r === ROUTE_NAME.overview) return false
+    if (r in routeCapable && routeCapable[r] === false) return false
+    return true
   })
 })
 

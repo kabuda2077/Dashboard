@@ -21,11 +21,19 @@ const getGitCommitId = (): string => {
   }
 }
 
+// The sing-box native API support (ConnectRPC/protobuf client and the Tools
+// page: xterm, qrcode, tailscale) is opt-in. Default desktop builds drop it.
+const singboxNativeEnabled = process.env.SINGBOX_NATIVE === 'true'
+
+const font = process.env.FONT || 'all'
+
 // https://vite.dev/config/
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(version),
     __COMMIT_ID__: JSON.stringify(getGitCommitId()),
+    __SINGBOX_NATIVE__: JSON.stringify(singboxNativeEnabled),
+    __FONT__: JSON.stringify(font),
   },
   base: './',
   plugins: [
@@ -34,6 +42,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'favicon-dark.svg'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: singboxNativeEnabled ? 4 * 1024 * 1024 : 2 * 1024 * 1024,
+      },
       manifest: {
         name: 'zashboard',
         short_name: 'zashboard',

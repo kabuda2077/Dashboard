@@ -1,3 +1,4 @@
+import { capabilities } from '@/composables/backendCapability'
 import { ROUTE_NAME } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { i18n } from '@/i18n'
@@ -46,7 +47,21 @@ const childrenRouter = [
     name: ROUTE_NAME.rules,
     component: RulesPage,
   },
+  ...(__SINGBOX_NATIVE__
+    ? [
+        {
+          path: 'tools',
+          name: ROUTE_NAME.tools,
+          component: () => import('@/views/ToolsPage.vue'),
+        },
+      ]
+    : []),
 ]
+
+const ROUTE_CAPABILITY: Partial<Record<string, keyof typeof capabilities.value>> = {
+  [ROUTE_NAME.rules]: 'rules',
+  [ROUTE_NAME.tools]: 'tools',
+}
 
 const router = createRouter({
   history: createWebHashHistory(import.meta.env.BASE_URL),
@@ -92,11 +107,14 @@ router.beforeEach((to, from) => {
     to.meta.transition = toIndex < fromIndex ? 'slide-right' : 'slide-left'
   }
 
-  if (
-    !activeBackend.value &&
-    ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)
-  ) {
+  if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)) {
     router.push({ name: ROUTE_NAME.setup })
+    return
+  }
+
+  const requiredCap = typeof to.name === 'string' ? ROUTE_CAPABILITY[to.name] : undefined
+  if (requiredCap && !capabilities.value[requiredCap]) {
+    router.push({ name: ROUTE_NAME.proxies })
   }
 })
 
@@ -108,6 +126,14 @@ watch([language, activeBackend], () => {
   setTimeout(() => {
     setTitleByName(router.currentRoute.value.name)
   })
+})
+
+watch(capabilities, (currentCapabilities) => {
+  const routeName = router.currentRoute.value.name
+  const requiredCap = typeof routeName === 'string' ? ROUTE_CAPABILITY[routeName] : undefined
+  if (requiredCap && !currentCapabilities[requiredCap]) {
+    router.push({ name: ROUTE_NAME.proxies })
+  }
 })
 
 export default router

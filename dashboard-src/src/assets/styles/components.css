@@ -20,8 +20,21 @@ div {
   @apply text-info;
 }
 
+[data-theme='light-neutral'],
+[data-theme='dark-neutral'] {
+  --color-low-latency: oklch(0.551 0.08 167);
+  --color-medium-latency: oklch(0.72 0.14 85);
+  --color-high-latency: oklch(0.56 0.17 22);
+}
+
 .dock {
   @apply absolute right-2 left-2 z-30 rounded-3xl;
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--color-base-content) 8%, transparent);
+  box-shadow:
+    0 4px 16px color-mix(in srgb, var(--color-base-content) 6%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 35%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 6%, transparent);
 }
 
 .settings-section-label {

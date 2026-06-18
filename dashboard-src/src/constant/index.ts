@@ -5,6 +5,7 @@ import {
   DocumentTextIcon,
   GlobeAltIcon,
   SwatchIcon,
+  WrenchScrewdriverIcon,
 } from '@heroicons/vue/24/outline'
 
 export const IS_APPLE_DEVICE = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
@@ -150,6 +151,7 @@ export enum ROUTE_NAME {
   connections = 'connections',
   logs = 'logs',
   rules = 'rules',
+  tools = 'tools',
   setup = 'setup',
 }
 
@@ -160,6 +162,7 @@ export const ROUTE_ICON_MAP = {
   [ROUTE_NAME.connections]: ArrowsRightLeftIcon,
   [ROUTE_NAME.rules]: SwatchIcon,
   [ROUTE_NAME.logs]: DocumentTextIcon,
+  [ROUTE_NAME.tools]: WrenchScrewdriverIcon,
   [ROUTE_NAME.setup]: CubeTransparentIcon,
 }
 
@@ -223,6 +226,8 @@ export const DETAILED_CARD_STYLE = [
 export const ALL_THEME = [
   'light',
   'dark',
+  'light-neutral',
+  'dark-neutral',
   ...(window.ksu ? ['light-monet', 'dark-monet'] : []),
   'halloween',
   'forest',

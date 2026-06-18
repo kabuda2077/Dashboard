@@ -19,10 +19,10 @@
     </template>
 
     <div class="flex flex-col md:h-[70dvh] md:max-h-[70dvh] md:flex-row md:overflow-hidden">
-      <div class="flex flex-1 flex-col overflow-hidden p-4">
+      <div class="flex flex-1 flex-col overflow-hidden">
         <VueJsonPretty
           :data="infoConn"
-          class="flex-1 overflow-y-auto"
+          class="flex-1 overflow-y-auto p-4"
         >
           <template #renderNodeValue="{ node, defaultValue }">
             <template v-if="node.path.startsWith('root.chains') && proxyMap[node.content]?.icon">
@@ -41,7 +41,7 @@
           </template>
         </VueJsonPretty>
         <div
-          class="min-h-12 shrink-0 pt-2 text-sm"
+          class="min-h-12 shrink-0 px-4 pt-2 pb-4 text-sm"
           v-if="destinationIP && !isPrivateIP"
         >
           <template v-if="details">

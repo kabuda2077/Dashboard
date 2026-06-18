@@ -18,6 +18,9 @@ Write-Host ""
 if (-not $SkipDashboardBuild) {
     Write-Host "==> Step 1/3: Building dashboard UI" -ForegroundColor Cyan
     powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1
+    if ($LASTEXITCODE -ne 0) {
+        throw "dashboard UI build failed with exit code $LASTEXITCODE"
+    }
     Write-Host ""
 }
 else {

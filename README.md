@@ -20,6 +20,7 @@
 - `resources/dashboard`: 本地构建后的 zashboard 静态文件。
 - `tools/build-zashboard.ps1`: 构建 `dashboard-src` 并同步到 `resources/dashboard`。
 - `cores`: 建议放置 `mihomo.exe`。
+- `STYLE.md` / `UPSTREAM_MERGE.md`: 本项目 UI 约束和 zashboard 上游跟进流程。
 
 ## 使用
 

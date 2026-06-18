@@ -39,8 +39,26 @@ if (-not (Test-Path $pnpmPath)) {
 
 Push-Location $sourceRoot
 try {
-    & $pnpmPath install --frozen-lockfile
-    & $pnpmPath run build
+    $pnpmStoreDir = Join-Path $repoRoot '.tmp\pnpm-store'
+    New-Item -ItemType Directory -Force -Path $pnpmStoreDir | Out-Null
+    $env:PNPM_HOME = if ($env:PNPM_HOME) { $env:PNPM_HOME } else { Join-Path $env:APPDATA 'pnpm' }
+    $env:PNPM_STORE_DIR = $pnpmStoreDir
+    $env:npm_config_store_dir = $pnpmStoreDir
+
+    & $pnpmPath install --frozen-lockfile --store-dir $pnpmStoreDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "pnpm install failed with exit code $LASTEXITCODE"
+    }
+
+    $vitePath = Join-Path $sourceRoot 'node_modules\.bin\vite.cmd'
+    if (-not (Test-Path $vitePath)) {
+        throw "vite is missing. Run pnpm install in dashboard-src."
+    }
+
+    & $vitePath build
+    if ($LASTEXITCODE -ne 0) {
+        throw "dashboard build failed with exit code $LASTEXITCODE"
+    }
 }
 finally {
     Pop-Location

@@ -7,7 +7,7 @@
   >
     <div
       v-if="modalMode"
-      class="bg-base-300/50 fixed inset-0 z-40 overflow-hidden"
+      class="fixed inset-0 z-40 overflow-hidden bg-transparent backdrop-blur-sm"
     />
     <div
       class="base-container absolute flex flex-col gap-2 overflow-hidden p-2 transition-[width,transform,max-height] duration-200 ease-out will-change-transform"
