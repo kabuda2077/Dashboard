@@ -63,7 +63,7 @@ div {
 
 .dashboard-action-btn {
   @apply bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none;
-  font-weight: 580;
+  font-weight: 600;
 }
 
 .dashboard-note {
