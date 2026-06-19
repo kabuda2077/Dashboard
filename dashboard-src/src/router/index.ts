@@ -47,20 +47,10 @@ const childrenRouter = [
     name: ROUTE_NAME.rules,
     component: RulesPage,
   },
-  ...(__SINGBOX_NATIVE__
-    ? [
-        {
-          path: 'tools',
-          name: ROUTE_NAME.tools,
-          component: () => import('@/views/ToolsPage.vue'),
-        },
-      ]
-    : []),
 ]
 
 const ROUTE_CAPABILITY: Partial<Record<string, keyof typeof capabilities.value>> = {
   [ROUTE_NAME.rules]: 'rules',
-  [ROUTE_NAME.tools]: 'tools',
 }
 
 const router = createRouter({

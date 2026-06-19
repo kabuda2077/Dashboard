@@ -13,14 +13,8 @@ const ru: LANG_MESSAGE = {
   tailscale: 'Tailscale',
   terminal: 'Терминал',
 
-  // sing-box native API attachment
   default: 'По умолчанию',
-  singboxApiChannel: 'sing-box API',
   clashApiChannel: 'Clash API',
-  enableSingboxApi: 'Включить нативный API sing-box',
-  enableSingboxApiTip:
-    'Clash API остается основным подключением. Нативный API используется только для инструментов sing-box, Tailscale и терминала.',
-  singboxConnectionFailed: 'Не удалось подключиться к нативному API sing-box',
   skip: 'Пропустить',
   // Tools
   networkQuality: 'Качество сети',

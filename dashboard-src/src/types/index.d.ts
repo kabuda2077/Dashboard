@@ -1,10 +1,3 @@
-export type SingboxChannel = {
-  protocol: string
-  host: string
-  port: string
-  secret: string
-}
-
 export type Backend = {
   host: string
   port: string
@@ -15,7 +8,7 @@ export type Backend = {
   label?: string
   disableUpgradeCore?: boolean
   disableTunMode?: boolean
-  singboxChannel?: SingboxChannel
+  readOnlyTunEnabled?: boolean
 }
 
 export type Config = {
@@ -33,7 +26,7 @@ export type Config = {
   ipv6: boolean
   tun: {
     enable: boolean
-  }
+  } | null
 }
 
 export type History = {

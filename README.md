@@ -1,95 +1,171 @@
 # Dashboard
 
-一个轻量的 Windows 桌面管理器，用 WinForms + WebView2 承载 zashboard UI，并负责管理 mihomo 内核、托盘驻留和开机自启。
+A Windows desktop launcher and dashboard for mihomo and sing-box, based on zashboard.
 
-## 功能
+Dashboard uses a WinForms + WebView2 host to run a locally bundled zashboard UI, while the desktop host manages the proxy core process, tray behavior, startup settings, and Windows integration.
 
-- 集成 zashboard UI，并加入桌面应用原生的“内核”页面。
-- 启动、停止、重启 mihomo 内核，并显示 stdout/stderr 日志。
-- 从 `MetaCubeX/mihomo` 最新 release 升级 Windows x64 内核，默认优先选择 `mihomo-windows-amd64-v3-go125-*.zip`。
-- 启动内核时默认请求管理员权限，适配 TUN 场景。
-- 系统托盘菜单支持显示窗口、启动内核、重启内核、停止内核和退出。
-- 当前用户开机自启，写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
-- 应用设置保存到 `%LOCALAPPDATA%\Dashboard\settings.json`，Secret 使用 DPAPI 保护。首次运行新版时会从旧的 `%LOCALAPPDATA%\MihomoDashboard\settings.json` 迁移设置。
-- 会缓存 `config.yaml` 中 `proxy-groups` 的远程 icon，加快代理页面图标显示。
+## Features
 
-## 目录
+- Bundled zashboard UI with desktop-specific integration.
+- Single active core model: choose either `mihomo` or `sing-box`.
+- Independent core path, config path, API URL, and Secret for each core type.
+- Start, stop, restart, switch, and inspect the active core from the Core page.
+- Show core PID, running state, stdout/stderr logs, and recent active downloads.
+- Upgrade `mihomo` from MetaCubeX releases.
+- Upgrade `sing-box` from the reF1nd `sing-box-releases` Windows amd64v3 build.
+- Use Clash-compatible API as the main UI channel for both `mihomo` and `sing-box`.
+- Tray menu for showing the window, restarting/stopping the core, and exiting.
+- Minimize-to-tray and lightweight mode for WebView lifecycle control.
+- Per-user autostart via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+- Settings stored in `%LOCALAPPDATA%\Dashboard\settings.json`.
+- Secrets protected with Windows DPAPI.
+- UI style constraints documented in `STYLE.md`.
+- Upstream zashboard merge workflow documented in `UPSTREAM_MERGE.md`.
 
-- `src`: 桌面管理器源码。
-- `dashboard-src`: zashboard 源码副本，包含桌面应用需要的页面和宿主逻辑。
-- `resources/dashboard`: 本地构建后的 zashboard 静态文件。
-- `tools/build-zashboard.ps1`: 构建 `dashboard-src` 并同步到 `resources/dashboard`。
-- `cores`: 建议放置 `mihomo.exe`。
-- `STYLE.md` / `UPSTREAM_MERGE.md`: 本项目 UI 约束和 zashboard 上游跟进流程。
+## Project Layout
 
-## 使用
+- `src/`: Windows desktop host source code.
+- `dashboard-src/`: zashboard-based frontend source with Dashboard-specific changes.
+- `resources/dashboard/`: built frontend assets embedded into the desktop app.
+- `resources/app.ico`: desktop app icon.
+- `resources/tray.ico`: tray icon.
+- `tools/build-zashboard.ps1`: builds `dashboard-src` and syncs it into `resources/dashboard`.
+- `build.ps1`: builds the frontend and publishes the .NET desktop app.
+- `create-release.ps1`: creates a ZIP release package from a fresh publish.
+- `STYLE.md`: visual style rules used by the customized UI.
+- `UPSTREAM_MERGE.md`: rules for following upstream zashboard updates.
 
-1. 安装 .NET 9 Desktop Runtime 和 Microsoft Edge WebView2 Runtime。
-2. 将 mihomo Windows 内核放到 `cores/mihomo.exe`，或在界面里选择内核路径。
-3. 将配置放到程序目录下的 `config.yaml`，或在界面里选择配置路径。
-4. 确保 mihomo 配置包含 external-controller，例如：
+## Requirements
+
+Runtime:
+
+- Windows 10/11
+- .NET 9 Desktop Runtime
+- Microsoft Edge WebView2 Runtime
+- A configured `mihomo` or `sing-box` executable
+
+Development:
+
+- .NET 9 SDK
+- Node.js 24
+- pnpm 10.15.0
+
+Install pnpm if needed:
+
+```powershell
+npm install -g pnpm@10.15.0
+```
+
+## Core Setup
+
+Dashboard does not bundle proxy cores by default. Select the executable and config file from the Core page.
+
+Recommended portable layout:
+
+```text
+Dashboard.exe
+mihomo/
+  mihomo.exe
+  config.yaml
+sing-box/
+  sing-box.exe
+  config.json
+```
+
+Default paths currently point to:
+
+```text
+E:\APP\Dashboard\mihomo\mihomo.exe
+E:\APP\Dashboard\mihomo\config.yaml
+E:\APP\Dashboard\sing-box\sing-box.exe
+E:\APP\Dashboard\sing-box\config.json
+```
+
+`mihomo` should expose an external controller, for example:
 
 ```yaml
 external-controller: 127.0.0.1:9090
 secret: ""
 ```
 
-## 本地构建
+`sing-box` should expose a Clash-compatible external controller. Dashboard uses this Clash API path for overview, proxies, rules, connections, logs, configuration reload, and related actions. sing-box native API / Tools integration is intentionally not included.
 
-现在 GitHub 只作为代码仓库，不再使用 GitHub Actions 自动编译。发布包在本机生成。
+## Build
 
-需要安装：
-
-- .NET 9 SDK
-- Node.js 24
-- pnpm 10.15.0
-
-如果没有 pnpm，可以安装：
+Build and publish the desktop app:
 
 ```powershell
-npm install -g pnpm@10.15.0
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Configuration Release -Runtime win-x64
 ```
 
-生成发布包：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
-```
-
-输出目录：
+Output:
 
 ```text
 artifacts\publish\Dashboard-Release-win-x64
 ```
 
-发布时请完整复制这个文件夹里的所有内容，不要只复制单独的 `Dashboard.exe`。
+Copy the whole output directory when installing or replacing an existing portable installation. Do not copy only `Dashboard.exe`.
 
-## 产物目录规范
+## Create A Release Package
 
-- `bin/`、`obj/`: .NET 临时编译产物，自动生成，不手动复制。
-- `dashboard-src/dist/`: 前端临时构建产物，自动生成。
-- `resources/dashboard/`: 桌面程序内置的前端静态资源，会被打包进发布版。
-- `artifacts/publish/Dashboard-Release-win-x64/`: 可直接全选复制覆盖安装目录的完整发布文件。
-- `artifacts/releases/`: `create-release.ps1` 生成的 ZIP 和发布说明。
-
-根目录不要再放 `publish`、`publish-lightmode`、`releases` 这类临时目录。
-
-## 开发运行
-
-如需开发运行：
+Create a ZIP package:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1
-dotnet restore -s https://api.nuget.org/v3/index.json
-dotnet run
+powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboard-v1.0.0-win-x64.zip
 ```
 
-如果本机 NuGet 已配置 nuget.org，也可以直接运行 `dotnet restore`。
+Output:
 
-## 说明
+```text
+artifacts\releases\Dashboard-v1.0.0-win-x64.zip
+artifacts\releases\RELEASE_NOTES_yyyyMMdd.txt
+```
 
-zashboard 本身仍然通过 Clash/Mihomo external-controller API 工作。桌面应用会启动一个本地静态服务承载 zashboard，并默认把 API 地址设为 `http://127.0.0.1:9090`。
+## Standard Release Flow
 
-内核启动、停止、重启和升级由桌面应用统一管理；`dashboard-src` 中已移除 zashboard 原生的升级核心、重启核心、更新配置、升级面板和自动升级面板入口，避免和便携包内置资源冲突。
+Use this flow for future releases:
 
-`resources/dashboard` 是本地构建产物。修改 `dashboard-src` 后，请运行 `build.ps1` 或 `tools/build-zashboard.ps1` 更新它。
+1. Start from `main`.
+2. Create a release branch, for example `codex/release-v1.1.0`.
+3. Make code changes and update `README.md`, `STYLE.md`, or `UPSTREAM_MERGE.md` if behavior or workflow changed.
+4. Run verification:
+
+```powershell
+cd dashboard-src
+cmd /c npm run type-check
+cmd /c npm run build
+cd ..
+dotnet build -c Release
+```
+
+5. Create the release ZIP:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboard-v1.1.0-win-x64.zip
+```
+
+6. Smoke test the package from `artifacts\publish\Dashboard-Release-win-x64`.
+7. Commit the final source and generated `resources/dashboard` assets.
+8. Merge the release branch into `main`.
+9. Tag `main` with the release version, for example `v1.1.0`.
+10. Push `main` and the tag.
+11. Create a GitHub Release and upload the ZIP from `artifacts\releases`.
+
+Version tags should use semantic versioning: `vMAJOR.MINOR.PATCH`.
+
+## Upstream zashboard
+
+Dashboard is based on zashboard, but it is not a direct mirror. The frontend keeps zashboard's main dashboard experience while adding desktop-host integration and removing features that are not used by this app.
+
+When following upstream:
+
+- Always work on a new branch.
+- Review upstream commits, not only changelog entries.
+- Preserve Dashboard-specific host messaging, Core page behavior, window controls, visual style rules, and release packaging.
+- Use `UPSTREAM_MERGE.md` as the checklist.
+
+## Notes
+
+- `resources/dashboard` is generated from `dashboard-src`; rebuild it after frontend changes.
+- `dashboard-src/dist`, `bin`, `obj`, and `artifacts/publish` are generated outputs.
+- The portable package is self-contained for the Dashboard app files, but it still requires WebView2 Runtime and the chosen proxy core executable.

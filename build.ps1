@@ -2,8 +2,7 @@ param(
     [string]$Configuration = 'Release',
     [string]$Runtime = 'win-x64',
     [string]$NuGetSource = 'https://api.nuget.org/v3/index.json',
-    [switch]$SkipDashboardBuild,
-    [switch]$SingBoxNative
+    [switch]$SkipDashboardBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,9 +18,6 @@ Write-Host ""
 if (-not $SkipDashboardBuild) {
     Write-Host "==> Step 1/3: Building dashboard UI" -ForegroundColor Cyan
     $dashboardBuildArgs = @('-ExecutionPolicy', 'Bypass', '-File', '.\tools\build-zashboard.ps1')
-    if ($SingBoxNative) {
-        $dashboardBuildArgs += '-SingBoxNative'
-    }
     powershell @dashboardBuildArgs
     if ($LASTEXITCODE -ne 0) {
         throw "dashboard UI build failed with exit code $LASTEXITCODE"

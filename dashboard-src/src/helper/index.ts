@@ -145,7 +145,6 @@ export const renderRoutes = computed(() => {
   const caps = capabilities.value
   const routeCapable: Partial<Record<ROUTE_NAME, boolean>> = {
     [ROUTE_NAME.rules]: caps.rules,
-    [ROUTE_NAME.tools]: caps.tools,
   }
 
   return Object.values(ROUTE_NAME).filter((r) => {

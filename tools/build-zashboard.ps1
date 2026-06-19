@@ -1,6 +1,5 @@
 param(
-    [switch]$SkipBuild,
-    [switch]$SingBoxNative
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,16 +55,9 @@ try {
         throw "vite is missing. Run pnpm install in dashboard-src."
     }
 
-    $previousSingBoxNative = $env:SINGBOX_NATIVE
-    $env:SINGBOX_NATIVE = if ($SingBoxNative) { 'true' } else { 'false' }
-    try {
-        & $vitePath build
-        if ($LASTEXITCODE -ne 0) {
-            throw "dashboard build failed with exit code $LASTEXITCODE"
-        }
-    }
-    finally {
-        $env:SINGBOX_NATIVE = $previousSingBoxNative
+    & $vitePath build
+    if ($LASTEXITCODE -ne 0) {
+        throw "dashboard build failed with exit code $LASTEXITCODE"
     }
 }
 finally {

@@ -11,14 +11,8 @@ const en = {
   tailscale: 'Tailscale',
   terminal: 'Terminal',
 
-  // sing-box native API attachment
   default: 'Default',
-  singboxApiChannel: 'sing-box API',
   clashApiChannel: 'Clash API',
-  enableSingboxApi: 'Enable sing-box native API',
-  enableSingboxApiTip:
-    'The Clash API remains the primary connection. Add the native API only for sing-box-specific tools, Tailscale, and terminal features.',
-  singboxConnectionFailed: 'Failed to connect to the sing-box native API',
   skip: 'Skip',
   // Tools page
   networkQuality: 'Network Quality',

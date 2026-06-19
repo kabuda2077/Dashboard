@@ -31,6 +31,7 @@ public sealed class MainForm : Form
     private bool _startMinimized;
     private bool _startCoreAfterLaunch;
     private bool _coreUpgradeInProgress;
+    private bool _coreSwitchInProgress;
     private bool _elevatedRetryPending;
     private bool _tunPermissionFailureSeen;
     private bool _stateRefreshPending;
@@ -462,10 +463,6 @@ public sealed class MainForm : Form
 
         query.Add($"label={Uri.EscapeDataString("本机内核")}");
         query.Add($"coreType={Uri.EscapeDataString(_settings.CoreType)}");
-        if (_settings.IsSingBox && !string.IsNullOrWhiteSpace(_settings.SingBoxNativeApiUrl))
-        {
-            query.Add($"singBoxNativeApiUrl={Uri.EscapeDataString(_settings.SingBoxNativeApiUrl)}");
-        }
         query.Add("disableUpgradeCore=1");
 
         return string.Join("&", query);
@@ -513,6 +510,10 @@ public sealed class MainForm : Form
                     SaveSettingsFromMessage(root, showMessage: false);
                     RestartCore();
                     break;
+                case "switchCore":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    await SwitchCoreAsync(root);
+                    return;
                 case "stop":
                     StopCore();
                     break;
@@ -557,8 +558,6 @@ public sealed class MainForm : Form
         _settings.SingBoxConfigPath = GetString(root, "singBoxConfigPath", _settings.SingBoxConfigPath).Trim();
         _settings.SingBoxApiUrl = GetString(root, "singBoxApiUrl", _settings.SingBoxApiUrl).Trim();
         _settings.SingBoxSecret = GetString(root, "singBoxSecret", _settings.SingBoxSecret);
-        _settings.SingBoxNativeApiUrl = GetString(root, "singBoxNativeApiUrl", _settings.SingBoxNativeApiUrl).Trim();
-        _settings.SingBoxNativeSecret = GetString(root, "singBoxNativeSecret", _settings.SingBoxNativeSecret);
         _settings.ActiveCorePath = GetString(root, "corePath", _settings.ActiveCorePath).Trim();
         _settings.ActiveConfigPath = GetString(root, "configPath", _settings.ActiveConfigPath).Trim();
         _settings.ActiveDashboardApiUrl = GetString(root, "apiUrl", _settings.ActiveDashboardApiUrl).Trim();
@@ -684,14 +683,56 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task UpgradeCoreAsync()
+    private async Task SwitchCoreAsync(JsonElement root)
     {
-        if (_settings.IsSingBox)
+        if (_coreSwitchInProgress || _coreUpgradeInProgress)
         {
-            await ShowDashboardNoticeAsync("sing-box 暂不支持在 Dashboard 内升级，请手动替换内核文件。");
             return;
         }
 
+        var targetCoreType = AppSettings.NormalizeCoreType(GetString(
+            root,
+            "targetCoreType",
+            _settings.IsSingBox ? AppSettings.CoreTypeMihomo : AppSettings.CoreTypeSingBox));
+        var targetTitle = string.Equals(targetCoreType, AppSettings.CoreTypeSingBox, StringComparison.Ordinal)
+            ? "sing-box"
+            : "Mihomo Core";
+
+        _coreSwitchInProgress = true;
+        SendStateToDashboard();
+        await ShowDashboardNoticeAsync($"正在切换到 {targetTitle}。");
+
+        try
+        {
+            if (_core.IsRunning)
+            {
+                _core.Stop(TimeSpan.FromSeconds(8));
+                await Task.Delay(600);
+            }
+
+            _settings.CoreType = targetCoreType;
+            _settings.Save();
+            RefreshIconCache();
+            StartCore();
+
+            if (_core.IsRunning)
+            {
+                await ShowDashboardNoticeAsync($"已切换到 {targetTitle}。");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowDashboardNoticeAsync($"切换内核失败：{ex.Message}");
+        }
+        finally
+        {
+            _coreSwitchInProgress = false;
+            SendStateToDashboard();
+        }
+    }
+
+    private async Task UpgradeCoreAsync()
+    {
         if (_coreUpgradeInProgress)
         {
             return;
@@ -701,18 +742,24 @@ public sealed class MainForm : Form
         var stoppedForUpgrade = false;
         _coreUpgradeInProgress = true;
         SendStateToDashboard();
-        await ShowDashboardNoticeAsync("正在升级内核，请稍候。");
+        await ShowDashboardNoticeAsync(_settings.IsSingBox
+            ? "正在升级 sing-box 内核，请稍候。"
+            : "正在升级内核，请稍候。");
 
         try
         {
-            var result = await CoreUpdater.UpgradeLatestAsync(_settings.CorePath, beforeReplace: () =>
+            var result = _settings.IsSingBox
+                ? await SingBoxUpdater.UpgradeLatestAsync(_settings.SingBoxCorePath, beforeReplace: StopRunningCoreForUpgrade)
+                : await CoreUpdater.UpgradeLatestAsync(_settings.CorePath, beforeReplace: StopRunningCoreForUpgrade);
+
+            void StopRunningCoreForUpgrade()
             {
                 if (wasRunning && _core.IsRunning)
                 {
-                    _core.Stop();
+                    _core.Stop(TimeSpan.FromSeconds(8));
                     stoppedForUpgrade = true;
                 }
-            });
+            }
 
             if (result.IsAlreadyLatest)
             {
@@ -903,14 +950,14 @@ public sealed class MainForm : Form
             singBoxConfigPath = _settings.SingBoxConfigPath,
             singBoxApiUrl = _settings.SingBoxApiUrl,
             singBoxSecret = _settings.SingBoxSecret,
-            singBoxNativeApiUrl = _settings.SingBoxNativeApiUrl,
-            singBoxNativeSecret = _settings.SingBoxNativeSecret,
+            readOnlyTunEnabled = _settings.IsSingBox ? IsSingBoxTunConfigured() : (bool?)null,
             startCoreOnLaunch = _settings.StartCoreOnLaunch,
             minimizeToTray = _settings.MinimizeToTray,
             lightweightMode = _settings.LightweightMode,
             autostart = _settings.Autostart,
-            canUpgradeCore = !_settings.IsSingBox,
-            isCoreUpgrading = !_settings.IsSingBox && _coreUpgradeInProgress,
+            canUpgradeCore = true,
+            isCoreUpgrading = _coreUpgradeInProgress,
+            isCoreSwitching = _coreSwitchInProgress,
             isWindowMaximized = WindowState == FormWindowState.Maximized,
             logText = _core.GetLogTail(8000),
             iconCacheMap = _iconCache.GetDashboardMap(_dashboardUri)
@@ -924,6 +971,64 @@ public sealed class MainForm : Form
             _pendingDashboardNotice = null;
             PostDashboardMessage(new { type = "notice", message });
         }
+    }
+
+    private bool IsSingBoxTunConfigured()
+    {
+        if (string.IsNullOrWhiteSpace(_settings.SingBoxConfigPath) || !File.Exists(_settings.SingBoxConfigPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var stream = File.OpenRead(_settings.SingBoxConfigPath);
+            using var document = JsonDocument.Parse(stream, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+
+            if (!document.RootElement.TryGetProperty("inbounds", out var inbounds)
+                || inbounds.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var inbound in inbounds.EnumerateArray())
+            {
+                if (inbound.ValueKind != JsonValueKind.Object
+                    || !inbound.TryGetProperty("type", out var typeProperty)
+                    || typeProperty.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(typeProperty.GetString(), "tun", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (inbound.TryGetProperty("enabled", out var enabledProperty)
+                    && enabledProperty.ValueKind == JsonValueKind.False)
+                {
+                    return false;
+                }
+
+                if (inbound.TryGetProperty("disabled", out var disabledProperty)
+                    && disabledProperty.ValueKind == JsonValueKind.True)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
     }
 
     private Task ShowDashboardNoticeAsync(string message)

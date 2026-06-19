@@ -85,58 +85,6 @@
           />
         </div>
 
-        <template v-if="singboxNativeEnabled">
-          <div class="divider my-0 text-xs">{{ t('singboxApiChannel') }} ({{ t('optional') }})</div>
-
-          <label class="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              class="toggle toggle-sm"
-              v-model="enableSingboxChannel"
-            />
-            <span>{{ t('enableSingboxApi') }}</span>
-          </label>
-
-          <template v-if="enableSingboxChannel">
-            <div class="flex gap-2">
-              <div class="flex w-24 flex-none flex-col gap-1">
-                <label class="text-sm">{{ t('protocol') }}</label>
-                <select
-                  class="select select-sm w-full"
-                  v-model="singboxForm.protocol"
-                >
-                  <option value="http">HTTP</option>
-                  <option value="https">HTTPS</option>
-                </select>
-              </div>
-              <div class="flex min-w-0 flex-1 flex-col gap-1">
-                <label class="text-sm">{{ t('host') }}</label>
-                <TextInput
-                  class="w-full"
-                  v-model="singboxForm.host"
-                  placeholder="127.0.0.1"
-                />
-              </div>
-              <div class="flex w-20 flex-none flex-col gap-1">
-                <label class="text-sm">{{ t('port') }}</label>
-                <TextInput
-                  class="w-full"
-                  v-model="singboxForm.port"
-                  placeholder="9090"
-                />
-              </div>
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label class="text-sm">{{ t('password') }} ({{ t('optional') }})</label>
-              <input
-                type="password"
-                class="input input-sm w-full"
-                v-model="singboxForm.secret"
-              />
-            </div>
-          </template>
-        </template>
       </div>
 
       <div class="flex justify-end gap-2">
@@ -164,13 +112,13 @@
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable, isSingboxChannelAvailable } from '@/api'
+import { isBackendAvailable } from '@/api'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import { showNotification } from '@/helper/notification'
 import { getLabelFromBackend } from '@/helper/utils'
 import { activeBackend, backendList, updateBackend } from '@/store/setup'
-import type { Backend, SingboxChannel } from '@/types'
+import type { Backend } from '@/types'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -188,22 +136,12 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const { t } = useI18n()
 
-// Hidden on builds where the sing-box native API support is dropped.
-const singboxNativeEnabled = __SINGBOX_NATIVE__
-
 const isVisible = computed({
   get: () => props.modelValue,
   set: (value: boolean) => emit('update:modelValue', value),
 })
 
-const editForm = ref<Omit<Backend, 'uuid' | 'singboxChannel'> | null>(null)
-const singboxForm = ref<SingboxChannel>({
-  protocol: 'http',
-  host: '127.0.0.1',
-  port: '9090',
-  secret: '',
-})
-const enableSingboxChannel = ref(false)
+const editForm = ref<Omit<Backend, 'uuid'> | null>(null)
 const selectedBackendUuid = ref('')
 const isSaving = ref(false)
 
@@ -234,13 +172,6 @@ watch(
       disableUpgradeCore: backend.disableUpgradeCore || false,
       disableTunMode: backend.disableTunMode || false,
     }
-    enableSingboxChannel.value = !!backend.singboxChannel
-    singboxForm.value = {
-      protocol: backend.singboxChannel?.protocol || 'http',
-      host: backend.singboxChannel?.host || '127.0.0.1',
-      port: backend.singboxChannel?.port || '9090',
-      secret: backend.singboxChannel?.secret || '',
-    }
   },
   { immediate: true },
 )
@@ -248,7 +179,6 @@ watch(
 const reset = () => {
   editForm.value = null
   selectedBackendUuid.value = ''
-  enableSingboxChannel.value = false
 }
 
 const handleCancel = () => {
@@ -261,19 +191,11 @@ const handleSave = async () => {
   isSaving.value = true
 
   try {
-    const composed: Omit<Backend, 'uuid'> = {
-      ...editForm.value,
-      ...(enableSingboxChannel.value ? { singboxChannel: { ...singboxForm.value } } : {}),
-    }
+    const composed: Omit<Backend, 'uuid'> = { ...editForm.value }
     const testBackend: Backend = { uuid: selectedBackend.value.uuid, ...composed }
 
     if (!(await isBackendAvailable(testBackend, 10000))) {
       showNotification({ content: t('backendConnectionFailed'), type: 'alert-error' })
-      return
-    }
-
-    if (enableSingboxChannel.value && !(await isSingboxChannelAvailable(testBackend, 10000))) {
-      showNotification({ content: t('singboxConnectionFailed'), type: 'alert-error' })
       return
     }
 

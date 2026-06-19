@@ -27,9 +27,6 @@ public sealed class AppSettings
     public string SingBoxApiUrl { get; set; } = "http://127.0.0.1:9090";
     public string SingBoxSecret { get; set; } = "";
     public string? ProtectedSingBoxSecret { get; set; }
-    public string SingBoxNativeApiUrl { get; set; } = "";
-    public string SingBoxNativeSecret { get; set; } = "";
-    public string? ProtectedSingBoxNativeSecret { get; set; }
     public bool StartCoreOnLaunch { get; set; }
     public bool MinimizeToTray { get; set; } = true;
     public bool LightweightMode { get; set; } = true;
@@ -164,7 +161,6 @@ public sealed class AppSettings
         Directory.CreateDirectory(SettingsDirectory);
         ProtectedSecret = SecretProtector.Protect(Secret);
         ProtectedSingBoxSecret = SecretProtector.Protect(SingBoxSecret);
-        ProtectedSingBoxNativeSecret = SecretProtector.Protect(SingBoxNativeSecret);
         CoreType = NormalizeCoreType(CoreType);
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
     }
@@ -266,11 +262,6 @@ public sealed class AppSettings
             nameof(SingBoxSecret),
             ProtectedSingBoxSecret,
             value => SingBoxSecret = value);
-        shouldSave |= RestoreSecret(
-            json,
-            nameof(SingBoxNativeSecret),
-            ProtectedSingBoxNativeSecret,
-            value => SingBoxNativeSecret = value);
         return shouldSave;
     }
 

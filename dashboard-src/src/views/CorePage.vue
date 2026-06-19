@@ -2,17 +2,15 @@
   <div class="h-full overflow-x-hidden overflow-y-auto">
     <CtrlsBar>
       <div
-        ref="statusRowRef"
-        class="flex min-h-9 max-w-full min-w-0 items-center gap-2 text-sm"
+        class="pointer-events-auto fixed top-3 flex min-h-9 max-w-full min-w-0 items-center gap-2 text-sm"
         :style="{
-          transform: `translateX(${statusOffset}px)`,
-          width: topControlsWidth ? `${topControlsWidth}px` : undefined,
+          left: topControlsLeft === null ? undefined : `${topControlsLeft}px`,
+          width: topControlsWidth === null ? undefined : `${topControlsWidth}px`,
           maxWidth: '100%',
         }"
       >
         <div class="relative flex h-9 min-w-0 flex-1 items-center">
           <span
-            ref="statusDotRef"
             class="absolute top-1/2 -left-7 h-3 w-3 -translate-y-1/2 rounded-full"
             :class="
               runtime.isRunning
@@ -33,7 +31,15 @@
         <div class="flex h-[34px] shrink-0 items-center gap-2">
           <button
             class="btn btn-primary btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
-            :disabled="runtime.isRunning || runtime.isCoreUpgrading"
+            :disabled="runtime.isCoreUpgrading || runtime.isCoreSwitching"
+            @click="showSwitchConfirm = true"
+          >
+            <ArrowsRightLeftIcon class="h-3.5 w-3.5" />
+            切换
+          </button>
+          <button
+            class="btn btn-primary btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
+            :disabled="runtime.isRunning || runtime.isCoreUpgrading || runtime.isCoreSwitching"
             @click="startCore"
           >
             <PlayIcon class="h-3.5 w-3.5" />
@@ -41,7 +47,7 @@
           </button>
           <button
             class="btn btn-warning btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
-            :disabled="!runtime.isRunning || runtime.isCoreUpgrading"
+            :disabled="!runtime.isRunning || runtime.isCoreUpgrading || runtime.isCoreSwitching"
             @click="post({ type: 'stop' })"
           >
             <StopIcon class="h-3.5 w-3.5" />
@@ -61,36 +67,6 @@
             ref="configPanelRef"
             class="settings-grid"
           >
-            <div class="setting-item !gap-0">
-              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">内核类型</div>
-              <div class="flex min-w-0 flex-1 items-center gap-2">
-                <button
-                  class="btn btn-sm min-w-20 border-transparent shadow-none"
-                  :class="
-                    settings.coreType === 'mihomo'
-                      ? 'btn-primary'
-                      : 'bg-base-200/70 hover:bg-base-200/80'
-                  "
-                  :disabled="runtime.isRunning || runtime.isCoreUpgrading"
-                  @click="setCoreType('mihomo')"
-                >
-                  mihomo
-                </button>
-                <button
-                  class="btn btn-sm min-w-20 border-transparent shadow-none"
-                  :class="
-                    settings.coreType === 'sing-box'
-                      ? 'btn-primary'
-                      : 'bg-base-200/70 hover:bg-base-200/80'
-                  "
-                  :disabled="runtime.isRunning || runtime.isCoreUpgrading"
-                  @click="setCoreType('sing-box')"
-                >
-                  sing-box
-                </button>
-              </div>
-            </div>
-
             <div class="setting-item !gap-0">
               <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">内核路径</div>
               <div class="flex min-w-0 flex-1 items-center gap-2">
@@ -165,30 +141,6 @@
               </div>
             </div>
 
-            <template v-if="settings.coreType === 'sing-box'">
-              <div class="setting-item !gap-0">
-                <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">原生 API</div>
-                <div class="flex min-w-0 flex-1 items-center gap-2">
-                  <input
-                    v-model="settings.singBoxNativeApiUrl"
-                    class="input input-sm bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
-                    type="text"
-                  />
-                </div>
-              </div>
-
-              <div class="setting-item !gap-0">
-                <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">原生 Secret</div>
-                <div class="flex min-w-0 flex-1 items-center gap-2">
-                  <input
-                    v-model="settings.singBoxNativeSecret"
-                    class="input input-sm bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
-                    type="text"
-                  />
-                </div>
-              </div>
-            </template>
-
             <div class="setting-item">
               <div class="setting-item-label">启动软件时自动启动内核</div>
               <input
@@ -249,6 +201,43 @@
         :scroll-to="settingsScrollTo"
       />
     </div>
+
+    <div
+      v-if="showSwitchConfirm"
+      class="modal modal-open"
+    >
+      <div class="modal-box max-w-sm rounded-lg">
+        <h3 class="text-lg font-semibold">切换内核</h3>
+        <p class="text-base-content/60 mt-2 text-sm leading-6">
+          将停止当前内核，等待进程完全退出后启动 {{ nextCoreTitle }}。
+        </p>
+        <div class="modal-action">
+          <button
+            class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+            :disabled="switchPending"
+            @click="showSwitchConfirm = false"
+          >
+            取消
+          </button>
+          <button
+            class="btn btn-primary btn-sm"
+            :disabled="switchPending"
+            @click="confirmSwitchCore"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+      <form
+        method="dialog"
+        class="modal-backdrop"
+      >
+        <button
+          aria-label="关闭"
+          @click.prevent="showSwitchConfirm = false"
+        />
+      </form>
+    </div>
   </div>
 </template>
 
@@ -258,8 +247,9 @@ import SettingsContent from '@/components/settings/SettingsContent.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
-import { PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
-import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
+import { isSidebarCollapsed } from '@/store/settings'
+import { ArrowsRightLeftIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
+import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 type CoreState = {
@@ -279,14 +269,13 @@ type CoreState = {
   singBoxConfigPath?: string
   singBoxApiUrl?: string
   singBoxSecret?: string
-  singBoxNativeApiUrl?: string
-  singBoxNativeSecret?: string
   startCoreOnLaunch?: boolean
   minimizeToTray?: boolean
   lightweightMode?: boolean
   autostart?: boolean
   canUpgradeCore?: boolean
   isCoreUpgrading?: boolean
+  isCoreSwitching?: boolean
   logText?: string
   iconCacheMap?: Record<string, string>
 }
@@ -326,6 +315,7 @@ const runtime = reactive({
   coreTitle: 'Mihomo Core',
   canUpgradeCore: true,
   isCoreUpgrading: false,
+  isCoreSwitching: false,
   logText: '',
 })
 
@@ -339,8 +329,6 @@ const settings = reactive({
   singBoxConfigPath: '',
   singBoxApiUrl: '',
   singBoxSecret: '',
-  singBoxNativeApiUrl: '',
-  singBoxNativeSecret: '',
   startCoreOnLaunch: false,
   minimizeToTray: true,
   lightweightMode: true,
@@ -349,17 +337,19 @@ const settings = reactive({
 
 const configPanelRef = ref<HTMLElement>()
 const logPanelRef = ref<HTMLElement>()
-const statusRowRef = ref<HTMLElement>()
-const statusDotRef = ref<HTMLElement>()
 const logPanelHeight = ref<number | null>(null)
 const topControlsWidth = ref<number | null>(null)
-const statusOffset = ref(45)
+const topControlsLeft = ref<number | null>(null)
 const statusDotInset = 28
 const statusDotOpticalOffset = 2
 const windowControlsReserve = 176
 const chromeRightPadding = 12
+const showSwitchConfirm = ref(false)
+const switchPending = ref(false)
 let resizeObserver: ResizeObserver | undefined
 let syncFrame = 0
+let sidebarSyncRaf = 0
+let stopSidebarWatch: (() => void) | undefined
 
 const webviewWindow = window as WebViewWindow
 const post = (message: unknown) => webviewWindow.chrome?.webview?.postMessage(message)
@@ -380,6 +370,8 @@ const normalizeCoreType = (coreType: string | undefined) =>
   coreType === 'sing-box' ? 'sing-box' : 'mihomo'
 
 const coreTitle = computed(() => runtime.coreTitle || (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core'))
+const nextCoreType = computed(() => (settings.coreType === 'sing-box' ? 'mihomo' : 'sing-box'))
+const nextCoreTitle = computed(() => (nextCoreType.value === 'sing-box' ? 'sing-box' : 'Mihomo Core'))
 
 const activeCorePath = computed({
   get: () => (settings.coreType === 'sing-box' ? settings.singBoxCorePath : settings.mihomoCorePath),
@@ -441,8 +433,6 @@ const collect = () => ({
   singBoxConfigPath: settings.singBoxConfigPath,
   singBoxApiUrl: settings.singBoxApiUrl,
   singBoxSecret: settings.singBoxSecret,
-  singBoxNativeApiUrl: settings.singBoxNativeApiUrl,
-  singBoxNativeSecret: settings.singBoxNativeSecret,
   startCoreOnLaunch: settings.startCoreOnLaunch,
   minimizeToTray: settings.minimizeToTray,
   lightweightMode: settings.lightweightMode,
@@ -451,6 +441,11 @@ const collect = () => ({
 
 const startCore = () => {
   post({ ...collect(), type: 'start' })
+}
+
+const confirmSwitchCore = () => {
+  switchPending.value = true
+  post({ ...collect(), type: 'switchCore', targetCoreType: nextCoreType.value })
 }
 
 const restartCore = () => {
@@ -469,17 +464,6 @@ const saveSettings = () => {
   post(collect())
 }
 
-const setCoreType = (coreType: string) => {
-  const normalized = normalizeCoreType(coreType)
-  if (settings.coreType === normalized) {
-    return
-  }
-
-  settings.coreType = normalized
-  runtime.coreTitle = normalized === 'sing-box' ? 'sing-box' : 'Mihomo Core'
-  saveSettings()
-}
-
 provide(coreHostActionsKey, {
   isRunning: computed(() => runtime.isRunning),
   isCoreUpgrading: computed(() => runtime.isCoreUpgrading),
@@ -495,6 +479,7 @@ const setState = (state: CoreState) => {
   runtime.coreTitle = state.coreTitle ?? (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core')
   runtime.canUpgradeCore = state.canUpgradeCore ?? settings.coreType !== 'sing-box'
   runtime.isCoreUpgrading = !!state.isCoreUpgrading
+  runtime.isCoreSwitching = !!state.isCoreSwitching
   runtime.logText = state.logText ?? ''
   settings.mihomoCorePath = state.mihomoCorePath ?? (settings.coreType === 'mihomo' ? state.corePath : '') ?? ''
   settings.mihomoConfigPath =
@@ -510,12 +495,14 @@ const setState = (state: CoreState) => {
     state.singBoxApiUrl ?? (settings.coreType === 'sing-box' ? state.apiUrl : '') ?? ''
   settings.singBoxSecret =
     state.singBoxSecret ?? (settings.coreType === 'sing-box' ? state.secret : '') ?? ''
-  settings.singBoxNativeApiUrl = state.singBoxNativeApiUrl ?? ''
-  settings.singBoxNativeSecret = state.singBoxNativeSecret ?? ''
   settings.startCoreOnLaunch = !!state.startCoreOnLaunch
   settings.minimizeToTray = !!state.minimizeToTray
   settings.lightweightMode = state.lightweightMode ?? true
   settings.autostart = !!state.autostart
+  if (!runtime.isCoreSwitching) {
+    switchPending.value = false
+    showSwitchConfirm.value = false
+  }
 }
 
 const getNoticeType = (message: string) => {
@@ -555,21 +542,12 @@ const syncLogHeight = () => {
       return
     }
 
-    const statusDot = statusDotRef.value
-    const statusRow = statusRowRef.value
     const panelRect = configPanel.getBoundingClientRect()
-    let offsetDelta = 0
+    const rowLeft = Math.round(panelRect.left + statusDotInset + statusDotOpticalOffset)
+    const panelRight = Math.round(panelRect.right)
+    topControlsLeft.value = rowLeft
 
-    if (statusDot) {
-      const dotLeft = statusDot.getBoundingClientRect().left
-      offsetDelta = Math.round(panelRect.left - dotLeft + statusDotOpticalOffset)
-      statusOffset.value += offsetDelta
-    }
-
-    const desiredWidth = Math.round(panelRect.width - statusDotInset - statusDotOpticalOffset)
-    const rowLeft = statusRow
-      ? statusRow.getBoundingClientRect().left + offsetDelta
-      : panelRect.left + statusDotInset + statusDotOpticalOffset
+    const desiredWidth = Math.round(panelRight - rowLeft)
     const availableRight = window.innerWidth - windowControlsReserve - chromeRightPadding
     const availableWidth = Math.floor(availableRight - rowLeft)
     topControlsWidth.value = Math.max(280, Math.min(desiredWidth, availableWidth))
@@ -578,6 +556,18 @@ const syncLogHeight = () => {
       logPanelHeight.value = Math.round(configPanel.offsetHeight)
     }
   })
+}
+
+const syncAroundSidebarTransition = () => {
+  window.cancelAnimationFrame(sidebarSyncRaf)
+  const startedAt = performance.now()
+  const tick = () => {
+    syncLogHeight()
+    if (performance.now() - startedAt < 520) {
+      sidebarSyncRaf = window.requestAnimationFrame(tick)
+    }
+  }
+  tick()
 }
 
 const handleHostMessage = (event: MessageEvent<HostMessage>) => {
@@ -595,6 +585,7 @@ onMounted(async () => {
   await nextTick()
   syncLogHeight()
   window.addEventListener('resize', syncLogHeight)
+  stopSidebarWatch = watch(isSidebarCollapsed, syncAroundSidebarTransition)
   if (configPanelRef.value) {
     resizeObserver = new ResizeObserver(syncLogHeight)
     resizeObserver.observe(configPanelRef.value)
@@ -611,6 +602,9 @@ onUnmounted(() => {
     delete webviewWindow.__mihomoControlNotice
   }
   window.removeEventListener('resize', syncLogHeight)
+  stopSidebarWatch?.()
+  stopSidebarWatch = undefined
+  window.cancelAnimationFrame(sidebarSyncRaf)
   resizeObserver?.disconnect()
   window.cancelAnimationFrame(syncFrame)
 })

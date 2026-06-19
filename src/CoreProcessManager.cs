@@ -89,6 +89,11 @@ public sealed class CoreProcessManager : IDisposable
             throw new FileNotFoundException($"找不到 {coreName} 配置文件，请检查路径。", configPath);
         }
 
+        if (TryAttachExistingProcess(corePath, coreName))
+        {
+            return;
+        }
+
         var configDirectory = Path.GetDirectoryName(configPath) ?? AppContext.BaseDirectory;
         var arguments = settings.IsSingBox
             ? $"run -D \"{configDirectory}\" -c \"{configPath}\""
@@ -146,7 +151,84 @@ public sealed class CoreProcessManager : IDisposable
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private bool TryAttachExistingProcess(string corePath, string coreName)
+    {
+        var existingProcess = FindExistingProcess(corePath);
+        if (existingProcess is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            existingProcess.EnableRaisingEvents = true;
+            var processId = existingProcess.Id;
+            existingProcess.Exited += (_, _) =>
+            {
+                if (!ShouldSuppressExitedLog(processId))
+                {
+                    AppendLog($"{coreName} exited with code {GetExitCodeText(existingProcess)}.");
+                }
+                StatusChanged?.Invoke(this, EventArgs.Empty);
+            };
+
+            lock (_processLock)
+            {
+                _process = existingProcess;
+            }
+
+            AppendLog($"{coreName} already running. attached pid={processId}");
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+        catch
+        {
+            existingProcess.Dispose();
+            return false;
+        }
+    }
+
+    private static Process? FindExistingProcess(string corePath)
+    {
+        var currentProcessId = Environment.ProcessId;
+        var processName = Path.GetFileNameWithoutExtension(corePath);
+        var fullCorePath = Path.GetFullPath(corePath);
+
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            try
+            {
+                if (process.Id == currentProcessId || process.HasExited)
+                {
+                    process.Dispose();
+                    continue;
+                }
+
+                var modulePath = process.MainModule?.FileName;
+                if (string.IsNullOrWhiteSpace(modulePath)
+                    || !string.Equals(Path.GetFullPath(modulePath), fullCorePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    process.Dispose();
+                    continue;
+                }
+
+                return process;
+            }
+            catch
+            {
+                process.Dispose();
+            }
+        }
+
+        return null;
+    }
+
     public void Stop()
+    {
+        Stop(TimeSpan.FromSeconds(3));
+    }
+
+    public void Stop(TimeSpan waitTimeout)
     {
         if (!IsRunning)
         {
@@ -165,7 +247,10 @@ public sealed class CoreProcessManager : IDisposable
         {
             MarkStopping(process);
             process.Kill(entireProcessTree: true);
-            process.WaitForExit(3000);
+            if (!process.WaitForExit((int)waitTimeout.TotalMilliseconds))
+            {
+                throw new TimeoutException("等待内核进程退出超时。");
+            }
             AppendLog("core stopped.");
         }
         catch (Exception ex)

@@ -13,14 +13,8 @@ const zh: LANG_MESSAGE = {
   tailscale: 'Tailscale',
   terminal: '终端',
 
-  // sing-box 原生 API 附属通道
   default: '默认',
-  singboxApiChannel: 'sing-box API',
   clashApiChannel: 'Clash API',
-  enableSingboxApi: '启用 sing-box 原生 API',
-  enableSingboxApiTip:
-    'Clash API 始终作为主连接。原生 API 仅用于 sing-box 特有的工具、Tailscale 和终端能力。',
-  singboxConnectionFailed: '无法连接 sing-box 原生 API',
   skip: '跳过',
   // 工具页
   networkQuality: '网络质量',

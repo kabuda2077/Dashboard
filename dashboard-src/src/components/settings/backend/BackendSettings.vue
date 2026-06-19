@@ -23,7 +23,7 @@
           class="settings-grid"
         >
           <div
-            v-if="configs?.tun && canShowTunMode"
+            v-if="canShowTunMode"
             class="setting-item"
           >
             <div class="setting-item-label">
@@ -32,7 +32,9 @@
             <input
               class="toggle"
               type="checkbox"
-              v-model="configs.tun.enable"
+              :checked="tunModeEnabled"
+              :disabled="isTunModeReadOnly"
+              :class="isTunModeReadOnly && 'opacity-50'"
               @change="hanlderTunModeChange"
             />
           </div>
@@ -75,17 +77,17 @@
               />
               {{ coreHostActions.isCoreUpgrading.value ? '升级中' : '升级内核' }}
             </button>
+            <button
+              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              @click="handlerClickReloadConfigs"
+            >
+              <span
+                v-if="isConfigReloading"
+                class="loading loading-spinner loading-md"
+              ></span>
+              {{ $t('reloadConfigs') }}
+            </button>
             <template v-if="!isSingBox || displayAllFeatures">
-              <button
-                class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
-                @click="handlerClickReloadConfigs"
-              >
-                <span
-                  v-if="isConfigReloading"
-                  class="loading loading-spinner loading-md"
-                ></span>
-                {{ $t('reloadConfigs') }}
-              </button>
               <button
                 class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
                 @click="handlerClickUpdateGeo"
@@ -122,10 +124,10 @@
 
       <div>
         <div
-          v-if="!isSingBox && configs"
+          v-if="configs && canShowPortsGrid"
           class="settings-grid"
         >
-          <BackendPortsGrid v-if="!isSingBox && configs" />
+          <BackendPortsGrid />
         </div>
 
         <div class="settings-section-label">当前下载</div>
@@ -163,7 +165,26 @@ import { activeBackend } from '@/store/setup'
 import { computed, inject, ref } from 'vue'
 
 const coreHostActions = inject(coreHostActionsKey, null)
-const canShowTunMode = computed(() => !activeBackend.value?.disableTunMode)
+const hasWritableTunMode = computed(() => !!configs.value?.tun && !activeBackend.value?.disableTunMode)
+const hasReadOnlyTunMode = computed(() => typeof activeBackend.value?.readOnlyTunEnabled === 'boolean')
+const canShowTunMode = computed(() => hasWritableTunMode.value || hasReadOnlyTunMode.value)
+const isTunModeReadOnly = computed(() => !hasWritableTunMode.value && hasReadOnlyTunMode.value)
+const tunModeEnabled = computed(() =>
+  hasWritableTunMode.value
+    ? !!configs.value?.tun?.enable
+    : !!activeBackend.value?.readOnlyTunEnabled,
+)
+type PortConfigKey = 'mixed-port' | 'port' | 'socks-port' | 'redir-port' | 'tproxy-port'
+const portConfigKeys: PortConfigKey[] = [
+  'mixed-port',
+  'port',
+  'socks-port',
+  'redir-port',
+  'tproxy-port',
+]
+const canShowPortsGrid = computed(() =>
+  portConfigKeys.some((key) => typeof configs.value?.[key] === 'number'),
+)
 
 const reloadAll = () => {
   fetchConfigs()
@@ -206,7 +227,11 @@ const handlerClickUpdateGeo = async () => {
 }
 
 const hanlderTunModeChange = async () => {
-  await updateConfigs({ tun: { enable: configs.value?.tun.enable } })
+  if (!hasWritableTunMode.value) {
+    return
+  }
+
+  await updateConfigs({ tun: { enable: !configs.value?.tun?.enable } })
 }
 const handlerAllowLanChange = async () => {
   await updateConfigs({ ['allow-lan']: configs.value?.['allow-lan'] })

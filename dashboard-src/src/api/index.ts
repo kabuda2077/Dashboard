@@ -1,7 +1,7 @@
-import { hasSingboxChannel } from '@/composables/backendCapability'
 import { MIHOMO, ROUTE_NAME } from '@/constant'
+import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { showNotification } from '@/helper/notification'
-import { getSingboxUrlFromBackend, getUrlFromBackend } from '@/helper/utils'
+import { getUrlFromBackend } from '@/helper/utils'
 import router from '@/router'
 import { activeBackend, activeUuid } from '@/store/setup'
 import type {
@@ -62,6 +62,37 @@ export const version = ref()
 export const fetchVersionAPI = () => {
   return axios.get<{ version: string }>('/version')
 }
+export const refreshVersion = async (retries = 1, delay = 500) => {
+  const backend = activeBackend.value
+  if (!backend) {
+    version.value = ''
+    return
+  }
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(`${getUrlFromBackend(backend)}/version`, {
+        headers: {
+          Authorization: `Bearer ${backend.password}`,
+        },
+      })
+      if (!res.ok) {
+        throw new Error(`version request failed: ${res.status}`)
+      }
+
+      const data = (await res.json()) as { version?: string }
+      version.value = data.version || ''
+      return
+    } catch {
+      if (attempt === retries - 1) {
+        version.value = ''
+        return
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, delay))
+    }
+  }
+}
 export const isSingBox = computed(() => version.value?.includes('sing-box'))
 export const mihomo = computed<[MIHOMO, string] | undefined>(() => {
   if (isSingBox.value) return undefined
@@ -85,13 +116,16 @@ watch(
   activeBackend,
   async (val) => {
     if (val) {
-      const { data } = await fetchVersionAPI()
-
-      version.value = data?.version || ''
+      await refreshVersion()
     }
   },
   { immediate: true },
 )
+
+window.addEventListener(HOST_BACKEND_UPDATED_EVENT, () => {
+  version.value = ''
+  refreshVersion(10, 600)
+})
 
 export const fetchProxiesAPI = () => {
   return axios.get<{ proxies: Record<string, Proxy> }>('/proxies')
@@ -254,39 +288,11 @@ export const fetchLogsAPI = <T>(params: Record<string, string> = {}) => {
   return createWebSocket<T>('logs', params)
 }
 
-const createSingboxStat = <T>(kind: 'memory' | 'traffic') => {
-  const data = ref<T>()
-  let closer: (() => void) | null = null
-  let cancelled = false
-
-  import('./singbox/subscriptions').then((m) => {
-    if (cancelled) return
-    const sub = kind === 'memory' ? m.subscribeSingboxMemory() : m.subscribeSingboxTraffic()
-    if (!sub) return
-    watch(sub.data, (value) => (data.value = value as T), { immediate: true })
-    closer = sub.close
-  })
-
-  return {
-    data,
-    close: () => {
-      cancelled = true
-      closer?.()
-    },
-  }
-}
-
 export const fetchMemoryAPI = <T>() => {
-  if (__SINGBOX_NATIVE__ && hasSingboxChannel.value) {
-    return createSingboxStat<T>('memory')
-  }
   return createWebSocket<T>('memory')
 }
 
 export const fetchTrafficAPI = <T>() => {
-  if (__SINGBOX_NATIVE__ && hasSingboxChannel.value) {
-    return createSingboxStat<T>('traffic')
-  }
   return createWebSocket<T>('traffic')
 }
 
@@ -309,11 +315,6 @@ const probeClashChannel = async (backend: Backend, timeout: number) => {
   } finally {
     clearTimeout(timeoutId)
   }
-}
-
-export const isSingboxChannelAvailable = (backend: Backend, timeout: number = 10000) => {
-  if (!__SINGBOX_NATIVE__ || !getSingboxUrlFromBackend(backend)) return Promise.resolve(false)
-  return import('./singbox/client').then((m) => m.probeSingboxChannel(backend, timeout))
 }
 
 export const isBackendAvailable = (backend: Backend, timeout: number = 10000) =>
