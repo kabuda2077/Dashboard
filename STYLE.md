@@ -9,6 +9,7 @@ This project embeds a customized zashboard UI inside a Windows desktop shell. UI
 - When adding a new style, document why it is needed and where it should be reused.
 - Prefer zashboard's existing component patterns over page-local custom styling.
 - Keep desktop shell visuals and frontend visuals in the same DOM/CSS system whenever possible. C# should provide window APIs; frontend should own visual layout.
+- When following upstream zashboard UI changes, keep the upstream behavior where possible but express the final visuals through this guide's existing tokens, utilities, and component patterns.
 
 ## Layout
 
@@ -121,6 +122,8 @@ When adding or changing UI, prefer these existing patterns first:
 
 If a new pattern is unavoidable, document why it is different from the canonical set above.
 
+During upstream merges, do not accept a new upstream visual pattern only because it exists upstream. First map it to the canonical set above. If it cannot be mapped, document the reusable reason before adding a project utility.
+
 ## Top Bar
 
 Top bars are rendered through `CtrlsBar`.
@@ -208,7 +211,7 @@ Potential utility extraction candidates:
 - `surface-soft`: reusable `bg-base-200/70` inner data/control surface.
 - `text-muted`: reusable `text-base-content/60` for secondary and read-only values.
 
-Do not create more button utilities unless at least two or three call sites clearly benefit from the extraction. `dashboard-action-btn` is already the canonical soft action supplement.
+Do not create more button utilities unless at least two real call sites clearly benefit from the extraction. `dashboard-action-btn` is already the canonical soft action supplement. Any new utility must describe its reusable purpose in this file.
 
 When extracting DaisyUI control styles, keep DaisyUI base classes on the element and use project utilities only as supplements:
 

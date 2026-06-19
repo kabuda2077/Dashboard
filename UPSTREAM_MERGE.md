@@ -2,6 +2,11 @@
 
 This project embeds a customized copy of zashboard in a Windows desktop shell. Upstream zashboard updates should be merged deliberately so we keep upstream improvements while preserving the desktop launcher behavior and local UI rules.
 
+Use this file as the single entry point for upstream follow-up work. Before merging, also read:
+
+- `docs/customizations.md` for the local changes that must be preserved.
+- `STYLE.md` for UI tokens, shared utilities, and visual constraints.
+
 ## Rule Zero
 
 Every upstream follow-up must happen on a new branch.
@@ -38,7 +43,7 @@ Use this priority:
 Current embedded zashboard baseline:
 
 ```text
-dashboard-src/package.json: 3.9.0
+dashboard-src/package.json: 3.10.1
 ```
 
 The desktop app is not pure zashboard. It consists of:
@@ -50,16 +55,18 @@ The desktop app is not pure zashboard. It consists of:
 
 ## Update Workflow
 
-1. Fetch or download the upstream zashboard tag into `.tmp/`.
-2. Read the release notes for a quick overview.
-3. Generate tag-to-tag commit and diff reports.
-4. Classify changed files before editing.
-5. Merge low-risk upstream changes first.
-6. Hand-merge files that overlap with local desktop/UI changes.
-7. Reapply local visual constraints from `STYLE.md`.
-8. Run type-check and build.
-9. Manually inspect the app pages.
-10. Commit and push the upstream branch.
+1. Start from current `main`, pull latest changes, and create a fresh upstream branch.
+2. Fetch or download the upstream zashboard tag into `.tmp/`.
+3. Read the release notes for a quick overview.
+4. Generate tag-to-tag commit and diff reports.
+5. Classify changed files before editing.
+6. Merge low-risk upstream changes first.
+7. Hand-merge files that overlap with local desktop/UI changes.
+8. Reapply local product decisions from `docs/customizations.md`.
+9. Reapply local visual constraints from `STYLE.md`.
+10. Run type-check and build.
+11. Manually inspect the app pages and desktop shell behavior.
+12. Record accepted, skipped, and manually merged changes before merging back.
 
 Useful commands when an upstream git checkout is available:
 
@@ -207,6 +214,41 @@ Manual inspection checklist:
 - Start/stop/restart core actions
 - Light mode and hidden-to-tray behavior
 
+## Merge Checklist
+
+Use this checklist for every upstream branch.
+
+Preparation:
+
+- [ ] Branch was created from current `main`.
+- [ ] Target upstream version and current local baseline are written down.
+- [ ] Release notes were read for navigation.
+- [ ] Commit list was reviewed for intent.
+- [ ] Tag-to-tag or folder diff was generated as the factual source.
+
+Merge:
+
+- [ ] Each changed file was classified as Upstream-First, Local-First, Manual-Merge, or Replaced/Removed.
+- [ ] Local desktop shell files were not blindly overwritten.
+- [ ] Removed upstream features were not accidentally restored.
+- [ ] General upstream bug fixes and data/API improvements were kept where compatible.
+- [ ] Manual-merge files were reviewed for both upstream behavior and local layout constraints.
+
+UI:
+
+- [ ] Upstream visual changes pass `STYLE.md`.
+- [ ] Top bars still use shared `CtrlsBar` rules.
+- [ ] Settings still use `settings-grid`, `setting-item`, and `settings-section-label`.
+- [ ] New buttons, inputs, panels, and text colors reuse existing tokens/utilities.
+- [ ] No new page-local class family was added without documenting the reusable purpose in `STYLE.md`.
+
+Build and review:
+
+- [ ] Frontend type-check passed.
+- [ ] Full build passed.
+- [ ] Built resources in `resources/dashboard/` were regenerated when frontend code changed.
+- [ ] Core, Overview, Proxies, Rules, Connections, and Logs were manually inspected.
+- [ ] Sidebar expanded/collapsed, window buttons, tray behavior, and core start/stop/restart were manually inspected.
 ## Commit Discipline
 
 Prefer small commits with clear intent.
