@@ -28,7 +28,7 @@
 
     <template v-if="settingsExpanded && isTwoColumns">
       <div
-        class="grid w-full grid-cols-2 gap-12"
+        class="grid w-full grid-cols-2 gap-8"
         :class="embedded ? '' : 'mx-auto max-w-7xl p-3'"
       >
         <div

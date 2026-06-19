@@ -19,7 +19,7 @@
             "
           />
           <div
-            class="border-base-content/20 bg-base-100 flex h-9 w-full min-w-0 items-center gap-3 rounded-lg border px-3 pr-4 shadow-none"
+            class="core-status-box"
           >
             <span class="font-semibold whitespace-nowrap">{{ coreTitle }}</span>
             <span class="text-base-content/60 text-xs whitespace-nowrap">
@@ -30,7 +30,7 @@
 
         <div class="flex h-[34px] shrink-0 items-center gap-2">
           <button
-            class="btn btn-primary btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
+            class="btn core-top-button btn-primary"
             :disabled="runtime.isCoreUpgrading || runtime.isCoreSwitching"
             @click="showSwitchConfirm = true"
           >
@@ -38,7 +38,7 @@
             切换
           </button>
           <button
-            class="btn btn-primary btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
+            class="btn core-top-button btn-success"
             :disabled="runtime.isRunning || runtime.isCoreUpgrading || runtime.isCoreSwitching"
             @click="startCore"
           >
@@ -46,7 +46,7 @@
             启动
           </button>
           <button
-            class="btn btn-warning btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap"
+            class="btn core-top-button btn-warning"
             :disabled="!runtime.isRunning || runtime.isCoreUpgrading || runtime.isCoreSwitching"
             @click="post({ type: 'stop' })"
           >
@@ -60,7 +60,7 @@
       class="mx-auto flex w-full max-w-7xl flex-col gap-3 p-3"
       :style="padding"
     >
-      <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-12">
+      <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-8">
         <section class="rounded-lg p-2">
           <h2 class="mt-1 mb-3 px-1 text-lg font-semibold">启动配置</h2>
           <div
@@ -72,17 +72,17 @@
               <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="activeCorePath"
-                  class="input input-sm bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
+                  class="dashboard-input"
                   type="text"
                 />
                 <button
-                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                  class="dashboard-action-btn"
                   @click="post({ ...collect(), type: 'browseCore' })"
                 >
                   选择
                 </button>
                 <button
-                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                  class="dashboard-action-btn"
                   @click="post({ ...collect(), type: 'openCoreLocation' })"
                 >
                   位置
@@ -95,17 +95,17 @@
               <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="activeConfigPath"
-                  class="input input-sm bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
+                  class="dashboard-input"
                   type="text"
                 />
                 <button
-                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                  class="dashboard-action-btn"
                   @click="post({ ...collect(), type: 'browseConfig' })"
                 >
                   选择
                 </button>
                 <button
-                  class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                  class="dashboard-action-btn"
                   @click="post({ ...collect(), type: 'openConfigLocation' })"
                 >
                   位置
@@ -118,7 +118,7 @@
               <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="activeApiUrl"
-                  class="input input-sm bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
+                  class="dashboard-input"
                   type="text"
                 />
               </div>
@@ -129,7 +129,7 @@
               <div class="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   v-model="activeSecret"
-                  class="input input-sm bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none focus:border-transparent"
+                  class="dashboard-input"
                   type="text"
                 />
                 <button
@@ -188,7 +188,7 @@
             :style="logPanelHeight ? { height: `${logPanelHeight}px` } : undefined"
           >
             <pre
-              class="bg-base-200/70 text-base-content/60 rounded-box h-full min-h-0 overflow-auto p-3 text-xs leading-5 whitespace-pre-wrap"
+              class="dashboard-log-block"
               >{{ runtime.logText || '暂无日志' }}</pre
             >
           </div>
@@ -213,7 +213,7 @@
         </p>
         <div class="modal-action">
           <button
-            class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+            class="dashboard-action-btn"
             :disabled="switchPending"
             @click="showSwitchConfirm = false"
           >
@@ -237,6 +237,106 @@
           @click.prevent="showSwitchConfirm = false"
         />
       </form>
+    </div>
+
+    <div
+      v-if="showSetupWizard"
+      class="modal modal-open"
+    >
+      <div class="modal-box w-[min(680px,calc(100vw-2rem))] max-w-none rounded-lg">
+        <h3 class="text-lg font-semibold">首次启动设置</h3>
+        <div class="mt-4 flex flex-col gap-4">
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              class="btn btn-sm h-10 border-transparent shadow-none"
+              :class="settings.coreType === 'mihomo' ? 'btn-primary' : 'bg-base-200/70 hover:bg-base-200/80'"
+              @click="settings.coreType = 'mihomo'"
+            >
+              mihomo
+            </button>
+            <button
+              class="btn btn-sm h-10 border-transparent shadow-none"
+              :class="settings.coreType === 'sing-box' ? 'btn-primary' : 'bg-base-200/70 hover:bg-base-200/80'"
+              @click="settings.coreType = 'sing-box'"
+            >
+              sing-box
+            </button>
+          </div>
+
+          <div class="settings-grid">
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">内核路径</div>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
+                <input
+                  v-model="activeCorePath"
+                  class="dashboard-input"
+                  type="text"
+                />
+                <button
+                  class="dashboard-action-btn"
+                  @click="browseSetupCore"
+                >
+                  选择
+                </button>
+              </div>
+            </div>
+
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">配置文件</div>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
+                <input
+                  v-model="activeConfigPath"
+                  class="dashboard-input"
+                  type="text"
+                />
+                <button
+                  class="dashboard-action-btn"
+                  @click="browseSetupConfig"
+                >
+                  选择
+                </button>
+              </div>
+            </div>
+
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">API 地址</div>
+              <input
+                v-model="activeApiUrl"
+                class="dashboard-input"
+                type="text"
+              />
+            </div>
+
+            <div class="setting-item !gap-0">
+              <div class="setting-item-label w-[4.5rem] !flex-none shrink-0">Secret</div>
+              <input
+                v-model="activeSecret"
+                class="dashboard-input"
+                type="text"
+              />
+            </div>
+          </div>
+
+          <div class="dashboard-note">
+            {{ setupHint }}
+          </div>
+        </div>
+
+        <div class="modal-action items-center">
+          <span
+            class="text-base-content/60 mr-auto text-sm"
+          >
+            启动成功后会自动进入 Dashboard。
+          </span>
+          <button
+            class="btn btn-primary btn-sm"
+            :disabled="runtime.isRunning"
+            @click="startCore"
+          >
+            启动内核
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -276,6 +376,7 @@ type CoreState = {
   canUpgradeCore?: boolean
   isCoreUpgrading?: boolean
   isCoreSwitching?: boolean
+  setupCompleted?: boolean
   logText?: string
   iconCacheMap?: Record<string, string>
 }
@@ -346,6 +447,7 @@ const windowControlsReserve = 176
 const chromeRightPadding = 12
 const showSwitchConfirm = ref(false)
 const switchPending = ref(false)
+const setupCompleted = ref(true)
 let resizeObserver: ResizeObserver | undefined
 let syncFrame = 0
 let sidebarSyncRaf = 0
@@ -372,6 +474,12 @@ const normalizeCoreType = (coreType: string | undefined) =>
 const coreTitle = computed(() => runtime.coreTitle || (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core'))
 const nextCoreType = computed(() => (settings.coreType === 'sing-box' ? 'mihomo' : 'sing-box'))
 const nextCoreTitle = computed(() => (nextCoreType.value === 'sing-box' ? 'sing-box' : 'Mihomo Core'))
+const showSetupWizard = computed(() => !setupCompleted.value)
+const setupHint = computed(() =>
+  settings.coreType === 'sing-box'
+    ? 'API 地址填写 sing-box 配置里的 Clash API 监听地址，例如 http://127.0.0.1:9090；Secret 填 clash_api.secret，没有就留空。'
+    : 'API 地址填写 mihomo 配置里的 external-controller，例如 http://127.0.0.1:9090；Secret 填 secret，没有就留空。',
+)
 
 const activeCorePath = computed({
   get: () => (settings.coreType === 'sing-box' ? settings.singBoxCorePath : settings.mihomoCorePath),
@@ -433,6 +541,7 @@ const collect = () => ({
   singBoxConfigPath: settings.singBoxConfigPath,
   singBoxApiUrl: settings.singBoxApiUrl,
   singBoxSecret: settings.singBoxSecret,
+  setupCompleted: setupCompleted.value,
   startCoreOnLaunch: settings.startCoreOnLaunch,
   minimizeToTray: settings.minimizeToTray,
   lightweightMode: settings.lightweightMode,
@@ -441,6 +550,23 @@ const collect = () => ({
 
 const startCore = () => {
   post({ ...collect(), type: 'start' })
+}
+
+const browseSetupCore = () => {
+  post({ ...collect(), type: 'browseCore' })
+}
+
+const browseSetupConfig = () => {
+  post({ ...collect(), type: 'browseConfig' })
+}
+
+const completeSetup = () => {
+  if (!runtime.isRunning) {
+    return
+  }
+
+  setupCompleted.value = true
+  post({ ...collect(), setupCompleted: true, type: 'completeSetup' })
 }
 
 const confirmSwitchCore = () => {
@@ -499,6 +625,10 @@ const setState = (state: CoreState) => {
   settings.minimizeToTray = !!state.minimizeToTray
   settings.lightweightMode = state.lightweightMode ?? true
   settings.autostart = !!state.autostart
+  setupCompleted.value = state.setupCompleted ?? true
+  if (!setupCompleted.value && runtime.isRunning) {
+    completeSetup()
+  }
   if (!runtime.isCoreSwitching) {
     switchPending.value = false
     showSwitchConfirm.value = false

@@ -27,6 +27,7 @@ public sealed class AppSettings
     public string SingBoxApiUrl { get; set; } = "http://127.0.0.1:9090";
     public string SingBoxSecret { get; set; } = "";
     public string? ProtectedSingBoxSecret { get; set; }
+    public bool SetupCompleted { get; set; }
     public bool StartCoreOnLaunch { get; set; }
     public bool MinimizeToTray { get; set; } = true;
     public bool LightweightMode { get; set; } = true;
@@ -148,6 +149,11 @@ public sealed class AppSettings
             var json = File.ReadAllText(SettingsPath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
             var shouldSave = settings.RestoreSecrets(json);
+            if (!TryReadBoolProperty(json, nameof(SetupCompleted), out _))
+            {
+                settings.SetupCompleted = true;
+                shouldSave = true;
+            }
             settings.CoreType = NormalizeCoreType(settings.CoreType);
             settings.MigrateDefaultConfigPath();
             if (shouldSave)
@@ -390,6 +396,20 @@ public sealed class AppSettings
         }
 
         value = property.GetString() ?? "";
+        return true;
+    }
+
+    private static bool TryReadBoolProperty(string json, string propertyName, out bool value)
+    {
+        value = false;
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty(propertyName, out var property)
+            || property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return false;
+        }
+
+        value = property.GetBoolean();
         return true;
     }
 

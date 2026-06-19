@@ -47,6 +47,8 @@ Runtime:
 - Microsoft Edge WebView2 Runtime
 - A configured `mihomo` or `sing-box` executable
 
+If .NET 9 Desktop Runtime is missing, Windows shows the runtime error before Dashboard can start. If WebView2 Runtime is missing, Dashboard shows a clear installation prompt with the WebView2 download page.
+
 Development:
 
 - .NET 9 SDK

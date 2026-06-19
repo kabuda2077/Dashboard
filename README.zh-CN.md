@@ -47,6 +47,8 @@ Dashboard 使用 WinForms + WebView2 承载本地打包的 zashboard UI，同时
 - Microsoft Edge WebView2 Runtime
 - 已配置好的 `mihomo` 或 `sing-box` 可执行文件
 
+如果缺少 .NET 9 Desktop Runtime，Windows 会在 Dashboard 启动前提示运行时缺失；如果缺少 WebView2 Runtime，Dashboard 会显示安装提示和 WebView2 下载地址。
+
 开发环境：
 
 - .NET 9 SDK

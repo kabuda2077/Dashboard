@@ -424,7 +424,15 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"WebView2 初始化失败：{ex.Message}", "缺少 WebView2 Runtime", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(
+                this,
+                "Dashboard 需要 Microsoft Edge WebView2 Runtime 才能显示界面。\n\n"
+                    + "请安装 WebView2 Runtime 后重新打开 Dashboard：\n"
+                    + "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
+                    + $"详细错误：{ex.Message}",
+                "缺少 WebView2 Runtime",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             return false;
         }
     }
@@ -504,6 +512,12 @@ public sealed class MainForm : Form
                 case "save":
                     SaveSettingsFromMessage(root, showMessage: true);
                     break;
+                case "completeSetup":
+                    SaveSettingsFromMessage(root, showMessage: false);
+                    _settings.SetupCompleted = true;
+                    _settings.Save();
+                    await ShowDashboardNoticeAsync("首次启动设置已完成。");
+                    break;
                 case "start":
                     SaveSettingsFromMessage(root, showMessage: false);
                     StartCore();
@@ -567,6 +581,7 @@ public sealed class MainForm : Form
         _settings.StartCoreOnLaunch = GetBool(root, "startCoreOnLaunch", _settings.StartCoreOnLaunch);
         _settings.MinimizeToTray = GetBool(root, "minimizeToTray", _settings.MinimizeToTray);
         _settings.LightweightMode = GetBool(root, "lightweightMode", _settings.LightweightMode);
+        _settings.SetupCompleted = GetBool(root, "setupCompleted", _settings.SetupCompleted);
         if (root.TryGetProperty("autostart", out var autostart) && autostart.ValueKind is JsonValueKind.True or JsonValueKind.False)
         {
             _settings.Autostart = autostart.GetBoolean();
@@ -952,6 +967,7 @@ public sealed class MainForm : Form
             singBoxConfigPath = _settings.SingBoxConfigPath,
             singBoxApiUrl = _settings.SingBoxApiUrl,
             singBoxSecret = _settings.SingBoxSecret,
+            setupCompleted = _settings.SetupCompleted,
             readOnlyTunEnabled = _settings.IsSingBox ? IsSingBoxTunConfigured() : (bool?)null,
             startCoreOnLaunch = _settings.StartCoreOnLaunch,
             minimizeToTray = _settings.MinimizeToTray,

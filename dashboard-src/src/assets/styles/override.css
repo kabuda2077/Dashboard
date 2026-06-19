@@ -132,15 +132,21 @@
 
 .ctrls-bar :is(.btn, .input, .select, .tab):focus,
 .ctrls-bar :is(.btn, .input, .select, .tab):focus-visible,
-.ctrls-bar .tabs.tabs-xs:focus-within {
+.ctrls-bar .tabs.tabs-xs:focus-within,
+.dashboard-input:focus,
+.dashboard-input:focus-visible,
+.dashboard-action-btn:focus,
+.dashboard-action-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
+  outline-offset: 2px !important;
   box-shadow: none !important;
-  outline: none !important;
-  outline-offset: 0 !important;
 }
 
 .ctrls-bar :is(.input.input-sm, .select.select-sm):focus,
-.ctrls-bar :is(.input.input-sm, .select.select-sm):focus-visible {
-  border-color: color-mix(in srgb, var(--color-base-content) 20%, transparent) !important;
+.ctrls-bar :is(.input.input-sm, .select.select-sm):focus-visible,
+.dashboard-input:focus,
+.dashboard-input:focus-visible {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
 }
 
 .ctrls-bar .btn.btn-circle.btn-sm {

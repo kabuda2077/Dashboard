@@ -18,6 +18,7 @@ This project embeds a customized zashboard UI inside a Windows desktop shell. UI
   - Collapsed: `w-18`
 - Sidebar width transitions use `duration-320 ease-[cubic-bezier(0.34,0.1,0.2,1)]`.
 - Main content uses page padding of `p-3` and card/grid gaps of `gap-3`.
+- Two-column settings/dashboard layouts should use `lg:gap-8` by default. Avoid returning to `lg:gap-12` unless a page has a documented layout reason.
 - Wide content containers should usually use `mx-auto w-full max-w-7xl`.
 - Avoid nested cards. Use cards for repeated items, modals, and framed tools only.
 
@@ -69,6 +70,13 @@ Shared surfaces are defined in `dashboard-src/src/assets/styles/override.css`.
 - `badge`: `bg-base-200/80`
 
 For most new settings or dashboard panels, prefer `settings-grid`, `base-container`, or existing card components rather than creating custom wrappers.
+
+Use only two broad panel families for custom desktop/Core UI:
+
+- Content/settings panels: `settings-grid`, `setting-item`, and `settings-section-label`.
+- Information/log panels: the same outer panel rhythm, with inner read-only content using `bg-base-200/70` and `text-base-content/60`.
+
+Do not introduce a third card-like container with different padding, border, or background just for one Core page area.
 
 ## Typography
 
@@ -130,6 +138,8 @@ Top bars are rendered through `CtrlsBar`.
   - `bg-base-100 shadow-xs hover:bg-base-200`
   - width/height `2.25rem`
 - Window controls are separate from zashboard controls but aligned in the same top row.
+- Window controls are independent circular buttons using the same top-control surface family; the close button may use `error` on hover.
+- Core page status controls are a top bar variant: the status box follows top bar border/radius rules, while its action buttons keep the documented 34px semantic-button exception.
 
 Do not add page-specific top bar borders, shadows, or heights unless the shared top bar rules cannot handle the case.
 
@@ -161,13 +171,18 @@ Backend/Core settings are embedded into the Core page, but they should still use
 The Core page combines desktop app controls and zashboard settings.
 
 - Top status row height: `h-9` / 36px.
-- Start/Stop buttons height: 34px.
+- Core top action buttons height: 34px.
+- Core top action button colors are a deliberate semantic exception:
+  - Switch: `btn-primary`
+  - Start: `btn-success`
+  - Stop: `btn-warning`
 - Core status box border: `border-base-content/20`.
 - Core status title: `font-semibold`.
 - Runtime status text: `text-xs text-base-content/60`.
 - Core path/config/API/Secret input text: `text-base-content/60`.
 - Core log text: `text-xs leading-5 text-base-content/60`.
-- Core operation buttons: `bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none`.
+- Core operation buttons: `dashboard-action-btn`.
+- Core and embedded backend two-column layouts should use `lg:gap-8`.
 
 Avoid introducing a second settings style in Core page. Prefer the same `settings-grid`, `setting-item`, and `settings-section-label` used elsewhere.
 
@@ -180,20 +195,20 @@ Avoid introducing a second settings style in Core page. Prefer the same `setting
 - Reuse one of these families before creating a new button shape.
 
 - Standard small buttons: `btn btn-sm`.
-- Neutral utility buttons in panels: `bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none`.
+- Neutral utility buttons in panels: `dashboard-action-btn`, which intentionally maps to `btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none`.
 - Primary action: `btn-primary`.
+- Start/status action: `btn-success` only where the action truly means start/running.
 - Warning/destructive stop action: `btn-warning` when it represents warning/stop rather than deletion.
 - Icon-only top bar buttons should be circular: `btn btn-circle btn-sm`.
 - Use existing icon libraries already used by the project, especially Heroicons in current components.
-- Avoid visible focus black outlines. Existing top bar focus styles remove outline and shadow.
+- Avoid visible focus black outlines. Reuse the current zashboard-style subtle purple focus ring instead of removing focus feedback.
 
 Potential utility extraction candidates:
 
-- `btn-soft`: reusable soft action button for neutral panel actions.
 - `surface-soft`: reusable `bg-base-200/70` inner data/control surface.
 - `text-muted`: reusable `text-base-content/60` for secondary and read-only values.
 
-Do not create these utilities until at least two or three call sites clearly benefit from the extraction.
+Do not create more button utilities unless at least two or three call sites clearly benefit from the extraction. `dashboard-action-btn` is already the canonical soft action button.
 
 ## Data Cards
 
@@ -210,6 +225,9 @@ Do not create these utilities until at least two or three call sites clearly ben
 - Avoid viewport-scaled font sizes.
 - Preserve text fit with `truncate`, `min-w-0`, stable widths, or wrapping as appropriate.
 - Do not let top controls overlap the window controls. Use existing `CtrlsBar` sizing and content max-width behavior.
+- Core page top controls should be measured against the available right content area and reserved window-control width, so they do not drift during sidebar expand/collapse.
+- Two-column custom sections must collapse naturally to one column on narrow windows.
+- Fixed-width action buttons must keep text on one line.
 
 ## When Adding New Styles
 

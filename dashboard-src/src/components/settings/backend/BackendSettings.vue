@@ -16,7 +16,7 @@
       </a>
     </div>
 
-    <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-12">
+    <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-8">
       <div>
         <div
           v-if="configs"
@@ -59,7 +59,7 @@
           <div class="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-2">
             <button
               v-if="coreHostActions"
-              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              class="dashboard-action-btn"
               :disabled="!coreHostActions.isRunning.value || coreHostActions.isCoreUpgrading.value"
               @click="coreHostActions.restartCore"
             >
@@ -67,7 +67,7 @@
             </button>
             <button
               v-if="coreHostActions?.canUpgradeCore.value"
-              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              class="dashboard-action-btn"
               :disabled="coreHostActions.isCoreUpgrading.value"
               @click="coreHostActions.upgradeCore"
             >
@@ -78,7 +78,7 @@
               {{ coreHostActions.isCoreUpgrading.value ? '升级中' : '升级内核' }}
             </button>
             <button
-              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              class="dashboard-action-btn"
               @click="handlerClickReloadConfigs"
             >
               <span
@@ -89,7 +89,7 @@
             </button>
             <template v-if="!isSingBox || displayAllFeatures">
               <button
-                class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+                class="dashboard-action-btn"
                 @click="handlerClickUpdateGeo"
               >
                 <span
@@ -100,20 +100,20 @@
               </button>
             </template>
             <button
-              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              class="dashboard-action-btn"
               @click="handleFlushDNSCache"
             >
               {{ $t('flushDNSCache') }}
             </button>
             <button
-              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              class="dashboard-action-btn"
               @click="handleFlushFakeIP"
             >
               {{ $t('flushFakeIP') }}
             </button>
             <button
               v-if="hasSmartGroup"
-              class="btn btn-sm bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none"
+              class="dashboard-action-btn"
               @click="handleFlushSmartWeights"
             >
               {{ $t('flushSmartWeights') }}

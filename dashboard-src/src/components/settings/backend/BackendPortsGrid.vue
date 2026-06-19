@@ -1,7 +1,7 @@
 <template>
   <div
     ref="containerRef"
-    class="border-base-content/8 grid min-h-[5.5rem] items-center gap-2 border-b p-2 last:border-b-0"
+    class="border-base-border grid min-h-[5.5rem] items-center gap-2 border-b p-2 last:border-b-0"
   >
     <div :class="gridClass">
       <div
@@ -19,7 +19,7 @@
         <input
           :id="`port-${port.key}`"
           :value="configs?.[port.key] ?? ''"
-          class="input input-sm bg-base-100 border-transparent text-center shadow-none"
+          class="input input-sm bg-base-200/70 text-base-content border-transparent text-center shadow-none"
           type="number"
           inputmode="numeric"
           min="0"
