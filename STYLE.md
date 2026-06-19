@@ -195,7 +195,7 @@ Avoid introducing a second settings style in Core page. Prefer the same `setting
 - Reuse one of these families before creating a new button shape.
 
 - Standard small buttons: `btn btn-sm`.
-- Neutral utility buttons in panels: `btn btn-sm dashboard-action-btn`.
+- Neutral utility buttons in panels: `btn btn-sm dashboard-action-btn`; this soft action supplement uses `font-medium` to avoid dense Chinese labels becoming visually muddy.
 - Primary action: `btn-primary`.
 - Start/status action: `btn-success` only where the action truly means start/running.
 - Warning/destructive stop action: `btn-warning` when it represents warning/stop rather than deletion.
