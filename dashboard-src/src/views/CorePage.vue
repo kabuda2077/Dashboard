@@ -408,7 +408,7 @@ type WebViewWindow = Window & {
 }
 
 const { padding } = usePaddingForViews({
-  offsetTop: 12,
+  offsetTop: 24,
   offsetBottom: 12,
 })
 
