@@ -26,6 +26,12 @@ foreach ($relativePath in $requiredFiles) {
     }
 }
 
+$mainTsPath = Join-Path $sourceRoot 'src\main.ts'
+$mainTs = Get-Content -LiteralPath $mainTsPath -Raw
+if ($mainTs -notmatch "import\s+['""]\./hostBootstrap['""]") {
+    throw "dashboard source check failed: src\main.ts must import ./hostBootstrap for desktop window drag/resize and host state"
+}
+
 & (Join-Path $repoRoot 'tools\check-dashboard-css-contract.ps1')
 
 if ($SkipBuild) {
