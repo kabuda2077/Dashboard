@@ -11,6 +11,7 @@ import {
   proxyChainDirection,
   splitOverviewPage,
 } from '@/store/settings'
+import { activeBackend } from '@/store/setup'
 import type { Connection } from '@/types'
 import dayjs from 'dayjs'
 import * as ipaddr from 'ipaddr.js'
@@ -152,7 +153,7 @@ export const renderRoutes = computed(() => {
   const caps = capabilities.value
   // capability gate per route; routes not listed here are always shown
   const routeCapable: Partial<Record<ROUTE_NAME, boolean>> = {
-    [ROUTE_NAME.rules]: caps.rules,
+    [ROUTE_NAME.rules]: !activeBackend.value || caps.rules,
   }
   return Object.values(ROUTE_NAME).filter((r) => {
     if (r === ROUTE_NAME.setup) return false
