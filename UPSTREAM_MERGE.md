@@ -4,8 +4,9 @@ This project embeds a customized copy of zashboard in a Windows desktop shell. U
 
 Use this file as the single entry point for upstream follow-up work. Before merging, also read:
 
-- `docs/customizations.md` for the local changes that must be preserved.
 - `STYLE.md` for UI tokens, shared utilities, and visual constraints.
+
+This file owns both the merge workflow and the Dashboard-specific product contract. Do not split the upstream checklist into another document; keep the process on this one path.
 
 ## Rule Zero
 
@@ -53,6 +54,55 @@ The desktop app is not pure zashboard. It consists of:
 - built frontend resources in `resources/dashboard/`
 - project UI rules in `STYLE.md`
 
+## Dashboard Product Contract
+
+Preserve these product decisions during every upstream merge.
+
+Desktop host ownership:
+
+- C# owns process management, tray behavior, autostart, WebView lifecycle, native window behavior, local settings, publish layout, and Windows window APIs.
+- Frontend owns page layout, Core page presentation, zashboard views, top bars, sidebar, and window-control visuals.
+- The app manages one active core at a time: `mihomo` or `sing-box`.
+- Core paths, config paths, API URLs, secrets, and core type are separate local settings.
+- Local publish layout keeps `Dashboard.exe`, `settings.json`, `resources/`, and separate core folders.
+- `resources/EBWebView` must be cleared when replacing a local install so stale WebView assets do not hide changes.
+
+Frontend product shape:
+
+- Default route is the Core page.
+- Standalone Settings is folded into Core page.
+- Backend settings live in Core page, not as a separate primary route.
+- Core page contains active core status, start/stop/switch controls, path/API settings, logs, operation buttons, and current download summary.
+- Dashboard uses the Clash-compatible API path for both mihomo and sing-box main pages.
+- sing-box native API / Tools is not exposed.
+- Window controls are custom frontend controls connected to the C# host.
+- `dashboard-src/src/assets/styles/dashboard-desktop.css` is the final desktop override layer and must stay imported last.
+
+Desktop settings defaults:
+
+- The settings title is `Dashboard`, without upstream version, commit id, update indicator, or upstream GitHub link.
+- Dashboard self-upgrade UI is hidden; desktop releases are handled by this project, not upstream `/upgrade/ui`.
+- `splitOverviewPage` defaults to enabled.
+- `displayGlobalByMode` defaults to enabled.
+
+Do not restore without a product decision:
+
+- standalone Settings page as a primary route
+- settings visibility dialog
+- multi-backend management UI as the main product model
+- upstream DNS query panel
+- upstream Dashboard self-upgrade controls
+- upstream core upgrade/config update modals that bypass the C# host
+- sing-box native Tools as a separate native API channel
+
+Keep from upstream when compatible:
+
+- API models, request handling, stores, and general data parsing
+- Overview, Proxies, Rules, Connections, and Logs page behavior
+- performance fixes, virtual list/table fixes, responsive fixes, and accessibility improvements
+- sidebar polish, toggle improvements, and visual refinements that can be expressed with existing `STYLE.md` tokens
+- sing-box compatible dashboard improvements when they work through the Clash-compatible API path
+
 ## Update Workflow
 
 1. Start from current `main`, pull latest changes, and create a fresh upstream branch.
@@ -62,7 +112,7 @@ The desktop app is not pure zashboard. It consists of:
 5. Classify changed files before editing.
 6. Merge low-risk upstream changes first.
 7. Hand-merge files that overlap with local desktop/UI changes.
-8. Reapply local product decisions from `docs/customizations.md`.
+8. Reapply the Dashboard product contract from this file.
 9. Reapply local visual constraints from `STYLE.md`.
 10. Run type-check and build.
 11. Manually inspect the app pages and desktop shell behavior.
@@ -111,6 +161,7 @@ Do not overwrite these with upstream code.
 - `STYLE.md`
 - `UPSTREAM_MERGE.md`
 - desktop-specific settings and C# bridge behavior
+- `tools/build-zashboard.ps1`
 
 These files define the launcher product, not zashboard upstream.
 
@@ -141,6 +192,7 @@ Do not restore these unless we explicitly decide to change product direction.
 - settings visibility dialog
 - multi-backend management UI
 - upstream DNS query panel
+- upstream Dashboard self-upgrade controls
 - upstream core upgrade/config update modals that conflict with the desktop package
 
 If upstream improves a useful subcomponent in this area, extract the improvement and adapt it to the embedded Core/settings layout.
@@ -198,16 +250,16 @@ Run frontend checks:
 pnpm --dir dashboard-src type-check
 ```
 
+Run the Dashboard frontend contract check:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1 -SkipBuild
+```
+
 Run full build:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
-```
-
-Run the desktop CSS contract check directly when touching styles:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\check-dashboard-css-contract.ps1
 ```
 
 Manual inspection checklist:
@@ -241,6 +293,7 @@ Merge:
 - [ ] Each changed file was classified as Upstream-First, Local-First, Manual-Merge, or Replaced/Removed.
 - [ ] Local desktop shell files were not blindly overwritten.
 - [ ] Removed upstream features were not accidentally restored.
+- [ ] `tools/build-zashboard.ps1 -SkipBuild` passed before the full build.
 - [ ] General upstream bug fixes and data/API improvements were kept where compatible.
 - [ ] Manual-merge files were reviewed for both upstream behavior and local layout constraints.
 
@@ -248,7 +301,7 @@ UI:
 
 - [ ] Upstream visual changes pass `STYLE.md`.
 - [ ] `dashboard-src/src/assets/styles/dashboard-desktop.css` still exists and remains the last import in `dashboard-src/src/assets/main.css`.
-- [ ] Desktop CSS contract check passed.
+- [ ] Dashboard frontend contract check passed.
 - [ ] Top bars still use shared `CtrlsBar` rules.
 - [ ] Settings still use `settings-grid`, `setting-item`, and `settings-section-label`.
 - [ ] New buttons, inputs, panels, and text colors reuse existing tokens/utilities.
@@ -261,6 +314,18 @@ Build and review:
 - [ ] Built resources in `resources/dashboard/` were regenerated when frontend code changed.
 - [ ] Core, Overview, Proxies, Rules, Connections, and Logs were manually inspected.
 - [ ] Sidebar expanded/collapsed, window buttons, tray behavior, and core start/stop/restart were manually inspected.
+
+Regression checks from the v3.11.0 follow-up:
+
+- [ ] `src/main.ts` still imports `./hostBootstrap`; window drag and resize work.
+- [ ] Top bars do not overlap page content.
+- [ ] Rules tab is visible on first app load when split overview is enabled.
+- [ ] Sidebar bottom does not show backend settings button or backend version.
+- [ ] Sidebar route items keep `gap-1`.
+- [ ] Core top status text truncates inside its own box and does not run into buttons.
+- [ ] Settings header says `Dashboard` only.
+- [ ] Dashboard self-upgrade controls are not visible.
+- [ ] DNS query UI and sing-box native UI are not restored.
 ## Commit Discipline
 
 Prefer small commits with clear intent.

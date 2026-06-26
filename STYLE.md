@@ -127,7 +127,7 @@ If a new pattern is unavoidable, document why it is different from the canonical
 
 During upstream merges, do not accept a new upstream visual pattern only because it exists upstream. First map it to the canonical set above. If it cannot be mapped, document the reusable reason before adding a project utility.
 
-The desktop CSS contract must pass before publishing. The build runs `tools/check-dashboard-css-contract.ps1`, which verifies that `dashboard-desktop.css` is imported last and still defines the required `dashboard-*`, `core-*`, `ctrls-*`, and settings utilities used by Core page and the desktop shell.
+The desktop frontend contract must pass before publishing. `tools/build-zashboard.ps1 -SkipBuild` verifies that removed upstream features stay removed, desktop host bootstrap stays wired, `dashboard-desktop.css` is imported last, and the required `dashboard-*`, `core-*`, `ctrls-*`, and settings utilities used by Core page and the desktop shell still exist.
 
 ## Top Bar
 

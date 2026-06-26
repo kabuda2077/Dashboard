@@ -97,7 +97,55 @@ foreach ($pattern in $forbiddenSourcePatterns) {
     }
 }
 
-& (Join-Path $repoRoot 'tools\check-dashboard-css-contract.ps1')
+$mainCssPath = Join-Path $sourceRoot 'src\assets\main.css'
+$desktopCssPath = Join-Path $sourceRoot 'src\assets\styles\dashboard-desktop.css'
+
+if (-not (Test-Path -LiteralPath $mainCssPath)) {
+    throw "dashboard source check failed: missing src\assets\main.css"
+}
+
+if (-not (Test-Path -LiteralPath $desktopCssPath)) {
+    throw "dashboard source check failed: missing src\assets\styles\dashboard-desktop.css"
+}
+
+$mainCss = Get-Content -LiteralPath $mainCssPath -Raw
+$desktopCss = Get-Content -LiteralPath $desktopCssPath -Raw
+
+$imports = [regex]::Matches($mainCss, "@import\s+['""]([^'""]+)['""]\s*;") |
+    ForEach-Object { $_.Groups[1].Value }
+
+if (-not $imports -or $imports[-1] -ne './styles/dashboard-desktop.css') {
+    throw "dashboard source check failed: dashboard-desktop.css must be the last import in src\assets\main.css"
+}
+
+$requiredSelectors = @(
+    '.settings-section-label',
+    '.dashboard-section-title',
+    '.settings-grid',
+    '.setting-item',
+    '.setting-panel-row',
+    '.dashboard-input',
+    '.dashboard-action-btn',
+    '.dashboard-note',
+    '.dashboard-log-block',
+    '.core-status-box',
+    '.core-top-button',
+    '.toggle',
+    '.ctrls-bar'
+)
+
+$missingSelectors = @()
+foreach ($selector in $requiredSelectors) {
+    if ($desktopCss -notmatch [regex]::Escape($selector)) {
+        $missingSelectors += $selector
+    }
+}
+
+if ($missingSelectors.Count -gt 0) {
+    throw "dashboard source check failed: missing desktop selectors: $($missingSelectors -join ', ')"
+}
+
+Write-Host 'dashboard source contract check completed.'
 
 if ($SkipBuild) {
     Write-Host 'dashboard source check completed.'
