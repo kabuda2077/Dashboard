@@ -1,5 +1,5 @@
 <template>
-  <div class="setting-item">
+  <SettingItem :setting-key="k.customBackgroundURL">
     <div class="setting-item-label">
       {{ $t('customBackgroundURL') }}
     </div>
@@ -31,10 +31,10 @@
       class="hidden"
       @change="handlerFileChange"
     />
-  </div>
-  <div
-    v-if="customBackgroundURL && displayBgProperty"
-    class="setting-item"
+  </SettingItem>
+  <SettingItem
+    :setting-key="k.transparent"
+    :when="!!customBackgroundURL && displayBgProperty"
   >
     <div class="setting-item-label">
       {{ $t('transparent') }}
@@ -49,10 +49,10 @@
       @touchmove.passive.stop
       @touchend.passive.stop
     />
-  </div>
-  <div
-    v-if="customBackgroundURL && displayBgProperty"
-    class="setting-item"
+  </SettingItem>
+  <SettingItem
+    :setting-key="k.blurIntensity"
+    :when="!!customBackgroundURL && displayBgProperty"
   >
     <div class="setting-item-label">
       {{ $t('blurIntensity') }}
@@ -67,10 +67,12 @@
       @touchmove.stop
       @touchend.stop
     />
-  </div>
+  </SettingItem>
 </template>
 
 <script setup lang="ts">
+import SettingItem from '@/components/settings/SettingItem.vue'
+import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
 import {
   autoTheme,
@@ -88,6 +90,8 @@ import TextInput from '../../common/TextInput.vue'
 type BackgroundToneTheme = 'light' | 'dark'
 
 const { t } = useI18n()
+
+const k = GENERAL_ITEM_KEYS
 
 const displayBgProperty = ref(false)
 const inputFileRef = ref<HTMLInputElement>()

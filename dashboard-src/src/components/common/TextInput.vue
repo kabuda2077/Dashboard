@@ -91,16 +91,13 @@ const handlerSearchInputClick = (e: Event) => {
                 props.menusDeleteable &&
                   h(XMarkIcon, {
                     class: 'h-3 w-3 transition-transform hover:scale-125',
-                    onClick: (e) => {
-                      const target = e.target as HTMLElement
+                    onClick: () => {
                       const nextMenus = (props.menus ?? []).filter((menu) => menu !== item)
 
                       emits('update:menus', nextMenus)
                       if (!nextMenus.length) {
                         hideTip()
-                        return
                       }
-                      target.closest('div')?.remove()
                     },
                   }),
               ],

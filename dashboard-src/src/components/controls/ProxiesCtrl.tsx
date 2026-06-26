@@ -1,11 +1,5 @@
-import { disconnectByIdAPI, isSingBox, updateProxyProviderAPI } from '@/api'
-import { renderProxiesPageItems } from '@/composables/proxies'
-import { isProxyNodeSearchMode, toggleProxySearchMode } from '@/composables/proxySearch'
-import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
-import { getMinCardWidth } from '@/helper/utils'
-import { configs, updateConfigs } from '@/store/config'
-import { activeConnections } from '@/store/connections'
+import { configs, updateConfigs } from '@/assembly/config'
+import { disconnectByIdAPI } from '@/assembly/connections'
 import {
   allProxiesLatencyTest,
   fetchProxies,
@@ -14,7 +8,15 @@ import {
   proxiesTabShow,
   proxyGroupList,
   proxyProviederList,
-} from '@/store/proxies'
+  updateProxyProviderAPI,
+} from '@/assembly/proxies'
+import { isSingBoxCore } from '@/assembly/version'
+import { renderProxiesPageItems } from '@/composables/proxies'
+import { isProxyNodeSearchMode, toggleProxySearchMode } from '@/composables/proxySearch'
+import { useCtrlsBar } from '@/composables/useCtrlsBar'
+import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
+import { getMinCardWidth } from '@/helper/utils'
+import { activeConnections } from '@/store/connections'
 import {
   automaticDisconnection,
   collapseGroupMap,
@@ -44,7 +46,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
-import DropdownSelect from '../common/DropdownSelect.vue'
+import SegmentedControl from '../common/SegmentedControl.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({
@@ -82,16 +84,11 @@ export default defineComponent({
     const needTranslateModes = computed(() => {
       return every(modeList.value, (mode) => defaultModes.includes(mode.toLowerCase()))
     })
-    const modeSelectOptions = computed(() =>
-      modeList.value.map((mode) => ({
-        label: needTranslateModes.value ? t(mode.toLowerCase()) : mode,
-        value: mode,
-      })),
-    )
 
-    const handlerModeChange = (mode: string) => {
+    const handlerModeChange = (e: Event) => {
+      const mode = (e.target as HTMLSelectElement).value
       updateConfigs({ mode })
-      if (isSingBox.value && automaticDisconnection.value) {
+      if (isSingBoxCore.value && automaticDisconnection.value) {
         activeConnections.value.forEach((connection) => {
           if (connection.rule.includes('clash_mode')) {
             disconnectByIdAPI(connection.id)
@@ -138,23 +135,15 @@ export default defineComponent({
     })
     return () => {
       const tabs = (
-        <div
-          role="tablist"
-          class="tabs-box tabs tabs-xs"
-        >
-          {tabsWithNumbers.value.map(({ type, count }) => {
-            return (
-              <a
-                role="tab"
-                key={type}
-                class={['tab', proxiesTabShow.value === type && 'tab-active']}
-                onClick={() => (proxiesTabShow.value = type)}
-              >
-                {t(type)} ({count})
-              </a>
-            )
-          })}
-        </div>
+        <SegmentedControl
+          modelValue={proxiesTabShow.value}
+          onUpdate:modelValue={(value) => (proxiesTabShow.value = value as PROXY_TAB_TYPE)}
+          options={tabsWithNumbers.value.map(({ type, count }) => ({
+            value: type,
+            label: t(type),
+            count,
+          }))}
+        />
       )
       const upgradeAllIcon = proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER && (
         <button
@@ -165,12 +154,22 @@ export default defineComponent({
         </button>
       )
       const modeSelect = configs.value && (
-        <DropdownSelect
-          class={isLargeCtrlsBar.value ? 'min-w-40' : 'min-w-24'}
-          modelValue={configs.value.mode}
-          options={modeSelectOptions.value}
-          onUpdate:modelValue={(value) => handlerModeChange(value as string)}
-        />
+        <select
+          class={['select select-sm', isLargeCtrlsBar.value ? 'min-w-40' : 'min-w-24']}
+          v-model={configs.value.mode}
+          onChange={handlerModeChange}
+        >
+          {modeList.value.map((mode) => {
+            return (
+              <option
+                key={mode}
+                value={mode}
+              >
+                {needTranslateModes.value ? t(mode.toLowerCase()) : mode}
+              </option>
+            )
+          })}
+        </select>
       )
       const sort = (
         <select
@@ -225,7 +224,7 @@ export default defineComponent({
         ? `${t('searchProxyNode')} | Regex`
         : `${t('searchProxyGroup')} | Regex`
       const searchInput = (
-        <div class={['relative', isLargeCtrlsBar.value ? 'ctrls-search' : 'w-32 flex-1']}>
+        <div class={['relative w-32 flex-1', isLargeCtrlsBar.value && 'max-w-80']}>
           <button
             class="btn btn-circle btn-ghost btn-xs absolute top-1/2 left-1 z-20 h-6 min-h-6 w-6 -translate-y-1/2 p-0"
             title={
@@ -379,7 +378,7 @@ export default defineComponent({
         <div class="flex gap-2 p-2">
           {hasProviders.value && tabs}
           {modeSelect}
-          {searchInput}
+          <div class="flex flex-1">{searchInput}</div>
           {upgradeAllIcon}
           {settingsModal}
           {toggleCollapseAll}

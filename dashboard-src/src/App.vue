@@ -3,7 +3,12 @@ import { computed, onMounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import { useKeyboard } from './composables/keyboard'
 import { EMOJIS, FONTS } from './constant'
-import { autoImportSettings, importSettingsFromUrl } from './helper/autoImportSettings'
+import {
+  autoImportSettings,
+  autoSyncSettings,
+  importSettingsFromUrl,
+  syncSettingsFromCore,
+} from './helper/autoImportSettings'
 import { backgroundImage } from './helper/indexeddb'
 import { initNotification } from './helper/notification'
 import { getBackendFromUrl, isPreferredDark } from './helper/utils'
@@ -57,6 +62,55 @@ const setThemeColor = () => {
 
 watch(isPreferredDark, setThemeColor)
 
+// iOS bounces the whole page when a vertical drag has nowhere left to scroll:
+// either it's over a non-scrollable area (so the drag pans the layout viewport),
+// or it's inside a scroll container already at its top/bottom edge and the
+// leftover scroll chains up to the document. Classic iOS scroll-lock: find the
+// nearest vertically-scrollable ancestor and only let the drag through while
+// that element can still move in the drag direction; otherwise cancel it so
+// nothing reaches the page.
+let touchStartX = 0
+let touchStartY = 0
+
+const onTouchStart = (event: TouchEvent) => {
+  touchStartX = event.touches[0].clientX
+  touchStartY = event.touches[0].clientY
+}
+
+const findScrollableY = (target: EventTarget | null) => {
+  let el = target as HTMLElement | null
+  while (el && el !== document.body && el !== document.documentElement) {
+    const { overflowY } = getComputedStyle(el)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+      return el
+    }
+    el = el.parentElement
+  }
+  return null
+}
+
+const onTouchMove = (event: TouchEvent) => {
+  if (event.touches.length > 1) return
+
+  const deltaX = event.touches[0].clientX - touchStartX
+  const deltaY = event.touches[0].clientY - touchStartY
+  // Leave horizontal gestures (e.g. swiping a horizontally-scrollable table) be.
+  if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+
+  const el = findScrollableY(event.target)
+  if (!el) {
+    event.preventDefault()
+    return
+  }
+
+  const atTop = el.scrollTop <= 0
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1
+  // deltaY > 0 means dragging downward (revealing content above).
+  if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+    event.preventDefault()
+  }
+}
+
 watch(
   disablePullToRefresh,
   () => {
@@ -64,9 +118,13 @@ watch(
     if (disablePullToRefresh.value) {
       body.style.overscrollBehavior = 'none'
       body.style.overflow = 'hidden'
+      document.addEventListener('touchstart', onTouchStart, { passive: true })
+      document.addEventListener('touchmove', onTouchMove, { passive: false })
     } else {
       body.style.overscrollBehavior = ''
       body.style.overflow = ''
+      document.removeEventListener('touchstart', onTouchStart)
+      document.removeEventListener('touchmove', onTouchMove)
     }
   },
   {
@@ -74,7 +132,7 @@ watch(
   },
 )
 
-const isSameBackend = (b1: Omit<Backend, 'uuid'>, b2: Omit<Backend, 'uuid'>) => {
+const isSameBackend = (b1: Omit<Backend, 'uuid' | 'type'>, b2: Omit<Backend, 'uuid' | 'type'>) => {
   return (
     b1.host === b2.host &&
     b1.port === b2.port &&
@@ -104,6 +162,14 @@ autoSwitchToURLBackendIfExists()
 onMounted(async () => {
   if (autoImportSettings.value) {
     await importSettingsFromUrl()
+  }
+
+  if (autoSyncSettings.value) {
+    try {
+      await syncSettingsFromCore()
+    } catch (e) {
+      console.error('Failed to auto-sync settings on app load:', e)
+    }
   }
 
   watch(

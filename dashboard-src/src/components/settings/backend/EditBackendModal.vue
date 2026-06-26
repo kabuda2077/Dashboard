@@ -25,7 +25,9 @@
         v-if="editForm"
         class="flex flex-col gap-3"
       >
-        <div class="divider my-0 text-xs">{{ t('clashApiChannel') }}</div>
+        <div class="divider my-0 text-xs">
+          {{ editForm.type === 'singbox' ? t('singboxApi') : t('clashApi') }}
+        </div>
 
         <div class="flex gap-2">
           <div class="flex w-24 flex-none flex-col gap-1">
@@ -58,7 +60,10 @@
         </div>
 
         <div class="flex gap-2">
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <div
+            v-if="editForm.type === 'clash'"
+            class="flex min-w-0 flex-1 flex-col gap-1"
+          >
             <label class="truncate text-sm">{{ t('secondaryPath') }} ({{ t('optional') }})</label>
             <TextInput
               class="w-full"
@@ -84,7 +89,6 @@
             v-model="editForm.password"
           />
         </div>
-
       </div>
 
       <div class="flex justify-end gap-2">
@@ -112,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable } from '@/api'
+import { isBackendAvailable, isSingboxChannelAvailable } from '@/assembly/backend'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import { showNotification } from '@/helper/notification'
@@ -163,6 +167,7 @@ watch(
   (backend) => {
     if (!backend) return
     editForm.value = {
+      type: backend.type,
       protocol: backend.protocol,
       host: backend.host,
       port: backend.port,
@@ -194,9 +199,16 @@ const handleSave = async () => {
     const composed: Omit<Backend, 'uuid'> = { ...editForm.value }
     const testBackend: Backend = { uuid: selectedBackend.value.uuid, ...composed }
 
-    if (!(await isBackendAvailable(testBackend, 10000))) {
-      showNotification({ content: t('backendConnectionFailed'), type: 'alert-error' })
-      return
+    if (composed.type === 'singbox') {
+      if (!(await isSingboxChannelAvailable(testBackend, 10000))) {
+        showNotification({ content: t('singboxConnectionFailed'), type: 'alert-error' })
+        return
+      }
+    } else {
+      if (!(await isBackendAvailable(testBackend, 10000))) {
+        showNotification({ content: t('backendConnectionFailed'), type: 'alert-error' })
+        return
+      }
     }
 
     updateBackend(selectedBackend.value.uuid, composed)

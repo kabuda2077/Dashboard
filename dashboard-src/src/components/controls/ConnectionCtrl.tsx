@@ -1,4 +1,4 @@
-import { disconnectAllAPI, disconnectByIdAPI } from '@/api'
+import { disconnectAllAPI, disconnectByIdAPI } from '@/assembly/connections'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
@@ -21,15 +21,14 @@ import {
   PauseIcon,
   PlayIcon,
   QuestionMarkCircleIcon,
-  TrashIcon,
   WrenchScrewdriverIcon,
+  XMarkIcon,
 } from '@heroicons/vue/24/outline'
-import { computed, defineComponent, ref } from 'vue'
+import { defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
-import DropdownSelect from '../common/DropdownSelect.vue'
 import TextInput from '../common/TextInput.vue'
 import ConnectionCardSettings from '../settings/connections/ConnectionCardSettings.vue'
 import TableSettings from '../settings/connections/TableSettings.vue'
@@ -59,22 +58,23 @@ export default defineComponent({
     const settingsModel = ref(false)
     const { showTip, updateTip } = useTooltip()
     const { isLargeCtrlsBar } = useCtrlsBar(() => (isConnectionCard.value ? 860 : 720))
-    const sortOptions = computed(() =>
-      (Object.values(SORT_TYPE) as string[]).map((opt) => ({
-        label: t(opt) || opt,
-        value: opt,
-      })),
-    )
 
     return () => {
       const sortForCards = (
         <div class={`join flex-1 ${isLargeCtrlsBar.value ? 'min-w-46' : ''}`}>
-          <DropdownSelect
-            class="join-item flex-1"
-            modelValue={connectionSortType.value}
-            options={sortOptions.value}
-            onUpdate:modelValue={(value) => (connectionSortType.value = value as SORT_TYPE)}
-          />
+          <select
+            class="join-item select select-sm flex-1"
+            v-model={connectionSortType.value}
+          >
+            {(Object.values(SORT_TYPE) as string[]).map((opt) => (
+              <option
+                key={opt}
+                value={opt}
+              >
+                {t(opt) || opt}
+              </option>
+            ))}
+          </select>
           <button
             class="btn join-item btn-sm"
             onClick={() => {
@@ -159,7 +159,7 @@ export default defineComponent({
           placeholder={`${t('search')} | Regex`}
           clearable={true}
           before-close={true}
-          class={isLargeCtrlsBar.value ? 'ctrls-search' : 'w-full'}
+          class={isLargeCtrlsBar.value ? 'w-32 max-w-80 flex-1' : 'w-full'}
         />
       )
 
@@ -195,7 +195,7 @@ export default defineComponent({
             class="btn btn-circle btn-sm"
             onClick={handlerClickCloseAll}
           >
-            <TrashIcon class="h-4 w-4" />
+            <XMarkIcon class="h-4 w-4" />
           </button>
         </>
       )
@@ -228,7 +228,7 @@ export default defineComponent({
           <ConnectionTabs />
           {isConnectionCard.value && sortForCards}
           <SourceIPFilter class="w-40" />
-          {searchInput}
+          <div class="flex flex-1">{searchInput}</div>
           {settingsModal}
           {buttons}
         </div>

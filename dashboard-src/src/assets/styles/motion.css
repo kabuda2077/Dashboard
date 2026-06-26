@@ -73,9 +73,21 @@
   box-shadow: none;
 }
 
+.ios-segment-indicator {
+  will-change: transform, width;
+}
+
+.ios-segment-indicator-ready {
+  transition:
+    transform 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.15s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar-tab-indicator-ready,
-  .sidebar-tab-active {
+  .sidebar-tab-active,
+  .ios-segment-indicator-ready {
     transition: none;
   }
 }
@@ -132,12 +144,12 @@
   transform: translateX(100%);
 }
 
+/* PC route transition: subtle fade, used with mode="out-in" */
 .page-enter-active,
 .page-leave-active {
   transition: opacity 0.2s ease-in-out;
   will-change: opacity;
 }
-
 .page-enter-from,
 .page-leave-to {
   opacity: 0;

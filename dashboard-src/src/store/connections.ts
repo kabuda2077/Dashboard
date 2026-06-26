@@ -1,7 +1,21 @@
-import { disconnectByIdAPI, fetchConnectionsAPI } from '@/api'
+import {
+  disconnectByIdAPI,
+  fetchConnectionsAPI,
+  getConnectionVisibleSearchValues,
+} from '@/assembly/connections'
 import { CONNECTION_TAB_TYPE, SORT_DIRECTION, SORT_TYPE } from '@/constant'
-import { getChainsStringFromConnection, getInboundUserFromConnection } from '@/helper'
-import { getConnectionVisibleSearchValues } from '@/helper/connection'
+import {
+  getChainsStringFromConnection,
+  getConnectionDownload,
+  getConnectionNetwork,
+  getConnectionRule,
+  getConnectionSourceIP,
+  getConnectionStart,
+  getConnectionUpload,
+  getHostFromConnection,
+  getInboundUserFromConnection,
+  getNetworkTypeFromConnection,
+} from '@/helper'
 import { toSearchRegex } from '@/helper/search'
 import type { Connection, ConnectionRawMessage } from '@/types'
 import { useStorage, watchOnce } from '@vueuse/core'
@@ -74,19 +88,14 @@ export const initConnections = () => {
         const connection = conn as Connection
         const preConnection = previousConnectionsMap.get(connection.id)
 
-        if (
-          (connection.metadata.destinationPort === '443' || connection.metadata.sniffHost) &&
-          connection.metadata.network === 'udp'
-        ) {
-          connection.metadata.network = 'quic'
-        }
-
         if (!preConnection) {
           connection.downloadSpeed = 0
           connection.uploadSpeed = 0
         } else {
-          connection.downloadSpeed = connection.download - preConnection.download
-          connection.uploadSpeed = connection.upload - preConnection.upload
+          connection.downloadSpeed =
+            getConnectionDownload(connection) - getConnectionDownload(preConnection)
+          connection.uploadSpeed =
+            getConnectionUpload(connection) - getConnectionUpload(preConnection)
         }
 
         previousConnectionsMap.delete(connection.id)
@@ -107,10 +116,10 @@ export const initConnections = () => {
   if (autoDisconnectIdleUDP.value) {
     watchOnce(activeConnections, () => {
       activeConnections.value
-        .filter((conn) => conn.metadata.network !== 'tcp')
+        .filter((conn) => getConnectionNetwork(conn) !== 'tcp')
         .forEach((conn) => {
           const now = dayjs()
-          const start = dayjs(conn.start)
+          const start = dayjs(getConnectionStart(conn))
 
           if (now.diff(start, 'minute') > autoDisconnectIdleUDPTime.value) {
             disconnectByIdAPI(conn.id)
@@ -131,38 +140,34 @@ const isDesc = computed(() => {
 
 const sortFunctionMap: Record<SORT_TYPE, (a: Connection, b: Connection) => number> = {
   [SORT_TYPE.HOST]: (a: Connection, b: Connection) => {
-    return (a.metadata.host || a.metadata.destinationIP).localeCompare(
-      b.metadata.host || b.metadata.destinationIP,
-    )
+    return getHostFromConnection(a).localeCompare(getHostFromConnection(b))
   },
   [SORT_TYPE.RULE]: (a: Connection, b: Connection) => {
-    return a.rule.localeCompare(b.rule)
+    return getConnectionRule(a).localeCompare(getConnectionRule(b))
   },
   [SORT_TYPE.CHAINS]: (a: Connection, b: Connection) => {
     return getChainsStringFromConnection(a).localeCompare(getChainsStringFromConnection(b))
   },
   [SORT_TYPE.DOWNLOAD]: (a: Connection, b: Connection) => {
-    return a.download - b.download
+    return getConnectionDownload(a) - getConnectionDownload(b)
   },
   [SORT_TYPE.DOWNLOAD_SPEED]: (a: Connection, b: Connection) => {
     return a.downloadSpeed - b.downloadSpeed
   },
   [SORT_TYPE.UPLOAD]: (a: Connection, b: Connection) => {
-    return a.upload - b.upload
+    return getConnectionUpload(a) - getConnectionUpload(b)
   },
   [SORT_TYPE.UPLOAD_SPEED]: (a: Connection, b: Connection) => {
     return a.uploadSpeed - b.uploadSpeed
   },
   [SORT_TYPE.SOURCE_IP]: (a: Connection, b: Connection) => {
-    return a.metadata.sourceIP.localeCompare(b.metadata.sourceIP)
+    return getConnectionSourceIP(a).localeCompare(getConnectionSourceIP(b))
   },
   [SORT_TYPE.TYPE]: (a: Connection, b: Connection) => {
-    return (a.metadata.type + a.metadata.network).localeCompare(
-      b.metadata.type + b.metadata.network,
-    )
+    return getNetworkTypeFromConnection(a).localeCompare(getNetworkTypeFromConnection(b))
   },
   [SORT_TYPE.CONNECT_TIME]: (a: Connection, b: Connection) => {
-    return dayjs(a.start).valueOf() - dayjs(b.start).valueOf()
+    return dayjs(getConnectionStart(a)).valueOf() - dayjs(getConnectionStart(b)).valueOf()
   },
   [SORT_TYPE.INBOUND_USER]: (a: Connection, b: Connection) => {
     return getInboundUserFromConnection(a).localeCompare(getInboundUserFromConnection(b))
@@ -193,7 +198,7 @@ export const renderConnections = computed(() => {
 
       if (
         sourceIPFilter.value !== null &&
-        sourceIPFilter.value.every((i) => i !== conn.metadata.sourceIP)
+        sourceIPFilter.value.every((i) => i !== getConnectionSourceIP(conn))
       ) {
         return false
       }

@@ -1,4 +1,11 @@
-import { getProcessFromConnection } from '@/helper'
+import {
+  getConnectionChains,
+  getConnectionDownload,
+  getConnectionHostname,
+  getConnectionSourceIP,
+  getConnectionUpload,
+  getProcessFromConnection,
+} from '@/helper'
 import {
   ConnectionHistoryType,
   getConnectionHistoryFromIndexedDB,
@@ -63,12 +70,9 @@ export const aggregateConnections = (
     let key: string = ''
 
     if (type === ConnectionHistoryType.SourceIP) {
-      key = connection.metadata.sourceIP
+      key = getConnectionSourceIP(connection)
     } else if (type === ConnectionHistoryType.Destination) {
-      const hostkey =
-        connection.metadata.host ||
-        connection.metadata.sniffHost ||
-        connection.metadata.destinationIP
+      const hostkey = getConnectionHostname(connection)
       if (ipaddr.IPv4.isValid(hostkey) || ipaddr.IPv6.isValid(hostkey)) {
         key = hostkey
       } else {
@@ -77,19 +81,19 @@ export const aggregateConnections = (
     } else if (type === ConnectionHistoryType.Process) {
       key = getProcessFromConnection(connection)
     } else if (type === ConnectionHistoryType.Outbound) {
-      key = connection.chains[0] || '-'
+      key = getConnectionChains(connection)[0] || '-'
     }
 
     if (map.has(key)) {
       const existing = map.get(key)!
-      existing.download += connection.download
-      existing.upload += connection.upload
+      existing.download += getConnectionDownload(connection)
+      existing.upload += getConnectionUpload(connection)
       existing.count += 1
     } else {
       map.set(key, {
         key,
-        download: connection.download,
-        upload: connection.upload,
+        download: getConnectionDownload(connection),
+        upload: getConnectionUpload(connection),
         count: 1,
       })
     }

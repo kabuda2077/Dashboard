@@ -26,7 +26,7 @@
     </div>
 
     <section>
-      <div class="text-base-content/60 mb-1.5 text-xs font-medium uppercase">
+      <div class="text-base-content/70 mb-1.5 text-xs font-medium uppercase">
         {{ $t('folder_rules') }}
       </div>
       <div class="flex flex-col gap-1.5">
@@ -89,7 +89,7 @@
     </section>
 
     <section>
-      <div class="text-base-content/60 mb-1.5 text-xs font-medium uppercase">
+      <div class="text-base-content/70 mb-1.5 text-xs font-medium uppercase">
         {{ $t('folder_preview') }} ({{ matched.length }})
       </div>
       <div class="bg-base-200/50 border-base-300 max-h-40 overflow-y-auto rounded-md border p-2">
@@ -116,7 +116,7 @@
 
     <section>
       <div
-        class="text-base-content/60 mb-1.5 flex items-center gap-2 text-xs font-medium uppercase"
+        class="text-base-content/70 mb-1.5 flex items-center gap-2 text-xs font-medium uppercase"
       >
         <span>{{ $t('folder_manual_includes') }} ({{ folder.manualIncludes.length }})</span>
       </div>
@@ -151,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { proxyGroupList } from '@/store/proxies'
+import { proxyGroupList } from '@/assembly/proxies'
 import {
   addGroupToFolder,
   folders,

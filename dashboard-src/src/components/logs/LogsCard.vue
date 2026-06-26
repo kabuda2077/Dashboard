@@ -32,13 +32,14 @@
       <HighlightText
         :text="log.payload"
         :filter="logFilter"
+        ansi
       />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { isSingBox } from '@/api'
+import { isSingBoxCore } from '@/assembly/version'
 import HighlightText from '@/components/common/HighlightText.vue'
 import { useBounceOnVisible } from '@/composables/bouncein'
 import { LOG_LEVEL } from '@/constant'
@@ -56,7 +57,7 @@ const emits = defineEmits<{
 }>()
 
 const connectionID = computed(() => {
-  if (!isSingBox.value || props.connectionDetailDisabled) return null
+  if (!isSingBoxCore.value || props.connectionDetailDisabled) return null
 
   return getLogConnectionID(props.log.payload)
 })

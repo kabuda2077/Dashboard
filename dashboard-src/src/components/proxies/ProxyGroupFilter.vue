@@ -5,7 +5,7 @@
   >
     <button
       v-if="!showInput"
-      class="btn btn-circle btn-ghost btn-xs text-base-content/60 hover:text-base-content opacity-0 transition-all duration-200 group-hover:opacity-100 [@media(any-pointer:coarse)]:opacity-100"
+      class="btn btn-circle btn-ghost btn-xs text-base-content/70 hover:text-base-content opacity-0 transition-all duration-200 group-hover:opacity-100 [@media(any-pointer:coarse)]:opacity-100"
       @click.stop="handlerShowInput"
     >
       <MagnifyingGlassIcon class="h-3.5 w-3.5" />

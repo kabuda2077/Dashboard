@@ -3,21 +3,11 @@ div {
 }
 
 .text-main {
-  @apply text-primary;
+  @apply text-base-content;
 }
 
 .search-highlight {
   @apply rounded-xs bg-yellow-300 text-black;
-}
-
-[data-theme='dark'] .text-main {
-  color: oklch(72% 0.233 277.117);
-}
-[data-theme='lofi'] .text-main,
-[data-theme='wireframe'] .text-main,
-[data-theme='business'] .text-main,
-[data-theme='black'] .text-main {
-  @apply text-info;
 }
 
 [data-theme='light-neutral'],
@@ -38,14 +28,9 @@ div {
 }
 
 .settings-section-label {
-  @apply px-1 pt-5 pb-1.5 text-xs font-semibold tracking-wider uppercase first:pt-2;
-  color: color-mix(in srgb, var(--color-base-content) 60%, transparent);
+  @apply px-1 pt-5 pb-2 text-xs font-medium tracking-wider uppercase first:pt-2;
+  color: color-mix(in srgb, var(--color-base-content) 40%, transparent);
 }
-
-.dashboard-section-title {
-  @apply mt-1 mb-3 px-1 text-lg font-semibold;
-}
-
 .settings-grid {
   @apply bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl;
 }
@@ -55,56 +40,17 @@ div {
     border-bottom: none;
   }
   .setting-item-label {
-    @apply flex-1 text-sm font-medium;
+    @apply flex-1 text-sm;
     svg {
-      @apply inline-block;
+      @apply text-base-content/40 inline-block;
     }
   }
 }
 
-.setting-panel-row {
-  @apply border-base-border block min-h-11 border-b px-4 py-3;
-  &:last-child {
-    border-bottom: none;
-  }
+/* 编辑模式下：已隐藏的设置项整体置灰，仅保留 +/- 控制可交互 */
+.setting-item:has(> .vis-toggle[data-hidden='true']) > :not(.vis-toggle) {
+  @apply pointer-events-none opacity-40;
 }
-
-.dashboard-input {
-  @apply bg-base-200/70 text-base-content/60 min-w-0 flex-1 border-transparent shadow-none;
-}
-
-.dashboard-action-btn {
-  @apply bg-base-200/70 hover:bg-base-200/80 border-transparent shadow-none;
-  font-weight: 600;
-}
-
-.dashboard-note {
-  @apply bg-base-200/70 text-base-content/60 rounded-lg px-3 py-2 text-sm leading-6;
-}
-
-.dashboard-log-block {
-  @apply bg-base-200/70 text-base-content/60 rounded-box h-full min-h-0 overflow-auto p-3 text-xs leading-5 whitespace-pre-wrap;
-}
-
-.core-status-box {
-  @apply border-base-content/20 bg-base-100 flex h-9 w-full min-w-0 items-center gap-3 rounded-lg border px-3 pr-4 shadow-none;
-}
-
-.core-top-button {
-  @apply btn btn-sm !h-[34px] !min-h-[34px] w-[72px] !gap-1 rounded-lg !px-2 text-sm leading-none whitespace-nowrap;
-}
-
-.core-top-button.btn-primary:not(:disabled) {
-  background-color: var(--color-primary) !important;
-  color: var(--color-primary-content) !important;
-}
-
-.core-top-button.btn-warning:not(:disabled) {
-  background-color: var(--color-warning) !important;
-  color: var(--color-warning-content) !important;
-}
-
-.core-top-button.btn-success:not(:disabled) {
-  background-color: var(--color-success) !important;
-  color: var(--color-success-content) !important;
+.settings-category--hidden > .settings-category-body {
+  @apply pointer-events-none opacity-40;
 }

@@ -1,4 +1,4 @@
-import { fetchMemoryAPI, fetchTrafficAPI } from '@/api'
+import { fetchMemoryAPI, fetchTrafficAPI } from '@/assembly/overview'
 import { ref, watch } from 'vue'
 import { activeConnections } from './connections'
 
@@ -6,6 +6,7 @@ export const timeSaved = 60
 const initValue = new Array(timeSaved).fill(0).map((v, i) => ({ name: i, value: v }))
 
 export const memory = ref<number>(0)
+export const goroutines = ref<number>(0)
 export const memoryHistory = ref([...initValue])
 export const connectionsHistory = ref([...initValue])
 
@@ -25,6 +26,7 @@ export const initSatistic = () => {
 
   const { data: memoryWsData, close: memoryWsClose } = fetchMemoryAPI<{
     inuse: number
+    goroutines?: number
   }>()
   const unwatchMemory = watch(
     () => memoryWsData.value,
@@ -37,6 +39,7 @@ export const initSatistic = () => {
       }
 
       memory.value = data.inuse
+      goroutines.value = data.goroutines ?? 0
       memoryHistory.value.push({
         value: data.inuse,
         name: timestamp,

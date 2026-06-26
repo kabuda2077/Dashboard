@@ -1,4 +1,8 @@
-import { blockConnectionByIdAPI, disconnectByIdAPI } from '@/api'
+import {
+  blockConnectionByIdAPI,
+  disconnectByIdAPI,
+  getConnectionDisplayValue,
+} from '@/assembly/connections'
 import { useBounceOnVisible } from '@/composables/bouncein'
 import { useConnections } from '@/composables/connections'
 import {
@@ -6,7 +10,7 @@ import {
   CONNECTIONS_TABLE_ACCESSOR_KEY,
   PROXY_CHAIN_DIRECTION,
 } from '@/constant'
-import { getConnectionDisplayValue } from '@/helper/connection'
+import { getConnectionChains, getConnectionSmartBlock } from '@/helper'
 import { connectionFilter, connectionTabShow } from '@/store/connections'
 import { connectionCardLines, proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import type { Connection } from '@/types'
@@ -39,7 +43,7 @@ export default defineComponent<{
 
     return () => {
       const conn = props.conn
-      const metadata = conn.metadata
+      const chains = getConnectionChains(conn)
       const displayOptions = {
         mode: 'card' as const,
         proxyChainDirection: proxyChainDirection.value,
@@ -107,16 +111,16 @@ export default defineComponent<{
           >
             {
               <ProxyName
-                name={last(conn.chains)!}
+                name={last(chains)!}
                 filter={connectionFilter.value}
               />
             }
-            {last(conn.chains) !== first(conn.chains) && (
+            {last(chains) !== first(chains) && (
               <>
                 <ArrowRightCircleIcon class="h-4 w-4 shrink-0"></ArrowRightCircleIcon>
                 {
                   <ProxyName
-                    name={first(conn.chains)!}
+                    name={first(chains)!}
                     filter={connectionFilter.value}
                   />
                 }
@@ -168,6 +172,21 @@ export default defineComponent<{
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser)}
           </div>
         ),
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol]: (
+          <div class="whitespace-nowrap">
+            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol)}
+          </div>
+        ),
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType]: (
+          <div class="whitespace-nowrap">
+            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType)}
+          </div>
+        ),
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound]: (
+          <div class="whitespace-nowrap">
+            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound)}
+          </div>
+        ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.Close]: (() => {
           const closeButton = (
             <button
@@ -181,7 +200,7 @@ export default defineComponent<{
             </button>
           )
 
-          if (metadata.smartBlock === 'normal') {
+          if (getConnectionSmartBlock(conn) === 'normal') {
             const degradeButton = (
               <button
                 class="btn btn-circle btn-xs"
@@ -205,7 +224,9 @@ export default defineComponent<{
       }
       return (
         <div
-          class={['scroller-item flex cursor-pointer flex-col gap-1 px-3 py-2']}
+          class={[
+            'scroller-item text-base-content/65 flex cursor-pointer flex-col gap-1 px-3 py-2',
+          ]}
           onClick={() => handlerInfo(conn)}
         >
           {connectionCardLines.value.map((line) => (

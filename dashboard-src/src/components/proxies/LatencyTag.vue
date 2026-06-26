@@ -10,7 +10,7 @@
   >
     <span
       v-if="loading"
-      class="loading loading-dots loading-xs text-base-content/60"
+      class="loading loading-dots loading-xs text-base-content/80"
     ></span>
     <BoltIcon
       v-else-if="latency === NOT_CONNECTED || !latency"
@@ -29,7 +29,7 @@
 import { NOT_CONNECTED } from '@/constant'
 import { getColorForLatency } from '@/helper'
 import { useTooltip } from '@/helper/tooltip'
-import { getHistoryByName, getLatencyByName } from '@/store/proxies'
+import { getHistoryByName, getLatencyByName } from '@/assembly/proxies'
 import { BoltIcon } from '@heroicons/vue/24/outline'
 import { CountUp } from 'countup.js'
 import dayjs from 'dayjs'

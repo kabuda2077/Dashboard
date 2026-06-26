@@ -59,7 +59,7 @@
 
 <script setup lang="ts">
 import { isHiddenGroup } from '@/helper'
-import { hiddenGroupMap, proxyMap } from '@/store/proxies'
+import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { manageHiddenGroup } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'

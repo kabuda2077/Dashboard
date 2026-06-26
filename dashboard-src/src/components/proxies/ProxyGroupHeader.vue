@@ -35,7 +35,7 @@
       @click.stop="emit('latency-test')"
     />
   </div>
-  <div class="mt-2 flex items-center gap-2">
+  <div class="text-base-content/70 mt-2 flex items-center gap-2">
     <div class="flex flex-1 items-center gap-2 truncate text-sm">
       <ProxyGroupNow :name="name" />
     </div>
@@ -49,8 +49,9 @@
 import { isHiddenGroup } from '@/helper'
 import { checkTruncation } from '@/helper/tooltip'
 import { prettyBytesHelper } from '@/helper/utils'
+import { getConnectionChains } from '@/helper'
 import { activeConnections } from '@/store/connections'
-import { hiddenGroupMap, proxyMap } from '@/store/proxies'
+import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { manageHiddenGroup, proxyGroupIconMargin, proxyGroupIconSize } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
@@ -74,7 +75,7 @@ const proxyGroup = computed(() => proxyMap.value[props.name])
 
 const downloadTotal = computed(() => {
   return activeConnections.value
-    .filter((conn) => conn.chains.includes(props.name))
+    .filter((conn) => getConnectionChains(conn).includes(props.name))
     .reduce((total, conn) => total + conn.downloadSpeed, 0)
 })
 

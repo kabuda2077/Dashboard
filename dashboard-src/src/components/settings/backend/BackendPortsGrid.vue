@@ -28,7 +28,7 @@
 </template>
 
 <script setup lang="ts">
-import { configs, updateConfigs } from '@/store/config'
+import { configs, updateConfigs } from '@/assembly/config'
 
 type PortKey = 'mixed-port' | 'port' | 'socks-port' | 'redir-port' | 'tproxy-port'
 

@@ -2,7 +2,6 @@ import type { LANG_MESSAGE } from './en'
 
 const zh: LANG_MESSAGE = {
   // Navigation
-  core: '内核',
   setup: '配置',
   overview: '概览',
   proxies: '代理',
@@ -13,8 +12,12 @@ const zh: LANG_MESSAGE = {
   tailscale: 'Tailscale',
   terminal: '终端',
 
+  // 后端类型
   default: '默认',
-  clashApiChannel: 'Clash API',
+  backendType: '后端类型',
+  clashApi: 'Clash API',
+  singboxApi: 'sing-box API',
+  singboxConnectionFailed: '无法连接 sing-box 原生 API',
   skip: '跳过',
   // 工具页
   networkQuality: '网络质量',
@@ -100,6 +103,45 @@ const zh: LANG_MESSAGE = {
   fontSize: '字体大小',
   defaultFont: '默认',
 
+  // USB/IP
+  usbip: 'USB/IP',
+  usbipNoServer: '未找到 usbip-server',
+  usbipServerTagged: 'USB/IP：{tag}',
+  usbipDevices: '设备',
+  usbipConnectDevice: '连接设备',
+  usbipAuthorizedDevices: '已授权设备',
+  usbipOtherDevice: '其他设备…',
+  usbipDetach: '断开',
+  usbipPickDeviceHint: '选择一个 USB 设备，通过此 usbip-server 共享。',
+  usbipNoDevicesShared: '尚未共享任何设备。',
+  usbipInsecureContext: 'WebUSB 需要安全上下文，请通过 localhost 或 HTTPS 打开仪表盘。',
+  usbipUnsupportedBrowser:
+    '要共享设备，请使用基于 Chromium 的浏览器访问仪表盘，或在 macOS / Android 上使用 sing-box 图形客户端。',
+  usbipClaimBlockedClass:
+    '无法共享“{label}”：浏览器禁止共享该设备的接口类别（如 HID、存储、音频或视频）。',
+  usbipClaimBlockedBusy:
+    '无法共享“{label}”：其他程序或驱动正在占用它。请先关闭占用它的程序，然后重试。',
+  usbipStateAttaching: '连接中...',
+  usbipStateReady: '就绪',
+  usbipStateError: '错误',
+  usbipStateIdle: '空闲',
+  usbipStateAttached: '已挂载',
+  usbipStateUnavailable: '不可用',
+  usbipIdentity: '标识',
+  usbipProduct: '产品',
+  usbipSerialNumber: '序列号',
+  usbipVersion: '版本',
+  usbipConnection: '连接',
+  usbipBusId: '总线 ID',
+  usbipBackend: '后端',
+  usbipSpeed: '速率',
+  usbipBusDevice: '总线 / 设备',
+  usbipClassInterfaces: '类别与接口',
+  usbipDeviceClass: '设备类别',
+  usbipDefinedAtInterface: '在接口层定义',
+  usbipConfigurations: '配置数',
+  usbipInterfaceN: '接口 {n}',
+
   // Shared labels and actions
   protocol: '协议',
   host: '主机',
@@ -144,6 +186,13 @@ const zh: LANG_MESSAGE = {
   destination: '解析地址',
   destinationType: '解析类型',
   inboundUser: '入站用户',
+  outboundType: '出站类型',
+  fromOutbound: '来源出站',
+  basic: '基本',
+  traffic: '流量',
+  sourceAndDestination: '来源与目的',
+  rawData: '原始数据',
+  geoInfo: '归属信息',
   dl: '下载',
   ul: '上传',
   dlSpeed: '下载速度',
@@ -420,6 +469,8 @@ const zh: LANG_MESSAGE = {
   showAllPreset: '全部显示',
   minimalPreset: '精简显示',
   settingsPageTwoColumns: '双列布局',
+  moveUp: '上移',
+  moveDown: '下移',
   aggregateBy: '聚合方式',
   aggregateBySourceIP: '按源IP',
   aggregateByDestination: '按目标地址',

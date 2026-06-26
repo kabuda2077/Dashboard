@@ -4,9 +4,12 @@
     <OverviewCard />
   </template>
 
-  <div class="flex flex-col gap-3 text-sm">
+  <div
+    v-if="hasVisibleItems"
+    class="flex flex-col gap-3 text-sm"
+  >
     <div class="settings-grid">
-      <div class="setting-item">
+      <SettingItem :setting-key="k.splitOverviewPage">
         <div class="setting-item-label">
           {{ $t('splitOverviewPage') }}
         </div>
@@ -15,8 +18,8 @@
           type="checkbox"
           v-model="splitOverviewPage"
         />
-      </div>
-      <div class="setting-item">
+      </SettingItem>
+      <SettingItem :setting-key="k.autoIPCheckWhenStart">
         <div class="setting-item-label">
           {{ $t('autoIPCheckWhenStart') }}
         </div>
@@ -25,8 +28,8 @@
           type="checkbox"
           v-model="autoIPCheck"
         />
-      </div>
-      <div class="setting-item">
+      </SettingItem>
+      <SettingItem :setting-key="k.autoConnectionCheckWhenStart">
         <div class="setting-item-label">
           {{ $t('autoConnectionCheckWhenStart') }}
         </div>
@@ -35,8 +38,11 @@
           type="checkbox"
           v-model="autoConnectionCheck"
         />
-      </div>
-      <div class="setting-item max-md:hidden">
+      </SettingItem>
+      <SettingItem
+        :setting-key="k.showStatisticsWhenSidebarCollapsed"
+        class="max-md:hidden"
+      >
         <div class="setting-item-label">
           {{ $t('showStatisticsWhenSidebarCollapsed') }}
         </div>
@@ -45,8 +51,11 @@
           type="checkbox"
           v-model="showStatisticsWhenSidebarCollapsed"
         />
-      </div>
-      <div class="setting-item max-md:hidden">
+      </SettingItem>
+      <SettingItem
+        :setting-key="k.numberOfChartsInSidebar"
+        class="max-md:hidden"
+      >
         <div class="setting-item-label">
           {{ $t('numberOfChartsInSidebar') }}
         </div>
@@ -62,12 +71,16 @@
             {{ opt }}
           </option>
         </select>
-      </div>
+      </SettingItem>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import SettingItem from '@/components/settings/SettingItem.vue'
+import { useHasAnyVisibleSetting } from '@/composables/settings'
+import { getItemKeysByCategory, OVERVIEW_ITEM_KEYS } from '@/config/settingsItems'
+import { SETTINGS_MENU_KEY } from '@/constant'
 import {
   autoConnectionCheck,
   autoIPCheck,
@@ -76,4 +89,9 @@ import {
   splitOverviewPage,
 } from '@/store/settings'
 import OverviewCard from './OverviewCard.vue'
+
+const k = OVERVIEW_ITEM_KEYS
+
+const overviewGridKeys = getItemKeysByCategory(SETTINGS_MENU_KEY.overview).slice(2)
+const hasVisibleItems = useHasAnyVisibleSetting(overviewGridKeys)
 </script>

@@ -112,7 +112,7 @@
           <tr v-if="rows.length === 0">
             <td
               :colspan="tanstackTable.getVisibleLeafColumns().length"
-              class="text-base-content/60 h-90"
+              class="text-base-content/50 h-90"
             >
               <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                 <CircleStackIcon class="h-10 w-10 opacity-60" />
@@ -204,7 +204,11 @@
 </template>
 
 <script setup lang="ts">
-import { blockConnectionByIdAPI, disconnectByIdAPI } from '@/api'
+import {
+  blockConnectionByIdAPI,
+  disconnectByIdAPI,
+  getConnectionDisplayValue,
+} from '@/assembly/connections'
 import { useConnections } from '@/composables/connections'
 import {
   CONNECTION_TAB_TYPE,
@@ -213,7 +217,13 @@ import {
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
 } from '@/constant'
-import { getConnectionDisplayValue } from '@/helper/connection'
+import {
+  getConnectionChains,
+  getConnectionDownload,
+  getConnectionSmartBlock,
+  getConnectionStart,
+  getConnectionUpload,
+} from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
 import { connectionFilter, connectionTabShow, renderConnections } from '@/store/connections'
@@ -323,7 +333,7 @@ const columns: ColumnDef<Connection>[] = [
         ],
       )
 
-      if (row.original.metadata.smartBlock === 'normal') {
+      if (getConnectionSmartBlock(row.original) === 'normal') {
         const degradeButton = h(
           'button',
           {
@@ -387,7 +397,7 @@ const columns: ColumnDef<Connection>[] = [
     cell: ({ row }) => {
       const chains: VNode[] = []
       const isReverse = proxyChainDirection.value === PROXY_CHAIN_DIRECTION.REVERSE
-      let originChains = row.original.chains
+      let originChains = getConnectionChains(row.original)
 
       if (!showFullProxyChain.value && originChains.length > 2) {
         originChains = [originChains[0], originChains[originChains.length - 1]]
@@ -422,7 +432,10 @@ const columns: ColumnDef<Connection>[] = [
     accessorFn: (original) =>
       getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.Outbound),
     cell: ({ row }) => {
-      return h(ProxyName, { name: row.original.chains[0], filter: connectionFilter.value })
+      return h(ProxyName, {
+        name: getConnectionChains(row.original)[0],
+        filter: connectionFilter.value,
+      })
     },
   },
   {
@@ -433,7 +446,8 @@ const columns: ColumnDef<Connection>[] = [
       getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime),
     cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime),
     sortingFn: (prev, next) =>
-      dayjs(next.original.start).valueOf() - dayjs(prev.original.start).valueOf(),
+      dayjs(getConnectionStart(next.original)).valueOf() -
+      dayjs(getConnectionStart(prev.original)).valueOf(),
   },
   {
     header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed),
@@ -463,7 +477,8 @@ const columns: ColumnDef<Connection>[] = [
     accessorFn: (original) =>
       getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.Download),
     cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.Download),
-    sortingFn: (prev, next) => prev.original.download - next.original.download,
+    sortingFn: (prev, next) =>
+      getConnectionDownload(prev.original) - getConnectionDownload(next.original),
   },
   {
     header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.Upload),
@@ -472,7 +487,8 @@ const columns: ColumnDef<Connection>[] = [
     id: CONNECTIONS_TABLE_ACCESSOR_KEY.Upload,
     accessorFn: (original) => getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.Upload),
     cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.Upload),
-    sortingFn: (prev, next) => prev.original.upload - next.original.upload,
+    sortingFn: (prev, next) =>
+      getConnectionUpload(prev.original) - getConnectionUpload(next.original),
   },
   {
     header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP),
@@ -515,6 +531,27 @@ const columns: ColumnDef<Connection>[] = [
     accessorFn: (original) =>
       getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser),
     cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser),
+  },
+  {
+    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol),
+    id: CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol,
+    accessorFn: (original) =>
+      getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol),
+    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol),
+  },
+  {
+    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType),
+    id: CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType,
+    accessorFn: (original) =>
+      getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType),
+    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType),
+  },
+  {
+    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound),
+    id: CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound,
+    accessorFn: (original) =>
+      getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound),
+    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound),
   },
 ]
 

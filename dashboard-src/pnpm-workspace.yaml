@@ -1,0 +1,6 @@
+allowBuilds:
+  '@bufbuild/buf': true
+  esbuild: true
+onlyBuiltDependencies:
+  - '@bufbuild/buf'
+  - esbuild

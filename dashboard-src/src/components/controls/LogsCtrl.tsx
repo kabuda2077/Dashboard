@@ -1,4 +1,4 @@
-import { isSingBox } from '@/api'
+import { isSingBoxCore } from '@/assembly/version'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
@@ -20,8 +20,8 @@ import {
   PauseIcon,
   PlayIcon,
   QuestionMarkCircleIcon,
-  TrashIcon,
   WrenchScrewdriverIcon,
+  XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash'
@@ -29,7 +29,6 @@ import { computed, defineComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
-import DropdownSelect from '../common/DropdownSelect.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({
@@ -58,7 +57,7 @@ export default defineComponent({
     watch(logFilter, insertLogSearchHistory)
 
     const logLevels = computed(() => {
-      if (isSingBox.value) {
+      if (isSingBoxCore.value) {
         return Object.values(LOG_LEVEL)
       }
       return [LOG_LEVEL.Debug, LOG_LEVEL.Info, LOG_LEVEL.Warning, LOG_LEVEL.Error, LOG_LEVEL.Silent]
@@ -68,7 +67,7 @@ export default defineComponent({
       const types: string[] = []
       const levels: string[] = []
 
-      if (isSingBox.value) {
+      if (isSingBoxCore.value) {
         for (const log of logs.value) {
           const startIndex = log.payload.startsWith('[') ? log.payload.indexOf(']') + 2 : 0
           const endIndex = log.payload.indexOf(':', startIndex)
@@ -106,28 +105,6 @@ export default defineComponent({
         types: types.sort(),
       }
     })
-    const logLevelOptions = computed(() =>
-      logLevels.value.map((level) => ({
-        label: level,
-        value: level,
-      })),
-    )
-    const logTypeOptions = computed(() => [
-      {
-        label: t('all'),
-        value: '',
-      },
-      ...logFilterOptions.value.levels.map((level) => ({
-        key: `level-${level}`,
-        label: level,
-        value: level,
-      })),
-      ...logFilterOptions.value.types.map((type) => ({
-        key: `type-${type}`,
-        label: type,
-        value: type,
-      })),
-    ])
 
     const downloadAllLogs = () => {
       const blob = new Blob(
@@ -157,21 +134,26 @@ export default defineComponent({
 
     return () => {
       const levelSelect = (
-        <DropdownSelect
-          class="join-item min-w-30"
-          modelValue={logLevel.value}
-          options={logLevelOptions.value}
-          onUpdate:modelValue={(value) => {
-            logLevel.value = value as LOG_LEVEL
-            initLogs()
-          }}
-        />
+        <select
+          class={['join-item select select-sm min-w-30']}
+          v-model={logLevel.value}
+          onChange={initLogs}
+        >
+          {logLevels.value.map((opt) => (
+            <option
+              key={opt}
+              value={opt}
+            >
+              {opt}
+            </option>
+          ))}
+        </select>
       )
       const searchInput = (
         <TextInput
           v-model={logFilter.value}
           beforeClose={true}
-          class={isLargeCtrlsBar.value ? 'ctrls-search' : 'flex-1'}
+          class="flex-1"
           placeholder={`${t('search')} | Regex`}
           clearable={true}
           menus={logSearchHistory.value}
@@ -181,14 +163,35 @@ export default defineComponent({
       )
 
       const logTypeSelect = (
-        <DropdownSelect
+        <select
           class={[
+            'join-item select select-sm',
             isLargeCtrlsBar.value ? 'w-36' : 'w-24 max-w-40 flex-1',
           ]}
-          modelValue={logTypeFilter.value}
-          options={logTypeOptions.value}
-          onUpdate:modelValue={(value) => (logTypeFilter.value = value as string)}
-        />
+          v-model={logTypeFilter.value}
+        >
+          <option value="">{t('all')}</option>
+          <optgroup label={t('logLevel')}>
+            {logFilterOptions.value.levels.map((opt) => (
+              <option
+                key={opt}
+                value={opt}
+              >
+                {opt}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label={t('logType')}>
+            {logFilterOptions.value.types.map((opt) => (
+              <option
+                key={opt}
+                value={opt}
+              >
+                {opt}
+              </option>
+            ))}
+          </optgroup>
+        </select>
       )
 
       const settingsModal = (
@@ -283,7 +286,7 @@ export default defineComponent({
             class="btn btn-circle btn-sm"
             onClick={() => (logs.value = [])}
           >
-            <TrashIcon class="h-4 w-4" />
+            <XMarkIcon class="h-4 w-4" />
           </button>
         </div>
       )
@@ -294,16 +297,16 @@ export default defineComponent({
             <div class="join flex-1">{levelSelect}</div>
             {buttons}
           </div>
-          <div class="flex items-center gap-2">
+          <div class="join">
             {logTypeSelect}
             {searchInput}
           </div>
         </div>
       ) : (
-        <div class="flex items-center gap-2 p-2">
+        <div class="flex items-center justify-between gap-2 p-2">
           <div class="flex items-center gap-2">
             {levelSelect}
-            <div class="flex items-center gap-2">
+            <div class="join w-96">
               {logTypeSelect}
               {searchInput}
             </div>

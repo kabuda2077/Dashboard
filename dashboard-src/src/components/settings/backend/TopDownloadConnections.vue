@@ -46,8 +46,8 @@
 </template>
 
 <script setup lang="ts">
+import { getConnectionDisplayValue } from '@/assembly/connections'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
-import { getConnectionDisplayValue } from '@/helper/connection'
 import { activeConnections } from '@/store/connections'
 import { proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import type { Connection } from '@/types'
@@ -65,8 +65,6 @@ const displayLimit = 4
 
 const cloneConnection = (connection: Connection, downloadSpeed = connection.downloadSpeed) => ({
   ...connection,
-  chains: [...connection.chains],
-  metadata: { ...connection.metadata },
   downloadSpeed,
 })
 

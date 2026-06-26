@@ -1,14 +1,21 @@
+import type { Connection as SingboxConnectionRawMessage } from '@/gen/daemon/started_service_pb'
+
+export type BackendType = 'clash' | 'singbox'
+
 export type Backend = {
+  // 后端登录类型:'clash' 走 Clash REST/WS API,'singbox' 走 sing-box native gRPC。
+  // 旧记录缺省按 'clash' 迁移。
+  type: BackendType
+  protocol: string
   host: string
   port: string
-  secondaryPath: string
-  password: string
-  protocol: string
+  secondaryPath: string // 仅 clash
+  password: string // 通用:Clash secret / sing-box gRPC Bearer token
   uuid: string
   label?: string
-  disableUpgradeCore?: boolean
-  disableTunMode?: boolean
-  readOnlyTunEnabled?: boolean
+  disableUpgradeCore?: boolean // 仅 clash
+  disableTunMode?: boolean // 仅 clash
+  readOnlyTunEnabled?: boolean // 桌面壳通过 Clash-compatible API 连接 sing-box 时展示只读 TUN 状态
 }
 
 export type Config = {
@@ -26,7 +33,7 @@ export type Config = {
   ipv6: boolean
   tun: {
     enable: boolean
-  } | null
+  }
 }
 
 export type History = {
@@ -52,6 +59,7 @@ export type Proxy = {
   fixed?: string
   icon: string
   hidden?: boolean
+  selectable?: boolean
   testUrl?: string
   'dialer-proxy'?: string
   'provider-name'?: string
@@ -102,14 +110,14 @@ export type RuleProvider = {
   vehicleType: string
 }
 
-export type ConnectionRawMessage = {
+export type ClashConnectionRawMessage = {
   id: string
   download: number
   upload: number
   chains: string[]
   rule: string
   rulePayload: string
-  start: string
+  start: string | number
   metadata: {
     destinationGeoIP: string
     destinationIP: string
@@ -139,6 +147,8 @@ export type ConnectionRawMessage = {
   }
 }
 
+export type ConnectionRawMessage = ClashConnectionRawMessage | SingboxConnectionRawMessage
+
 export type Connection = ConnectionRawMessage & {
   downloadSpeed: number
   uploadSpeed: number
@@ -150,6 +160,26 @@ export type Log = {
 }
 
 export type LogWithSeq = Log & { seq: number; time: string }
+
+export type DNSQuery = {
+  AD: boolean
+  CD: boolean
+  RA: boolean
+  RD: boolean
+  TC: boolean
+  status: number
+  Question: {
+    Name: string
+    Qtype: number
+    Qclass: number
+  }[]
+  Answer?: {
+    TTL: number
+    data: string
+    name: string
+    type: number
+  }[]
+}
 
 export type SourceIPLabel = {
   key: string

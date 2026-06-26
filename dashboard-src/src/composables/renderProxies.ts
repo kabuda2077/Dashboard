@@ -1,6 +1,6 @@
+import { getLatencyByName } from '@/assembly/proxies'
 import { NOT_CONNECTED, PROXY_SORT_TYPE } from '@/constant'
 import { isProxyGroup } from '@/helper'
-import { getLatencyByName } from '@/store/proxies'
 import {
   hideUnavailableProxies,
   proxyGroupFilterMap,

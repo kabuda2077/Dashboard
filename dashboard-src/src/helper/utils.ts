@@ -17,7 +17,7 @@ export const prettyBytesHelper = (bytes: number, opts?: Options) => {
   })
 }
 
-export const fromNow = (timestamp: string) => {
+export const fromNow = (timestamp: string | number) => {
   return dayjs(timestamp).fromNow()
 }
 
@@ -61,12 +61,28 @@ export const resetSettings = () => {
   window.location.reload()
 }
 
-export const getUrlFromBackend = (end: Omit<Backend, 'uuid'>) => {
+export const getUrlFromBackend = (end: {
+  protocol: string
+  host: string
+  port: string
+  secondaryPath?: string
+}) => {
   return `${end.protocol}://${end.host}:${end.port}${end.secondaryPath || ''}`
 }
 
+// sing-box native 后端复用顶层连接字段作为 gRPC baseUrl(secondaryPath 留空)。
+export const getSingboxUrlFromBackend = (
+  end: Pick<Backend, 'type' | 'protocol' | 'host' | 'port'>,
+) => {
+  if (end.type !== 'singbox' || !end.host) return ''
+  return `${end.protocol}://${end.host}:${end.port}`
+}
+
+export const getSingboxSecret = (end: Pick<Backend, 'type' | 'password'>) =>
+  end.type === 'singbox' ? end.password || '' : ''
+
 export const getLabelFromBackend = (end: Omit<Backend, 'uuid'>) => {
-  return end.label || getUrlFromBackend(end)
+  return end.label || `${end.host}:${end.port}`
 }
 
 export const getMinCardWidth = (size: PROXY_CARD_SIZE) => {
@@ -151,9 +167,7 @@ export const getBackendFromUrl = () => {
       host: query.get('hostname') as string,
       port: query.get('port') as string,
       password: query.get('secret') || '',
-      label:
-        query.get('label') ||
-        (query.get('coreType') === 'sing-box' ? '本机 sing-box' : '本机内核'),
+      label: query.get('label') || '',
       disableUpgradeCore:
         query.get('disableUpgradeCore') === '1' || query.get('disableUpgradeCore') === 'core',
       disableTunMode: query.get('disableTunMode') === '1' || query.get('disableTunMode') === 'tun',

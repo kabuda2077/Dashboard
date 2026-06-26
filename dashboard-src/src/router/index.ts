@@ -1,4 +1,4 @@
-import { capabilities } from '@/composables/backendCapability'
+import { capabilities } from '@/assembly/backend'
 import { ROUTE_NAME } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { i18n } from '@/i18n'

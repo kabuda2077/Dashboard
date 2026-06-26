@@ -50,6 +50,7 @@ const backendFromApiUrl = (
   try {
     const url = new URL(apiUrl)
     return {
+      type: 'clash',
       protocol: url.protocol.replace(':', ''),
       host: url.hostname,
       port: url.port || (url.protocol === 'https:' ? '443' : '80'),
@@ -295,7 +296,8 @@ const installWindowChromeBridge = () => {
 }
 
 if (!(window as HostWindow).chrome?.webview) {
-  applyBackend(getBackendFromUrl())
+  const backend = getBackendFromUrl()
+  applyBackend(backend ? { type: 'clash', ...backend } : null)
 }
 
 installWindowChromeBridge()

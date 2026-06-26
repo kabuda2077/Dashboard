@@ -2,7 +2,6 @@ import type { LANG_MESSAGE } from './en'
 
 const zhTW: LANG_MESSAGE = {
   // Navigation
-  core: '核心',
   setup: '配置',
   overview: '概覽',
   proxies: '代理',
@@ -13,8 +12,12 @@ const zhTW: LANG_MESSAGE = {
   tailscale: 'Tailscale',
   terminal: '終端',
 
+  // 後端類型
   default: '預設',
-  clashApiChannel: 'Clash API',
+  backendType: '後端類型',
+  clashApi: 'Clash API',
+  singboxApi: 'sing-box API',
+  singboxConnectionFailed: '無法連線 sing-box 原生 API',
   skip: '跳過',
   // 工具頁
   networkQuality: '網路品質',
@@ -100,6 +103,45 @@ const zhTW: LANG_MESSAGE = {
   fontSize: '字型大小',
   defaultFont: '預設',
 
+  // USB/IP
+  usbip: 'USB/IP',
+  usbipNoServer: '未找到 usbip-server',
+  usbipServerTagged: 'USB/IP：{tag}',
+  usbipDevices: '裝置',
+  usbipConnectDevice: '連接裝置',
+  usbipAuthorizedDevices: '已授權裝置',
+  usbipOtherDevice: '其他裝置…',
+  usbipDetach: '中斷',
+  usbipPickDeviceHint: '選擇一個 USB 裝置，透過此 usbip-server 分享。',
+  usbipNoDevicesShared: '尚未分享任何裝置。',
+  usbipInsecureContext: 'WebUSB 需要安全內容，請透過 localhost 或 HTTPS 開啟儀表板。',
+  usbipUnsupportedBrowser:
+    '要提供裝置，請使用基於 Chromium 的瀏覽器存取儀表板，或在 macOS / Android 上使用 sing-box 圖形用戶端。',
+  usbipClaimBlockedClass:
+    '無法分享「{label}」：瀏覽器禁止分享此裝置的介面類別（如 HID、儲存、音訊或視訊）。',
+  usbipClaimBlockedBusy:
+    '無法分享「{label}」：其他程式或驅動正在使用它。請先關閉占用它的程式，然後重試。',
+  usbipStateAttaching: '連接中...',
+  usbipStateReady: '就緒',
+  usbipStateError: '錯誤',
+  usbipStateIdle: '閒置',
+  usbipStateAttached: '已掛載',
+  usbipStateUnavailable: '不可用',
+  usbipIdentity: '識別資訊',
+  usbipProduct: '產品',
+  usbipSerialNumber: '序號',
+  usbipVersion: '版本',
+  usbipConnection: '連接',
+  usbipBusId: '匯流排 ID',
+  usbipBackend: '後端',
+  usbipSpeed: '速率',
+  usbipBusDevice: '匯流排 / 裝置',
+  usbipClassInterfaces: '類別與介面',
+  usbipDeviceClass: '裝置類別',
+  usbipDefinedAtInterface: '在介面層定義',
+  usbipConfigurations: '組態數',
+  usbipInterfaceN: '介面 {n}',
+
   // Shared labels and actions
   protocol: '協議',
   host: '主機',
@@ -144,6 +186,13 @@ const zhTW: LANG_MESSAGE = {
   destination: '解析地址',
   destinationType: '解析類型',
   inboundUser: '入站用戶',
+  outboundType: '出站類型',
+  fromOutbound: '來源出站',
+  basic: '基本',
+  traffic: '流量',
+  sourceAndDestination: '來源與目的',
+  rawData: '原始資料',
+  geoInfo: '歸屬資訊',
   dl: '下載',
   ul: '上傳',
   dlSpeed: '下載速度',
@@ -420,6 +469,8 @@ const zhTW: LANG_MESSAGE = {
   showAllPreset: '全部顯示',
   minimalPreset: '精簡顯示',
   settingsPageTwoColumns: '雙列佈局',
+  moveUp: '上移',
+  moveDown: '下移',
   aggregateBy: '聚合方式',
   aggregateBySourceIP: '按源IP',
   aggregateByDestination: '按目標地址',

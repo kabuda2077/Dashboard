@@ -143,20 +143,18 @@
 import {
   flushDNSCacheAPI,
   flushFakeIPAPI,
-  flushSmartGroupWeightsAPI,
-  isSingBox,
-  mihomo,
   reloadConfigsAPI,
   updateGeoDataAPI,
-} from '@/api'
+} from '@/assembly/config'
+import { isSingBoxCore as isSingBox, mihomo } from '@/assembly/version'
 import BackendVersion from '@/components/common/BackendVersion.vue'
 import TopDownloadConnections from '@/components/settings/backend/TopDownloadConnections.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { showNotification } from '@/helper/notification'
-import { configs, fetchConfigs, updateConfigs } from '@/store/config'
-import { fetchProxies, hasSmartGroup } from '@/store/proxies'
-import { fetchRules } from '@/store/rules'
+import { configs, fetchConfigs, updateConfigs } from '@/assembly/config'
+import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
+import { fetchRules } from '@/assembly/rules'
 import { displayAllFeatures } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import { computed, inject, ref } from 'vue'

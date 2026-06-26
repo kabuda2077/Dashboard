@@ -11,7 +11,10 @@ export const usePaddingForViews = (
 ) => {
   const { offsetTop, offsetBottom } = config
   const paddingTop = computed(() => {
-    return ctrlsBottom.value ? ctrlsBottom.value + offsetTop : 0
+    if (isMiddleScreen.value) {
+      return ctrlsBottom.value + offsetTop
+    }
+    return 0
   })
   const paddingBottom = computed(() => {
     if (isMiddleScreen.value) {
@@ -21,17 +24,13 @@ export const usePaddingForViews = (
   })
 
   const padding = computed(() => {
-    const nextPadding: Record<string, string> = {}
-
-    if (paddingTop.value) {
-      nextPadding.paddingTop = `${paddingTop.value}px`
+    if (isMiddleScreen.value) {
+      return {
+        paddingTop: `${paddingTop.value}px`,
+        paddingBottom: `${paddingBottom.value}px`,
+      }
     }
-
-    if (paddingBottom.value) {
-      nextPadding.paddingBottom = `${paddingBottom.value}px`
-    }
-
-    return nextPadding
+    return {}
   })
 
   return {

@@ -13,7 +13,7 @@
       >
         <template #item="{ element: cardKey }">
           <div class="setting-item mb-2">
-            <Bars3Icon class="drag-handle text-base-content/60 h-5 w-5 shrink-0 cursor-move" />
+            <Bars3Icon class="drag-handle text-base-content/50 h-5 w-5 shrink-0 cursor-move" />
             <div class="setting-item-label">
               {{ $t(cardKeyToLabelMap[cardKey.card] || cardKey.card) }}
             </div>

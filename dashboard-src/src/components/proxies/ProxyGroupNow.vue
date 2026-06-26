@@ -11,20 +11,20 @@
         :class="
           isNowAGroup && 'hover:bg-base-300 hover:-mx-1 hover:rounded-lg hover:px-1 hover:shadow'
         "
-        class="text-xs md:text-sm"
+        class="text-base-content text-xs font-medium md:text-sm"
         @click="handlerClickNow"
       />
       <template v-if="finalOutbound && displayFinalOutbound">
         <ArrowRightCircleIcon class="text-base-content/40 h-3.5 w-3.5 shrink-0" />
         <ProxyName
           :name="finalOutbound"
-          class="text-xs md:text-sm"
+          class="text-base-content text-xs font-medium md:text-sm"
         />
       </template>
     </template>
     <template v-else-if="proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance">
       <CheckCircleIcon class="text-base-content/40 h-3.5 w-3.5 shrink-0" />
-      <span class="text-xs md:text-sm">
+      <span class="text-base-content text-xs font-medium md:text-sm">
         {{ $t('loadBalance') }}
       </span>
     </template>
@@ -35,7 +35,7 @@
 import { PROXY_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import { scrollToGroup } from '@/helper/utils'
-import { getNowProxyNodeName, proxyGroupList, proxyMap } from '@/store/proxies'
+import { getNowProxyNodeName, proxyGroupList, proxyMap } from '@/assembly/proxies'
 import { displayFinalOutbound } from '@/store/settings'
 import { ArrowRightCircleIcon, CheckCircleIcon, LockClosedIcon } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'

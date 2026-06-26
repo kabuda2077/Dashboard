@@ -14,7 +14,7 @@
     />
     <div
       v-if="barData.length === 0"
-      class="text-base-content/60 absolute inset-0 flex items-center justify-center"
+      class="text-base-content/50 absolute inset-0 flex items-center justify-center"
     >
       <div class="text-center">
         <div>{{ t('noData') }}</div>
@@ -34,7 +34,7 @@
 
 <script setup lang="ts">
 import { isMiddleScreen } from '@/helper/utils'
-import { rules } from '@/store/rules'
+import { rules } from '@/assembly/rules'
 import { font, theme } from '@/store/settings'
 import type { Rule } from '@/types'
 import { PauseCircleIcon, PlayCircleIcon } from '@heroicons/vue/24/outline'

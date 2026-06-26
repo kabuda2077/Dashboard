@@ -104,7 +104,7 @@ import {
   tableSize,
   tableWidthMode,
 } from '@/store/settings'
-import { configs } from '@/store/config'
+import { configs } from '@/assembly/config'
 import { computed } from 'vue'
 
 type PortConfigKey = 'mixed-port' | 'port' | 'socks-port' | 'redir-port' | 'tproxy-port'

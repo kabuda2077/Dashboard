@@ -1,6 +1,5 @@
 const en = {
   // Navigation
-  core: 'Core',
   setup: 'Setup',
   overview: 'Overview',
   proxies: 'Proxies',
@@ -11,8 +10,12 @@ const en = {
   tailscale: 'Tailscale',
   terminal: 'Terminal',
 
+  // Backend type
   default: 'Default',
-  clashApiChannel: 'Clash API',
+  backendType: 'Backend Type',
+  clashApi: 'Clash API',
+  singboxApi: 'sing-box API',
+  singboxConnectionFailed: 'Failed to connect to the sing-box native API',
   skip: 'Skip',
   // Tools page
   networkQuality: 'Network Quality',
@@ -98,6 +101,46 @@ const en = {
   fontSize: 'Font Size',
   defaultFont: 'Default',
 
+  // USB/IP
+  usbip: 'USB/IP',
+  usbipNoServer: 'No usbip-server found',
+  usbipServerTagged: 'USB/IP: {tag}',
+  usbipDevices: 'Devices',
+  usbipConnectDevice: 'Connect device',
+  usbipAuthorizedDevices: 'Authorized devices',
+  usbipOtherDevice: 'Other device…',
+  usbipDetach: 'Detach',
+  usbipPickDeviceHint: 'Pick a USB device to share it through this usbip-server.',
+  usbipNoDevicesShared: 'No devices shared yet.',
+  usbipInsecureContext:
+    'WebUSB requires a secure context. Open the dashboard via localhost or over HTTPS.',
+  usbipUnsupportedBrowser:
+    'To provide devices, use a Chromium-based browser with the dashboard, or the sing-box graphical client on macOS or Android.',
+  usbipClaimBlockedClass:
+    "Can't share “{label}”: the browser blocks sharing this device's interface class (such as HID, storage, audio or video).",
+  usbipClaimBlockedBusy:
+    "Can't share “{label}”: another program or driver is using it. Close anything using the device, then try again.",
+  usbipStateAttaching: 'Attaching...',
+  usbipStateReady: 'Ready',
+  usbipStateError: 'Error',
+  usbipStateIdle: 'Idle',
+  usbipStateAttached: 'Attached',
+  usbipStateUnavailable: 'Unavailable',
+  usbipIdentity: 'Identity',
+  usbipProduct: 'Product',
+  usbipSerialNumber: 'Serial number',
+  usbipVersion: 'Version',
+  usbipConnection: 'Connection',
+  usbipBusId: 'Bus ID',
+  usbipBackend: 'Backend',
+  usbipSpeed: 'Speed',
+  usbipBusDevice: 'Bus / Device',
+  usbipClassInterfaces: 'Class & Interfaces',
+  usbipDeviceClass: 'Device class',
+  usbipDefinedAtInterface: 'Defined at interface level',
+  usbipConfigurations: 'Configurations',
+  usbipInterfaceN: 'Interface {n}',
+
   // Shared labels and actions
   protocol: 'Protocol',
   host: 'Host',
@@ -142,6 +185,13 @@ const en = {
   destination: 'Resolved address',
   destinationType: 'Resolved type',
   inboundUser: 'Inbound user',
+  outboundType: 'Outbound type',
+  fromOutbound: 'From outbound',
+  basic: 'Basic',
+  traffic: 'Traffic',
+  sourceAndDestination: 'Source & destination',
+  rawData: 'Raw',
+  geoInfo: 'GeoIP',
   dl: 'DL',
   ul: 'UL',
   dlSpeed: 'DL speed',
@@ -426,6 +476,8 @@ const en = {
   showAllPreset: 'Show all',
   minimalPreset: 'Minimal view',
   settingsPageTwoColumns: 'Two column layout',
+  moveUp: 'Move up',
+  moveDown: 'Move down',
   aggregateBy: 'Aggregate by',
   aggregateBySourceIP: 'By source IP',
   aggregateByDestination: 'By destination',

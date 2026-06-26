@@ -1,3 +1,4 @@
+import { SETTINGS_CATEGORIES } from '@/config/settingsItems'
 import {
   ALL_THEME,
   CONNECTIONS_TABLE_ACCESSOR_KEY,
@@ -16,6 +17,7 @@ import {
   PROXY_PREVIEW_TYPE,
   PROXY_SEARCH_MODE,
   PROXY_SORT_TYPE,
+  SETTINGS_MENU_KEY,
   SPEEDTEST_MODE,
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
@@ -138,6 +140,9 @@ export const emoji = useStorage<EMOJIS>(
 )
 export const customBackgroundURL = useStorage('config/custom-background-image', '')
 export const dashboardTransparent = useStorage('config/dashboard-transparent', 90)
+export const autoUpgradeDashboard = useStorage('config/auto-upgrade', false)
+export const checkUpgradeCore = useStorage('config/check-upgrade-core', true)
+export const autoUpgradeCore = useStorage('config/auto-upgrade-core', false)
 export const swipeInPages = useStorage('config/swipe-in-pages', true)
 export const swipeInTabs = useStorage('config/swipe-in-tabs', false)
 export const disablePullToRefresh = useStorage('config/disable-pull-to-refresh', true)
@@ -150,7 +155,7 @@ export const autoDisconnectIdleUDPTime = useStorage('config/auto-disconnect-idle
 export const keyboardShortcuts = useStorage<Record<string, string>>('config/keyboard-shortcuts', {})
 
 // overview
-export const splitOverviewPage = useStorage('config/split-overview-page', true)
+export const splitOverviewPage = useStorage('config/split-overview-page', false)
 export const autoIPCheck = useStorage('config/auto-ip-check', true)
 export const autoConnectionCheck = useStorage('config/auto-connection-check', true)
 export const showStatisticsWhenSidebarCollapsed = useStorage(
@@ -259,7 +264,7 @@ export const minProxyCardWidth = useStorage<number>(
 )
 export const manageHiddenGroup = useStorage('config/manage-hidden-group-mode', false)
 
-export const displayGlobalByMode = useStorage('config/display-global-by-mode', true)
+export const displayGlobalByMode = useStorage('config/display-global-by-mode', false)
 export const customGlobalNode = useStorage('config/custom-global-node-name', GLOBAL)
 
 export const proxyGroupIconSize = useStorage('config/proxy-group-icon-size', 24)
@@ -332,3 +337,21 @@ export const disconnectOnRuleDisable = useStorage('config/disconnect-on-rule-dis
 // logs
 export const logRetentionLimit = useStorage<number>('config/log-retention-limit', 1000)
 export const logSearchHistory = useStorage<string[]>('cache/log-search-history', [])
+
+// settings visibility
+// 使用扁平结构，key 格式为 "大设置项.小设置项" 或 "大设置项"（仅大设置项）
+// 默认所有项都可见，只有隐藏的项才会记录在此对象中
+export const hiddenSettingsItems = useStorage<Record<string, boolean>>(
+  'config/hidden-settings-items',
+  {},
+)
+
+// settings menu order
+// 存储设置菜单项的顺序
+export const settingsMenuOrder = useStorage<SETTINGS_MENU_KEY[]>(
+  'config/settings-menu-order',
+  SETTINGS_CATEGORIES.map((category) => category.key),
+)
+
+// settings page two columns mode
+export const settingsPageTwoColumns = useStorage<boolean>('config/settings-page-two-columns', true)

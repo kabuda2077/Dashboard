@@ -1,17 +1,5 @@
 export const loadFonts = () => {
-  const fontMode =
-    __FONT__ ||
-    ({
-      'cdn-fonts': 'cdn',
-      MiSans: 'misans',
-      SarasaUi: 'sarasa',
-      PingFang: 'pingfang',
-      FiraSans: 'firasans',
-      SystemUI: 'none',
-    }[import.meta.env.MODE] ??
-      'all')
-
-  if (fontMode === 'cdn') {
+  if (__FONT__ === 'cdn') {
     const createLink = (href: string) => {
       const link = document.createElement('link')
       link.rel = 'stylesheet'
@@ -27,15 +15,15 @@ export const loadFonts = () => {
     createLink('https://unpkg.com/subsetted-fonts@latest/SarasaUiSC-Regular/SarasaUiSC-Regular.css')
     createLink('https://unpkg.com/subsetted-fonts@latest/PingFangSC-Regular/PingFangSC-Regular.css')
     createLink('https://unpkg.com/@fontsource/fira-sans')
-  } else if (fontMode === 'misans') {
+  } else if (__FONT__ === 'misans') {
     import('subsetted-fonts/MiSans-VF/MiSans-VF.css')
-  } else if (fontMode === 'sarasa') {
+  } else if (__FONT__ === 'sarasa') {
     import('subsetted-fonts/SarasaUiSC-Regular/SarasaUiSC-Regular.css')
-  } else if (fontMode === 'pingfang') {
+  } else if (__FONT__ === 'pingfang') {
     import('subsetted-fonts/PingFangSC-Regular/PingFangSC-Regular.css')
-  } else if (fontMode === 'firasans') {
+  } else if (__FONT__ === 'firasans') {
     import('@fontsource/fira-sans/index.css')
-  } else if (fontMode === 'none') {
+  } else if (__FONT__ === 'none') {
     // System UI fonts only; nothing bundled.
   } else {
     // 'all' (default): bundle every font.

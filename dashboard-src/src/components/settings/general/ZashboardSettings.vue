@@ -1,21 +1,42 @@
 <template>
   <div class="relative flex flex-col text-sm">
-    <div class="mt-1 mb-3 flex items-center gap-2 px-1 text-lg font-semibold">
+    <div class="flex items-center gap-2 px-1">
       <div class="indicator">
-        <h2>
-          {{ $t('zashboardSettings') }}
-        </h2>
+        <span
+          v-if="isUIUpdateAvailable"
+          class="indicator-item top-1 -right-1 flex"
+        >
+          <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
+          <span class="bg-secondary h-2 w-2 rounded-full"></span>
+        </span>
+        <a
+          href="https://github.com/Zephyruso/zashboard"
+          target="_blank"
+          class="text-lg font-semibold"
+        >
+          zashboard
+          <span class="text-sm font-normal opacity-50">
+            {{ zashboardVersion }}
+            <span
+              v-if="commitId"
+              class="text-xs"
+            >
+              {{ commitId }}
+            </span>
+          </span>
+        </a>
       </div>
     </div>
 
-    <DashboardSettings />
     <StyleSettings />
     <GeneralSettings />
   </div>
 </template>
 
 <script setup lang="ts">
-import DashboardSettings from '../../common/DashboardSettings.vue'
+import { isUIUpdateAvailable, zashboardVersion } from '@/assembly/version'
 import GeneralSettings from './GeneralSettings.vue'
 import StyleSettings from './StyleSettings.vue'
+
+const commitId = __COMMIT_ID__
 </script>
