@@ -40,12 +40,14 @@ public sealed class MainForm : Form
     private int _dashboardSuspendVersion;
     private string? _pendingDashboardNotice;
     private readonly System.Windows.Forms.Timer _stateRefreshTimer = new() { Interval = 150 };
+    private readonly System.Windows.Forms.Timer _dashboardDisposeTimer = new() { Interval = DelayedDashboardDisposeMs };
     private DateTime _lastStateRefresh = DateTime.MinValue;
     private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
     private const int ResizeBorderThickness = 8;
     private const int MaximizedContentPadding = 8;
     private const int MinRefreshIntervalMs = 150;
     private const int MaxRefreshDelayMs = 1000;
+    private const int DelayedDashboardDisposeMs = 5000;
 
     private const int WM_NCHITTEST = 0x0084;
     private const int WM_NCCALCSIZE = 0x0083;
@@ -264,6 +266,14 @@ public sealed class MainForm : Form
         {
             RefreshStateNow();
         };
+        _dashboardDisposeTimer.Tick += (_, _) =>
+        {
+            _dashboardDisposeTimer.Stop();
+            if (_settings.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress)
+            {
+                DisposeDashboardView();
+            }
+        };
         _iconCache.CacheChanged += (_, _) => BeginInvoke(new Action(SendStateToDashboard));
     }
 
@@ -366,6 +376,7 @@ public sealed class MainForm : Form
 
     private void EnsureWebViewCreated()
     {
+        CancelDelayedDashboardDispose();
         if (_webView is not null && !_webView.IsDisposed)
         {
             return;
@@ -1150,6 +1161,7 @@ public sealed class MainForm : Form
 
     private void DisposeDashboardView()
     {
+        CancelDelayedDashboardDispose();
         _dashboardSuspendVersion++;
         _stateRefreshTimer.Stop();
         _stateRefreshPending = false;
@@ -1167,6 +1179,21 @@ public sealed class MainForm : Form
         _contentPanel.Controls.Remove(webView);
         _webView = null;
         webView.Dispose();
+    }
+
+    private void ScheduleDashboardViewDispose()
+    {
+        _dashboardDisposeTimer.Stop();
+        _dashboardDisposeTimer.Interval = DelayedDashboardDisposeMs;
+        _dashboardDisposeTimer.Start();
+    }
+
+    private void CancelDelayedDashboardDispose()
+    {
+        if (_dashboardDisposeTimer.Enabled)
+        {
+            _dashboardDisposeTimer.Stop();
+        }
     }
 
     private void FlushDashboardUpdates()
@@ -1435,7 +1462,7 @@ public sealed class MainForm : Form
             Hide();
             if (_settings.LightweightMode)
             {
-                DisposeDashboardView();
+                ScheduleDashboardViewDispose();
             }
         }
         finally
@@ -1446,6 +1473,7 @@ public sealed class MainForm : Form
 
     public void ShowFromTray()
     {
+        CancelDelayedDashboardDispose();
         if (_trayTransitionInProgress)
         {
             return;
@@ -1506,6 +1534,7 @@ public sealed class MainForm : Form
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _stateRefreshTimer.Dispose();
+            _dashboardDisposeTimer.Dispose();
             _trayMenu?.Dispose();
             _trayIconImage.Dispose();
             _appIcon.Dispose();

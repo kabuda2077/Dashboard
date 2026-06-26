@@ -4,7 +4,7 @@
     :style="padding"
   >
     <OverviewCtrl />
-    <div class="flex flex-col gap-3 p-3">
+    <div class="flex flex-col gap-3 p-3 md:pr-2">
       <component
         v-for="item in visibleCards"
         :key="item"

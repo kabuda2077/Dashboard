@@ -66,6 +66,7 @@ Desktop host ownership:
 - Core paths, config paths, API URLs, secrets, and core type are separate local settings.
 - Local publish layout keeps `Dashboard.exe`, `settings.json`, `resources/`, and separate core folders.
 - `resources/EBWebView` must be cleared when replacing a local install so stale WebView assets do not hide changes.
+- In lightweight mode, hiding to tray keeps the WebView alive briefly before disposal; reopening from tray during that delay cancels disposal. Do not restore immediate WebView disposal on close-to-tray.
 
 Frontend product shape:
 
@@ -73,6 +74,8 @@ Frontend product shape:
 - Standalone Settings is folded into Core page.
 - Backend settings live in Core page, not as a separate primary route.
 - Core page contains active core status, start/stop/switch controls, path/API settings, logs, operation buttons, and current download summary.
+- Core page section titles use the same `dashboard-section-title` structure. The embedded Backend title is static text; do not restore upstream version links or click-through title behavior.
+- Overview page content should follow the same right-edge padding rhythm as the other scrollable card pages, including `p-3 md:pr-2` where applicable.
 - Dashboard uses the Clash-compatible API path for both mihomo and sing-box main pages.
 - sing-box native API / Tools is not exposed.
 - Window controls are custom frontend controls connected to the C# host.
@@ -319,13 +322,16 @@ Regression checks from the v3.11.0 follow-up:
 
 - [ ] `src/main.ts` still imports `./hostBootstrap`; window drag and resize work.
 - [ ] Top bars do not overlap page content.
+- [ ] Overview page card alignment matches the other scrollable card pages and does not appear shifted left/right.
 - [ ] Rules tab is visible on first app load when split overview is enabled.
 - [ ] Sidebar bottom does not show backend settings button or backend version.
 - [ ] Sidebar route items keep `gap-1`.
 - [ ] Core top status text truncates inside its own box and does not run into buttons.
+- [ ] Core page section titles share the same `dashboard-section-title` structure; Backend title is not a link.
 - [ ] Settings header says `Dashboard` only.
 - [ ] Dashboard self-upgrade controls are not visible.
 - [ ] DNS query UI and sing-box native UI are not restored.
+- [ ] Lightweight close-to-tray delays WebView disposal and reopening from tray cancels the pending disposal.
 ## Commit Discipline
 
 Prefer small commits with clear intent.

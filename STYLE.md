@@ -20,6 +20,7 @@ This project embeds a customized zashboard UI inside a Windows desktop shell. UI
   - Collapsed: `w-18`
 - Sidebar width transitions use `duration-320 ease-[cubic-bezier(0.34,0.1,0.2,1)]`.
 - Main content uses page padding of `p-3` and card/grid gaps of `gap-3`.
+- Scrollable card pages that sit beside the native window scrollbar should keep the shared right-edge rhythm, usually `p-3 md:pr-2`; Overview should not use a different horizontal content offset from Proxies-style card pages.
 - Two-column settings/dashboard layouts should use `lg:gap-8` by default.
 - Wide content containers should usually use `mx-auto w-full max-w-7xl`.
 - Avoid nested cards. Use cards for repeated items, modals, and framed tools only.
@@ -196,6 +197,7 @@ The Core page combines desktop app controls and zashboard settings.
 - Core log text: `text-xs leading-5 text-base-content/60`.
 - Core operation buttons: `btn btn-sm dashboard-action-btn`.
 - Core and embedded backend two-column layouts should use `lg:gap-8`.
+- Core page section headings, including Backend and Current Downloads, should use the same `dashboard-section-title` structure. Backend version text may sit beside the title as static secondary information, but the heading should not become a link.
 
 Avoid introducing a second settings style in Core page. Prefer the same `settings-grid`, `setting-item`, and `settings-section-label` used elsewhere.
 

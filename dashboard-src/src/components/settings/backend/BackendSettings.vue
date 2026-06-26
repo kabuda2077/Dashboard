@@ -4,18 +4,10 @@
     <div class="grid items-stretch gap-3 lg:grid-cols-2 lg:gap-8">
       <div class="rounded-lg p-2">
         <div class="dashboard-section-title">
-          <a
-            class="inline-flex cursor-pointer items-center gap-2"
-            :href="
-              isSingBox
-                ? 'https://github.com/sagernet/sing-box'
-                : MIHOMO_CHANNEL[mihomo?.[0] ?? MIHOMO.Meta].url
-            "
-            target="_blank"
-          >
+          <span class="inline-flex items-center gap-2">
             {{ $t('backend') }}
             <BackendVersion class="text-sm font-normal" />
-          </a>
+          </span>
         </div>
         <div
           v-if="configs"
@@ -146,11 +138,10 @@ import {
   reloadConfigsAPI,
   updateGeoDataAPI,
 } from '@/assembly/config'
-import { isSingBoxCore as isSingBox, mihomo } from '@/assembly/version'
+import { isSingBoxCore as isSingBox } from '@/assembly/version'
 import BackendVersion from '@/components/common/BackendVersion.vue'
 import TopDownloadConnections from '@/components/settings/backend/TopDownloadConnections.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
-import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { configs, fetchConfigs, updateConfigs } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
