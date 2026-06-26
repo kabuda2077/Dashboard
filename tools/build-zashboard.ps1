@@ -59,6 +59,14 @@ if ($commonCtrl -match 'BackendVersion') {
     throw "dashboard source check failed: sidebar backend version should not be restored"
 }
 
+$overviewCtrlPath = Join-Path $sourceRoot 'src\components\controls\OverviewCtrl.vue'
+$overviewCtrl = Get-Content -LiteralPath $overviewCtrlPath -Raw
+foreach ($pattern in @('BackendVersion', 'getLabelFromBackend', 'activeBackend')) {
+    if ($overviewCtrl -match $pattern) {
+        throw "dashboard source check failed: overview top bar should only show the settings button"
+    }
+}
+
 $zashboardSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\ZashboardSettings.vue'
 $zashboardSettings = Get-Content -LiteralPath $zashboardSettingsPath -Raw
 foreach ($pattern in @('zashboardVersion', '__COMMIT_ID__', 'github.com/Zephyruso/zashboard', 'isUIUpdateAvailable')) {
