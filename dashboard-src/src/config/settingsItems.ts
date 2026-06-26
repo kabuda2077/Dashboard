@@ -58,10 +58,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.emoji`, label: 'emoji' },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.language`, label: 'language' },
       {
-        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.autoUpgradeDashboard`,
-        label: 'autoUpgradeDashboard',
-      },
-      {
         key: `${SETTINGS_MENU_KEY.general}.autoDisconnectIdleUDP`,
         label: 'autoDisconnectIdleUDP',
       },

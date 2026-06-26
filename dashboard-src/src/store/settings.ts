@@ -155,7 +155,7 @@ export const autoDisconnectIdleUDPTime = useStorage('config/auto-disconnect-idle
 export const keyboardShortcuts = useStorage<Record<string, string>>('config/keyboard-shortcuts', {})
 
 // overview
-export const splitOverviewPage = useStorage('config/split-overview-page', false)
+export const splitOverviewPage = useStorage('config/split-overview-page', true)
 export const autoIPCheck = useStorage('config/auto-ip-check', true)
 export const autoConnectionCheck = useStorage('config/auto-connection-check', true)
 export const showStatisticsWhenSidebarCollapsed = useStorage(
@@ -264,7 +264,7 @@ export const minProxyCardWidth = useStorage<number>(
 )
 export const manageHiddenGroup = useStorage('config/manage-hidden-group-mode', false)
 
-export const displayGlobalByMode = useStorage('config/display-global-by-mode', false)
+export const displayGlobalByMode = useStorage('config/display-global-by-mode', true)
 export const customGlobalNode = useStorage('config/custom-global-node-name', GLOBAL)
 
 export const proxyGroupIconSize = useStorage('config/proxy-group-icon-size', 24)

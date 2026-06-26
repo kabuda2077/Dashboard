@@ -59,6 +59,22 @@ if ($commonCtrl -match 'BackendVersion') {
     throw "dashboard source check failed: sidebar backend version should not be restored"
 }
 
+$zashboardSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\ZashboardSettings.vue'
+$zashboardSettings = Get-Content -LiteralPath $zashboardSettingsPath -Raw
+foreach ($pattern in @('zashboardVersion', '__COMMIT_ID__', 'github.com/Zephyruso/zashboard', 'isUIUpdateAvailable')) {
+    if ($zashboardSettings -match $pattern) {
+        throw "dashboard source check failed: settings title must stay Dashboard without version or upstream link"
+    }
+}
+
+$generalSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\GeneralSettings.vue'
+$generalSettings = Get-Content -LiteralPath $generalSettingsPath -Raw
+foreach ($pattern in @('upgradeUIAPI', 'handlerClickUpgradeUI', 'autoUpgradeDashboard', 'upgradeDashboard')) {
+    if ($generalSettings -match $pattern) {
+        throw "dashboard source check failed: dashboard UI upgrade controls should not be restored"
+    }
+}
+
 $forbiddenSourcePatterns = @(
     'DnsQuery',
     'DNSQuery',
