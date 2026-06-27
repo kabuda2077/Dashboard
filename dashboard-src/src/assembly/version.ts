@@ -4,6 +4,7 @@
 // isSingBoxCore 基于「运行时内核版本字符串」,与 assembly/backend.ts 的 isSingboxBackend
 //(基于配置类型)语义不同:Clash 通道也可能连到 sing-box 兼容核心。
 import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI, upgradeUIAPI } from '@/api/clash'
+import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { autoUpgradeCore, autoUpgradeDashboard, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
@@ -53,24 +54,39 @@ export const fetchVersionAPI = () => {
   return fetchClashVersion()
 }
 
+let versionFetchId = 0
+
+const refreshVersion = async () => {
+  if (!activeBackend.value) return
+
+  const currentFetchId = ++versionFetchId
+  const { data } = await fetchVersionAPI()
+
+  if (currentFetchId !== versionFetchId) return
+
+  version.value = data?.version || ''
+  if (isSingBoxCore.value || !checkUpgradeCore.value || activeBackend.value?.disableUpgradeCore) {
+    return
+  }
+
+  isCoreUpdateAvailable.value = await fetchBackendUpdateAvailableAPI()
+
+  if (isCoreUpdateAvailable.value && autoUpgradeCore.value) {
+    upgradeCoreAPI('auto')
+  }
+}
+
 watch(
   activeBackend,
-  async (val) => {
-    if (val) {
-      const { data } = await fetchVersionAPI()
-
-      version.value = data?.version || ''
-      if (isSingBoxCore.value || !checkUpgradeCore.value || activeBackend.value?.disableUpgradeCore)
-        return
-      isCoreUpdateAvailable.value = await fetchBackendUpdateAvailableAPI()
-
-      if (isCoreUpdateAvailable.value && autoUpgradeCore.value) {
-        upgradeCoreAPI('auto')
-      }
-    }
+  () => {
+    void refreshVersion()
   },
   { immediate: true },
 )
+
+window.addEventListener(HOST_BACKEND_UPDATED_EVENT, () => {
+  void refreshVersion()
+})
 
 const CACHE_DURATION = 1000 * 60 * 60
 

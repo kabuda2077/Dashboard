@@ -1,0 +1,1 @@
+import{K as o,L as r}from"./index-D4dc6xz4.js";import"./vue-vendor-Cdja-WkD.js";import"./table-vendor-BzsNQRDo.js";import"./utils-vendor-Y473QQXp.js";import"./ui-vendor-BNMmx-1P.js";const e=async()=>{o.value=[],r.value=[]};export{e as fetchRules};
