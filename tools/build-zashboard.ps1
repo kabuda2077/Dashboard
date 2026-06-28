@@ -67,6 +67,41 @@ foreach ($pattern in @('BackendVersion', 'getLabelFromBackend', 'activeBackend')
     }
 }
 
+$networkCardPath = Join-Path $sourceRoot 'src\components\overview\NetworkCard.vue'
+$networkCard = Get-Content -LiteralPath $networkCardPath -Raw
+foreach ($pattern in @('lg:grid-cols-3', 'lg:col-span-2', 'ConnectionStatus', 'IPCheck')) {
+    if ($networkCard -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: overview NetworkCard must align Latency across two columns and Network Info across one column"
+    }
+}
+
+$connectionStatusPath = Join-Path $sourceRoot 'src\components\overview\ConnectionStatus.vue'
+$connectionStatus = Get-Content -LiteralPath $connectionStatusPath -Raw
+foreach ($pattern in @('const ROUNDS = 10', 'LatencyChart', 'label: ''min''', 'label: ''max''')) {
+    if ($connectionStatus -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: overview latency card must keep 10-sample LatencyChart with min/max metadata"
+    }
+}
+
+$latencyChartPath = Join-Path $sourceRoot 'src\components\overview\LatencyChart.vue'
+if (-not (Test-Path -LiteralPath $latencyChartPath)) {
+    throw "dashboard source check failed: missing overview LatencyChart.vue"
+}
+$latencyChart = Get-Content -LiteralPath $latencyChartPath -Raw
+foreach ($pattern in @('MiniSparkline', 'show-symbols', 'useTooltip', 'sampleHits', 'avgLatency')) {
+    if ($latencyChart -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: overview LatencyChart must reuse MiniSparkline, show samples, and keep compact per-sample tooltip"
+    }
+}
+
+$miniSparklinePath = Join-Path $sourceRoot 'src\components\overview\MiniSparkline.vue'
+$miniSparkline = Get-Content -LiteralPath $miniSparklinePath -Raw
+foreach ($pattern in @('showSymbols', 'lowLatency', 'mediumLatency', 'highLatency', 'symbolSize: 3')) {
+    if ($miniSparkline -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: MiniSparkline must keep latency colors and optional sample symbols"
+    }
+}
+
 $zashboardSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\ZashboardSettings.vue'
 $zashboardSettings = Get-Content -LiteralPath $zashboardSettingsPath -Raw
 foreach ($pattern in @('zashboardVersion', '__COMMIT_ID__', 'github.com/Zephyruso/zashboard', 'isUIUpdateAvailable')) {

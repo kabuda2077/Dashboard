@@ -147,7 +147,7 @@ const initializeRouteData = () => {
   if (!activeUuid.value) return
 
   const routeName = route.name
-  if (!routeName || routeName === ROUTE_NAME.core) {
+  if (!routeName) {
     return
   }
 

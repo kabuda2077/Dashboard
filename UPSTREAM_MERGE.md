@@ -113,6 +113,18 @@ Do not regress the Backend version display after switching cores.
 - `splitOverviewPage` defaults to enabled.
 - `displayGlobalByMode` defaults to enabled.
 
+### Overview Network And Latency Cards
+
+- The Overview network row uses the same three-column rhythm as the speed cards above it.
+- In desktop width, Latency spans two columns and Network Info spans one column; mobile remains a single column.
+- The Latency card keeps four targets: Baidu, Cloudflare, GitHub, and YouTube.
+- Each latency target runs 10 samples per test. Do not increase sample count just to change chart density.
+- Latency history is rendered with the same `MiniSparkline` visual language as the Upload/Download cards: smooth line, subtle area fill, and small sample symbols.
+- Latency chart color follows the target's live average latency using the low/medium/high latency theme tokens.
+- The right-side latency value is the average and should only appear after the target's 10 samples complete.
+- The row under each target shows `min` and `max`; keep the average in the chart row instead of duplicating it below.
+- Latency hover uses the original compact tooltip style through `useTooltip`, showing a single sample value such as `120ms`; do not use the Upload/Download ECharts tooltip in the latency card.
+
 ### Do Not Restore
 
 Do not restore these without a product decision:
@@ -174,6 +186,10 @@ These often contain both upstream value and local layout changes. Inspect carefu
 - `dashboard-src/src/router/index.ts`
 - `dashboard-src/src/views/HomePage.vue`
 - `dashboard-src/src/components/common/CtrlsBar.vue`
+- `dashboard-src/src/components/overview/ConnectionStatus.vue`
+- `dashboard-src/src/components/overview/LatencyChart.vue`
+- `dashboard-src/src/components/overview/MiniSparkline.vue`
+- `dashboard-src/src/components/overview/NetworkCard.vue`
 - `dashboard-src/src/components/common/DashboardSettings.vue`
 - `dashboard-src/src/components/sidebar/SideBar.vue`
 - `dashboard-src/src/components/sidebar/SidebarButtons.vue`
@@ -223,6 +239,9 @@ Required rules:
 - Core top status text must truncate inside its own box and not run into buttons.
 - Sidebar route items keep `gap-1`.
 - Overview page card alignment must match other scrollable card pages, including the shared right-edge padding rhythm.
+- Overview Network row uses `lg:grid-cols-3`; Latency spans two columns and Network Info spans one column.
+- Overview Latency charts reuse `MiniSparkline` rather than maintaining a separate hand-drawn sparkline/bar implementation.
+- Overview Latency sample hover uses the project `useTooltip` compact tooltip, not the ECharts axis tooltip used by Upload/Download charts.
 
 Keep upstream visual improvements when they fit this system:
 
@@ -272,6 +291,7 @@ Manual inspection checklist:
 
 - Core page: top status row, section titles, backend card, current downloads, logs, start/stop/switch/restart/upgrade actions.
 - Overview page: no local-core label in the top bar, settings button placement, split overview behavior, card alignment.
+- Overview Network row: Latency aligns with two speed cards, Network Info aligns with one speed card, latency chart uses `MiniSparkline`, and latency hover shows one compact sample value.
 - Proxies page: card secondary text, search/dropdown widths, sidebar behavior.
 - Rules page: tab visible on first app load, top bar dropdown border and popup behavior.
 - Connections page: top bar search/dropdown spacing and controlled dropdown close behavior.
@@ -312,6 +332,8 @@ UI:
 - [ ] New buttons, inputs, panels, and text colors reuse existing tokens/utilities.
 - [ ] No new page-local class family was added without documenting the reusable purpose in `STYLE.md`.
 - [ ] Overview page alignment matches the other scrollable card pages.
+- [ ] Overview Network row alignment matches the speed cards: Latency spans two columns and Network Info spans one.
+- [ ] Overview Latency chart still uses `MiniSparkline` with small sample symbols, latency token colors, right-side average, and compact per-sample tooltip.
 - [ ] Sidebar route items keep `gap-1`.
 - [ ] Core top status text truncates inside its own box.
 - [ ] Core page section titles share the same `dashboard-section-title` structure.

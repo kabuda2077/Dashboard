@@ -1,6 +1,6 @@
 <template>
-  <div class="base-container grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">
-    <ConnectionStatus />
+  <div class="base-container grid grid-cols-1 gap-3 p-4 lg:grid-cols-3">
+    <ConnectionStatus class="lg:col-span-2" />
     <IPCheck />
   </div>
 </template>

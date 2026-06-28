@@ -6,30 +6,61 @@
       </div>
       <button
         class="btn btn-ghost btn-xs btn-circle"
+        :disabled="isTesting"
         @click="getLatency"
       >
-        <BoltIcon class="h-3.5 w-3.5" />
+        <BoltIcon
+          class="h-3.5 w-3.5"
+          :class="isTesting ? 'animate-pulse' : ''"
+        />
       </button>
     </div>
 
-    <div class="mt-3 flex flex-col gap-2.5">
+    <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div
         v-for="item in latencyItems"
         :key="item.name"
-        class="flex items-center justify-between"
+        class="flex min-w-0 flex-col gap-0.5"
       >
-        <span class="text-base-content/70 text-sm">{{ item.name }}</span>
-        <span
-          class="flex items-center gap-1.5 text-sm font-medium"
-          :class="item.value ? getColorForLatency(Number(item.value)) : 'text-base-content/20'"
-        >
-          <template v-if="item.value">{{ item.value }}ms</template>
-          <template v-else>--</template>
-          <SignalStrength
-            v-if="item.value"
-            :latency="Number(item.value)"
+        <div class="flex min-w-0 items-center gap-1.5">
+          <span class="text-base-content/70 inline-block w-16 shrink-0 truncate text-xs">
+            {{ item.name }}
+          </span>
+          <LatencyChart
+            :data="item.values"
+            :name="item.name"
+            :rounds="ROUNDS"
+            class="min-w-0 flex-1"
           />
-        </span>
+        </div>
+        <div class="flex flex-wrap gap-x-4 text-[11px] tabular-nums">
+          <template v-if="item.stats">
+            <span
+              v-for="stat in item.stats"
+              :key="stat.label"
+            >
+              <span class="text-base-content/40 mr-1">{{ stat.label }}</span>
+              <span
+                v-if="stat.value"
+                :class="getColorForLatency(stat.value)"
+              >
+                {{ stat.value }}ms
+              </span>
+              <span
+                v-else
+                class="text-base-content/30"
+              >
+                --
+              </span>
+            </span>
+          </template>
+          <span
+            v-else
+            class="text-base-content/30"
+          >
+            --
+          </span>
+        </div>
       </div>
     </div>
   </div>
@@ -51,41 +82,61 @@ import {
 import { getColorForLatency } from '@/helper'
 import { autoConnectionCheck } from '@/store/settings'
 import { BoltIcon } from '@heroicons/vue/24/outline'
-import { computed, onMounted } from 'vue'
-import SignalStrength from './SignalStrength.vue'
+import { computed, onMounted, ref } from 'vue'
+import LatencyChart from './LatencyChart.vue'
 
-const latencyItems = computed(() => [
-  { name: 'Baidu', value: baiduLatency.value },
-  { name: 'Cloudflare', value: cloudflareLatency.value },
-  { name: 'GitHub', value: githubLatency.value },
-  { name: 'YouTube', value: youtubeLatency.value },
-])
+const ROUNDS = 10
+
+const targets = [
+  { name: 'Baidu', ref: baiduLatency, api: getBaiduLatencyAPI },
+  { name: 'Cloudflare', ref: cloudflareLatency, api: getCloudflareLatencyAPI },
+  { name: 'GitHub', ref: githubLatency, api: getGithubLatencyAPI },
+  { name: 'YouTube', ref: youtubeLatency, api: getYouTubeLatencyAPI },
+]
+
+const isTesting = ref(false)
+
+const computeStats = (values: number[]) => {
+  const ok = values.filter((v) => v > 0).sort((a, b) => a - b)
+  if (!ok.length) return null
+
+  return [
+    { label: 'min', value: ok[0] },
+    { label: 'max', value: ok[ok.length - 1] },
+  ]
+}
+
+const latencyItems = computed(() =>
+  targets.map((target) => ({
+    name: target.name,
+    values: target.ref.value,
+    stats: computeStats(target.ref.value),
+  })),
+)
 
 const getLatency = async () => {
-  getBaiduLatencyAPI().then((res) => {
-    baiduLatency.value = res.toFixed(0)
+  if (isTesting.value) return
+  isTesting.value = true
+  targets.forEach((target) => {
+    target.ref.value = []
   })
 
-  getCloudflareLatencyAPI().then((res) => {
-    cloudflareLatency.value = res.toFixed(0)
-  })
-
-  getGithubLatencyAPI().then((res) => {
-    githubLatency.value = res.toFixed(0)
-  })
-
-  getYouTubeLatencyAPI().then((res) => {
-    youtubeLatency.value = res.toFixed(0)
-  })
+  try {
+    await Promise.all(
+      targets.map(async (target) => {
+        for (let i = 0; i < ROUNDS; i++) {
+          const res = await target.api()
+          target.ref.value = [...target.ref.value, Math.round(res)]
+        }
+      }),
+    )
+  } finally {
+    isTesting.value = false
+  }
 }
 
 onMounted(() => {
-  if (
-    autoConnectionCheck.value &&
-    [baiduLatency, cloudflareLatency, githubLatency, youtubeLatency].some(
-      (item) => item.value === '',
-    )
-  ) {
+  if (autoConnectionCheck.value && targets.every((target) => target.ref.value.length === 0)) {
     getLatency()
   }
 })

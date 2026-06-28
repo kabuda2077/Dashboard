@@ -8,6 +8,10 @@
       class="border-b-primary/30 border-t-primary/60 border-l-info/30 border-r-info/60 text-base-content/60 bg-base-100/70 hidden"
       ref="colorRef"
     />
+    <span
+      class="border-b-low-latency/30 border-t-low-latency/60 border-l-medium-latency/30 border-r-medium-latency/60 text-high-latency/30 bg-high-latency/60 hidden"
+      ref="latencyColorRef"
+    />
   </div>
 </template>
 
@@ -28,8 +32,9 @@ const props = withDefaults(
   defineProps<{
     data: { name: number; value: number }[]
     min?: number
-    color?: 'primary' | 'info'
+    color?: 'primary' | 'info' | 'lowLatency' | 'mediumLatency' | 'highLatency'
     name?: string
+    showSymbols?: boolean
     labelFormatter?: (value: number) => string
     tooltipFormatter?: (value: ToolTipParams[]) => string
   }>(),
@@ -38,12 +43,19 @@ const props = withDefaults(
 
 const chartRef = ref()
 const colorRef = ref()
+const latencyColorRef = ref()
 
 const colorSet = {
   primary30: '',
   primary60: '',
   info30: '',
   info60: '',
+  lowLatency30: '',
+  lowLatency60: '',
+  mediumLatency30: '',
+  mediumLatency60: '',
+  highLatency30: '',
+  highLatency60: '',
   baseContent40: '',
   baseContent: '',
   base70: '',
@@ -61,6 +73,14 @@ const updateColorSet = () => {
   colorSet.primary60 = s.borderTopColor
   colorSet.info30 = s.borderLeftColor
   colorSet.info60 = s.borderRightColor
+
+  const latencyS = getComputedStyle(latencyColorRef.value)
+  colorSet.lowLatency30 = latencyS.borderBottomColor
+  colorSet.lowLatency60 = latencyS.borderTopColor
+  colorSet.mediumLatency30 = latencyS.borderLeftColor
+  colorSet.mediumLatency60 = latencyS.borderRightColor
+  colorSet.highLatency30 = latencyS.color
+  colorSet.highLatency60 = latencyS.backgroundColor
 }
 
 const updateFontFamily = () => {
@@ -68,8 +88,20 @@ const updateFontFamily = () => {
   fontFamily = getComputedStyle(colorRef.value).fontFamily
 }
 
-const seriesColor = computed(() => (props.color === 'info' ? colorSet.info60 : colorSet.primary60))
-const areaColor = computed(() => (props.color === 'info' ? colorSet.info30 : colorSet.primary30))
+const seriesColor = computed(() => {
+  if (props.color === 'info') return colorSet.info60
+  if (props.color === 'lowLatency') return colorSet.lowLatency60
+  if (props.color === 'mediumLatency') return colorSet.mediumLatency60
+  if (props.color === 'highLatency') return colorSet.highLatency60
+  return colorSet.primary60
+})
+const areaColor = computed(() => {
+  if (props.color === 'info') return colorSet.info30
+  if (props.color === 'lowLatency') return colorSet.lowLatency30
+  if (props.color === 'mediumLatency') return colorSet.mediumLatency30
+  if (props.color === 'highLatency') return colorSet.highLatency30
+  return colorSet.primary30
+})
 
 const options = computed(() => ({
   grid: { left: 0, top: 0, right: props.labelFormatter ? 30 : 0, bottom: 0 },
@@ -120,7 +152,8 @@ const options = computed(() => ({
     {
       type: 'line' as const,
       name: props.name,
-      symbol: 'none',
+      symbol: props.showSymbols ? 'circle' : 'none',
+      symbolSize: 3,
       smooth: true,
       lineStyle: { width: 1.5 },
       data: props.data,

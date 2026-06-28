@@ -241,6 +241,22 @@ MiSans must be loaded with a valid variable font-weight range. The Vite build fi
 - Use `text-base-content/40` for separators.
 - Use stable heights and grid rows when card height must remain aligned across columns.
 
+## Overview Cards
+
+- Overview cards use `base-container` with inner `bg-base-200/30 rounded-xl p-4` panels.
+- The speed row is the alignment reference for desktop Overview card widths.
+- The Network row should use the same three-column grid rhythm as the speed row:
+  - Latency spans two columns.
+  - Network Info spans one column.
+  - Narrow screens collapse to one column.
+- The Latency card uses a compact two-by-two target layout for Baidu, Cloudflare, GitHub, and YouTube.
+- Each target displays the target label, a compact sparkline, a right-side average, and a muted `min` / `max` metadata row.
+- The latency chart should reuse `MiniSparkline` so it matches the Upload/Download visual language: smooth line, subtle area fill, restrained line weight, and small sample symbols.
+- Do not replace the latency chart with a custom bar chart, floating dot plot, or hand-written SVG curve unless the product direction changes.
+- Latency chart colors should use the existing low/medium/high latency theme tokens. Avoid introducing standalone latency palette colors.
+- The latency average belongs visually to the chart row, not the `min` / `max` metadata row.
+- Latency hover should use the compact `useTooltip` bubble with a single sample value such as `120ms`; keep ECharts axis tooltips for the larger Upload/Download charts.
+
 ## Responsive Behavior
 
 - Desktop uses sidebar plus fixed top controls.

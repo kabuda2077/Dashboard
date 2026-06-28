@@ -14,7 +14,8 @@ export const ipForGlobal = ref<IPInfo>({
   ipWithPrivacy: [],
 })
 
-export const baiduLatency = ref('')
-export const githubLatency = ref('')
-export const youtubeLatency = ref('')
-export const cloudflareLatency = ref('')
+// Each target keeps multiple latency samples in milliseconds. A value of 0 means that round failed.
+export const baiduLatency = ref<number[]>([])
+export const githubLatency = ref<number[]>([])
+export const youtubeLatency = ref<number[]>([])
+export const cloudflareLatency = ref<number[]>([])
