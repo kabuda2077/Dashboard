@@ -76,6 +76,8 @@ Preserve these decisions unless the product direction is explicitly changed.
 - C# owns process management, tray behavior, autostart, WebView lifecycle, native window behavior, local settings, publish layout, and Windows window APIs.
 - Frontend owns page layout, Core page presentation, zashboard views, top bars, sidebar, and window-control visuals.
 - Window drag/resize depends on `dashboard-src/src/hostBootstrap.ts`; `dashboard-src/src/main.ts` must keep importing it.
+- Proxy group icons use the desktop icon cache bridge. The C# host builds `iconCacheMap`, `hostBootstrap.ts` exposes it as `window.__mihomoIconCache`, and `ProxyIcon.vue` must prefer cached local URLs before remote icon URLs.
+- Existing proxy icon cache files should be loaded on startup and notify the WebView after the map changes, so the Proxies page can render cached strategy group icons immediately.
 - The app manages one active core at a time: `mihomo` or `sing-box`.
 - Core paths, config paths, API URLs, secrets, and core type are separate local settings.
 - Local publish layout keeps `Dashboard.exe`, `settings.json`, `resources/`, and separate core folders.
@@ -92,9 +94,7 @@ Preserve these decisions unless the product direction is explicitly changed.
 - The embedded Backend heading is static text; do not restore upstream version links or click-through heading behavior.
 - The sidebar bottom must not show a backend settings button or backend version.
 - Dashboard uses the Clash-compatible API path for both mihomo and sing-box main pages.
-- sing-box native API / Tools is not exposed in the desktop product.
-- A sing-box config may expose both `clash_api.external_controller` and `services.type=api`; this Dashboard uses the Clash-compatible endpoint, not the native/dashboard service endpoint.
-- Runtime version display should prefer Clash `/version`, but may fall back to the desktop host's executable version when the API is not ready.
+- sing-box native API / Tools is not exposed in the desktop product. See the sing-box version contract for API endpoint and version fallback details.
 
 ### sing-box Version Display Contract
 
@@ -190,6 +190,7 @@ These often contain both upstream value and local layout changes. Inspect carefu
 - `dashboard-src/src/components/overview/LatencyChart.vue`
 - `dashboard-src/src/components/overview/MiniSparkline.vue`
 - `dashboard-src/src/components/overview/NetworkCard.vue`
+- `dashboard-src/src/components/proxies/ProxyIcon.vue`
 - `dashboard-src/src/components/common/DashboardSettings.vue`
 - `dashboard-src/src/components/sidebar/SideBar.vue`
 - `dashboard-src/src/components/sidebar/SidebarButtons.vue`
@@ -226,22 +227,13 @@ All upstream UI changes must pass `STYLE.md`.
 Required rules:
 
 - `dashboard-src/src/assets/styles/dashboard-desktop.css` is the final desktop override layer and must remain imported last.
-- Top bars use shared `CtrlsBar` behavior.
-- Top bar controls are 36px high.
-- Top bar borders use `border-base-content/20`.
-- Regular card/settings dividers use `border-base-border`.
-- Settings use `settings-grid`, `setting-item`, and `settings-section-label`.
+- Top bars, settings, colors, borders, text hierarchy, and reusable components must follow `STYLE.md`.
 - Core page headings use `dashboard-section-title`.
-- Secondary/read-only text uses `text-base-content/60`.
-- Very weak separators use `text-base-content/40`.
-- Avoid one-off gray opacity tokens and page-local custom button families.
 - Top bar dropdowns that need controlled popup styling should use the project dropdown component, not native WebView `<select>` popups.
 - Core top status text must truncate inside its own box and not run into buttons.
 - Sidebar route items keep `gap-1`.
-- Overview page card alignment must match other scrollable card pages, including the shared right-edge padding rhythm.
-- Overview Network row uses `lg:grid-cols-3`; Latency spans two columns and Network Info spans one column.
-- Overview Latency charts reuse `MiniSparkline` rather than maintaining a separate hand-drawn sparkline/bar implementation.
-- Overview Latency sample hover uses the project `useTooltip` compact tooltip, not the ECharts axis tooltip used by Upload/Download charts.
+- Overview Network and Latency cards must keep the Product Contract above.
+- Proxies page strategy group icons must keep the desktop icon cache bridge from the Product Contract above.
 
 Keep upstream visual improvements when they fit this system:
 
@@ -291,8 +283,8 @@ Manual inspection checklist:
 
 - Core page: top status row, section titles, backend card, current downloads, logs, start/stop/switch/restart/upgrade actions.
 - Overview page: no local-core label in the top bar, settings button placement, split overview behavior, card alignment.
-- Overview Network row: Latency aligns with two speed cards, Network Info aligns with one speed card, latency chart uses `MiniSparkline`, and latency hover shows one compact sample value.
-- Proxies page: card secondary text, search/dropdown widths, sidebar behavior.
+- Overview Network and Latency cards: Product Contract still holds.
+- Proxies page: card secondary text, search/dropdown widths, sidebar behavior, and strategy group icon cache behavior.
 - Rules page: tab visible on first app load, top bar dropdown border and popup behavior.
 - Connections page: top bar search/dropdown spacing and controlled dropdown close behavior.
 - Logs page: level dropdown and search spacing.
@@ -331,9 +323,7 @@ UI:
 - [ ] Settings still use `settings-grid`, `setting-item`, and `settings-section-label`.
 - [ ] New buttons, inputs, panels, and text colors reuse existing tokens/utilities.
 - [ ] No new page-local class family was added without documenting the reusable purpose in `STYLE.md`.
-- [ ] Overview page alignment matches the other scrollable card pages.
-- [ ] Overview Network row alignment matches the speed cards: Latency spans two columns and Network Info spans one.
-- [ ] Overview Latency chart still uses `MiniSparkline` with small sample symbols, latency token colors, right-side average, and compact per-sample tooltip.
+- [ ] Overview Network and Latency cards still match the Product Contract.
 - [ ] Sidebar route items keep `gap-1`.
 - [ ] Core top status text truncates inside its own box.
 - [ ] Core page section titles share the same `dashboard-section-title` structure.
@@ -343,23 +333,18 @@ Product:
 - [ ] Settings header says `Dashboard` only.
 - [ ] Sidebar bottom does not show backend settings button or backend version.
 - [ ] Backend title is not a link.
-- [ ] Dashboard self-upgrade controls are not visible.
-- [ ] DNS query UI is not restored.
-- [ ] sing-box native Tools UI is not restored.
+- [ ] The Do Not Restore list was checked.
 - [ ] Rules tab is visible on first app load when split overview is enabled.
+- [ ] Proxies page strategy group icon cache behavior still matches the Product Contract.
 - [ ] Lightweight close-to-tray delays WebView disposal and tray reopen cancels pending disposal.
-- [ ] sing-box uses the Clash-compatible API path for main dashboard pages.
-- [ ] Runtime version display works after switching between mihomo and sing-box.
-- [ ] sing-box Backend version does not disappear when Clash `/version` is temporarily unreachable; host executable-version fallback still displays text.
-- [ ] sing-box `services.type=api` port was not mistaken for `clash_api.external_controller`.
+- [ ] sing-box API selection and Backend version display still match the sing-box Version Display Contract.
 
 Build and review:
 
 - [ ] `pnpm --dir dashboard-src type-check` passed.
 - [ ] `tools/build-zashboard.ps1 -SkipBuild` passed.
 - [ ] Full `build.ps1` passed.
-- [ ] Core, Overview, Proxies, Rules, Connections, and Logs were manually inspected.
-- [ ] Sidebar expanded/collapsed, window buttons, tray behavior, and core actions were manually inspected.
+- [ ] Manual inspection checklist completed.
 - [ ] Local replacement, if performed, cleared `resources/EBWebView`.
 
 ## Commit Discipline

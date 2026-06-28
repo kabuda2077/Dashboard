@@ -100,7 +100,6 @@ public sealed class MainForm : Form
         _startCoreAfterLaunch = startCoreAfterLaunch;
         _settings = AppSettings.Load();
         SyncAutostartSetting();
-        _iconCache.LoadExisting(_settings.ConfigPath);
         _dashboardServer = new DashboardServer(Path.Combine(AppSettings.AppDirectory, "resources", "dashboard"), _iconCache.CacheDirectory);
         _dashboardUri = _dashboardServer.Start();
 
@@ -118,6 +117,7 @@ public sealed class MainForm : Form
         _trayIcon = CreateTrayIcon();
         BuildLayout();
         BindEvents();
+        _iconCache.LoadExisting(_settings.ConfigPath);
     }
 
     protected override async void OnShown(EventArgs e)

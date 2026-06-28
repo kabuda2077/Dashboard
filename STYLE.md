@@ -10,7 +10,7 @@ This project embeds a customized zashboard UI inside a Windows desktop shell. UI
 - Prefer zashboard's existing component patterns over page-local custom styling.
 - Keep desktop shell visuals and frontend visuals in the same DOM/CSS system whenever possible. C# should provide window APIs; frontend should own visual layout.
 - When following upstream zashboard UI changes, keep the upstream behavior where possible but express the final visuals through this guide's existing tokens, utilities, and component patterns.
-- Dashboard.exe-owned CSS utilities live in `dashboard-src/src/assets/styles/dashboard-desktop.css`. This file is imported last and is part of the desktop product contract, not an upstream zashboard file.
+- Desktop-specific CSS utilities should stay centralized in `dashboard-src/src/assets/styles/dashboard-desktop.css`.
 
 ## Layout
 
@@ -81,7 +81,7 @@ Use only two broad panel families for custom desktop/Core UI:
 
 Do not introduce a third card-like container with different padding, border, or background just for one Core page area.
 
-Desktop-only surfaces and Core-page utilities are defined in `dashboard-src/src/assets/styles/dashboard-desktop.css`. Upstream merges may update zashboard's shared style files, but they must not remove or overwrite this desktop layer.
+Desktop-only surfaces and Core-page utilities should stay in `dashboard-src/src/assets/styles/dashboard-desktop.css`.
 
 ## Typography
 
@@ -127,8 +127,6 @@ When adding or changing UI, prefer these existing patterns first:
 If a new pattern is unavoidable, document why it is different from the canonical set above.
 
 During upstream merges, do not accept a new upstream visual pattern only because it exists upstream. First map it to the canonical set above. If it cannot be mapped, document the reusable reason before adding a project utility.
-
-The desktop frontend contract must pass before publishing. `tools/build-zashboard.ps1 -SkipBuild` verifies that removed upstream features stay removed, desktop host bootstrap stays wired, `dashboard-desktop.css` is imported last, and the required `dashboard-*`, `core-*`, `ctrls-*`, and settings utilities used by Core page and the desktop shell still exist.
 
 ## Top Bar
 
@@ -218,11 +216,6 @@ Avoid introducing a second settings style in Core page. Prefer the same `setting
 - Use existing icon libraries already used by the project, especially Heroicons in current components.
 - Avoid visible focus black outlines. Reuse the current zashboard-style subtle purple focus ring instead of removing focus feedback.
 
-Potential utility extraction candidates:
-
-- `surface-soft`: reusable `bg-base-200/70` inner data/control surface.
-- `text-muted`: reusable `text-base-content/60` for secondary and read-only values.
-
 Do not create more button utilities unless at least two real call sites clearly benefit from the extraction. `dashboard-action-btn` is already the canonical soft action supplement. Any new utility must describe its reusable purpose in this file.
 
 When extracting DaisyUI control styles, keep DaisyUI base classes on the element and use project utilities only as supplements:
@@ -231,7 +224,7 @@ When extracting DaisyUI control styles, keep DaisyUI base classes on the element
 - Good: `class="btn btn-sm dashboard-action-btn"`
 - Avoid: `class="dashboard-input"` or `class="dashboard-action-btn"` when the element depends on DaisyUI sizing, font, or state rules.
 
-MiSans must be loaded with a valid variable font-weight range. The Vite build fixes the upstream `subsetted-fonts/MiSans-VF` CSS from invalid `font-weight: undefined` to `font-weight: 100 900`; do not work around that font issue by adding page-specific button weights.
+MiSans should use a valid variable font-weight range. Do not work around font loading issues by adding page-specific button weights.
 
 ## Data Cards
 
@@ -245,17 +238,13 @@ MiSans must be loaded with a valid variable font-weight range. The Vite build fi
 
 - Overview cards use `base-container` with inner `bg-base-200/30 rounded-xl p-4` panels.
 - The speed row is the alignment reference for desktop Overview card widths.
-- The Network row should use the same three-column grid rhythm as the speed row:
-  - Latency spans two columns.
-  - Network Info spans one column.
-  - Narrow screens collapse to one column.
+- The Network row should follow the same desktop grid rhythm as the speed row, with narrow screens collapsing to one column.
 - The Latency card uses a compact two-by-two target layout for Baidu, Cloudflare, GitHub, and YouTube.
 - Each target displays the target label, a compact sparkline, a right-side average, and a muted `min` / `max` metadata row.
-- The latency chart should reuse `MiniSparkline` so it matches the Upload/Download visual language: smooth line, subtle area fill, restrained line weight, and small sample symbols.
-- Do not replace the latency chart with a custom bar chart, floating dot plot, or hand-written SVG curve unless the product direction changes.
-- Latency chart colors should use the existing low/medium/high latency theme tokens. Avoid introducing standalone latency palette colors.
+- Latency charts should match the Upload/Download visual language: smooth line, subtle area fill, restrained line weight, and small sample symbols.
+- Latency chart colors should use existing low/medium/high latency theme tokens.
 - The latency average belongs visually to the chart row, not the `min` / `max` metadata row.
-- Latency hover should use the compact `useTooltip` bubble with a single sample value such as `120ms`; keep ECharts axis tooltips for the larger Upload/Download charts.
+- Latency hover should stay compact and show a single sample value such as `120ms`.
 
 ## Responsive Behavior
 

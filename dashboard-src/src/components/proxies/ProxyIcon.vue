@@ -9,13 +9,17 @@
     v-else
     class="inline-block"
     :style="style"
-    :src="icon"
+    :src="resolvedIcon"
   />
 </template>
 
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+
+type HostWindow = Window & {
+  __mihomoIconCache?: Record<string, string>
+}
 
 const props = withDefaults(
   defineProps<{
@@ -30,6 +34,7 @@ const props = withDefaults(
   },
 )
 
+const cacheVersion = ref(0)
 const style = computed(() => {
   return {
     width: `${props.size}px`,
@@ -38,12 +43,42 @@ const style = computed(() => {
   }
 })
 const DOM_STARTS_WITH = 'data:image/svg+xml,'
+
+const resolveCachedIcon = (icon: string) => {
+  cacheVersion.value
+  const cache = (window as HostWindow).__mihomoIconCache
+  if (!cache || !icon) return icon
+
+  const cachedIcon = cache[icon]
+  if (cachedIcon) return cachedIcon
+
+  try {
+    const href = new URL(icon).href
+    return cache[href] || icon
+  } catch {
+    return icon
+  }
+}
+
+const resolvedIcon = computed(() => resolveCachedIcon(props.icon))
 const isDom = computed(() => {
-  return props.icon.startsWith(DOM_STARTS_WITH)
+  return resolvedIcon.value.startsWith(DOM_STARTS_WITH)
 })
 
 const pureDom = computed(() => {
   if (!isDom.value) return
-  return DOMPurify.sanitize(props.icon.replace(DOM_STARTS_WITH, ''))
+  return DOMPurify.sanitize(resolvedIcon.value.replace(DOM_STARTS_WITH, ''))
+})
+
+const updateIconCache = () => {
+  cacheVersion.value++
+}
+
+onMounted(() => {
+  window.addEventListener('__mihomoIconCacheUpdated', updateIconCache)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('__mihomoIconCacheUpdated', updateIconCache)
 })
 </script>

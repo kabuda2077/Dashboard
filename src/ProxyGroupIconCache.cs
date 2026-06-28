@@ -73,6 +73,7 @@ public sealed class ProxyGroupIconCache
 
         var results = await Task.WhenAll(tasks);
 
+        var changed = false;
         lock (_sync)
         {
             foreach (var result in results)
@@ -85,9 +86,19 @@ public sealed class ProxyGroupIconCache
                 var (iconUrl, uri, fileName) = result.Value;
                 foreach (var key in GetCacheKeys(iconUrl, uri))
                 {
-                    _cachedFiles[key] = fileName;
+                    if (!_cachedFiles.TryGetValue(key, out var existingFileName)
+                        || !string.Equals(existingFileName, fileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _cachedFiles[key] = fileName;
+                        changed = true;
+                    }
                 }
             }
+        }
+
+        if (changed)
+        {
+            CacheChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
