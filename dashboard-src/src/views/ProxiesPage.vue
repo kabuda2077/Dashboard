@@ -94,7 +94,7 @@ const waitTickUntilReady = (startTime = performance.now()) => {
     if (!proxiesEl) return
     proxiesEl.scrollTo({
       top: scrollStatus.value[proxiesTabShow.value],
-      behavior: 'smooth',
+      behavior: 'auto',
     })
   } else {
     requestAnimationFrame(() => {

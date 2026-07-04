@@ -17,13 +17,13 @@ public sealed class AppSettings
     };
 
     public string CoreType { get; set; } = CoreTypeMihomo;
-    public string CorePath { get; set; } = @"E:\APP\Dashboard\mihomo\mihomo.exe";
+    public string CorePath { get; set; } = DefaultMihomoCorePath;
     public string ConfigPath { get; set; } = DefaultConfigPath;
     public string DashboardApiUrl { get; set; } = "http://127.0.0.1:9090";
     public string Secret { get; set; } = "";
     public string? ProtectedSecret { get; set; }
-    public string SingBoxCorePath { get; set; } = @"E:\APP\Dashboard\sing-box\sing-box.exe";
-    public string SingBoxConfigPath { get; set; } = @"E:\APP\Dashboard\sing-box\config.json";
+    public string SingBoxCorePath { get; set; } = DefaultSingBoxCorePath;
+    public string SingBoxConfigPath { get; set; } = DefaultSingBoxConfigPath;
     public string SingBoxApiUrl { get; set; } = "http://127.0.0.1:9090";
     public string SingBoxSecret { get; set; } = "";
     public string? ProtectedSingBoxSecret { get; set; }
@@ -32,6 +32,7 @@ public sealed class AppSettings
     public bool MinimizeToTray { get; set; } = true;
     public bool LightweightMode { get; set; } = true;
     public bool Autostart { get; set; }
+    public Dictionary<string, string>? DashboardSettings { get; set; }
 
     [JsonIgnore]
     public bool IsSingBox => string.Equals(NormalizeCoreType(CoreType), CoreTypeSingBox, StringComparison.Ordinal);
@@ -177,7 +178,13 @@ public sealed class AppSettings
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
     }
 
-    private static string DefaultConfigPath => @"E:\APP\Dashboard\mihomo\config.yaml";
+    private static string DefaultMihomoCorePath => Path.Combine(AppDirectory, "mihomo", "mihomo.exe");
+
+    private static string DefaultConfigPath => Path.Combine(AppDirectory, "mihomo", "config.yaml");
+
+    private static string DefaultSingBoxCorePath => Path.Combine(AppDirectory, "sing-box", "sing-box.exe");
+
+    private static string DefaultSingBoxConfigPath => Path.Combine(AppDirectory, "sing-box", "config.json");
 
     private static string LegacyDefaultConfigPath => Path.Combine(AppDirectory, "config", "config.yaml");
 

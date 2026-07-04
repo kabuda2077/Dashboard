@@ -1,4 +1,6 @@
 import { getStorageAPI } from '@/assembly/storage'
+import { hasHostBridge } from '@/composables/hostBridge'
+import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { showNotification } from '@/helper/notification'
 import { applyDashboardSettingsToStorage } from '@/helper/utils'
 import { useStorage } from '@vueuse/core'
@@ -33,6 +35,10 @@ export const syncSettingsFromCore = async ({
   notify?: boolean
   preserveAutoSyncSetting?: boolean
 } = {}) => {
+  if (hasHostBridge) {
+    return false
+  }
+
   const { data } = await getStorageAPI()
 
   if (!data || isEmpty(data)) {
@@ -48,6 +54,7 @@ export const syncSettingsFromCore = async ({
   }
 
   applyDashboardSettingsToStorage(data)
+  await saveDashboardSettingsToHost({ beforeReload: true })
   autoSyncSettingsHash.value = newHash
 
   if (notify) {
@@ -97,12 +104,11 @@ export const importSettingsFromUrl = async (force = false) => {
   })
   autoImportSettingsHash.value = newHash
 
-  for (const key in settings) {
-    if (key === IMPORT_SETTINGS_URL_KEY && !settings[key]) {
-      continue
-    }
-    localStorage.setItem(key, settings[key] as string)
+  if (settings[IMPORT_SETTINGS_URL_KEY] === '') {
+    delete settings[IMPORT_SETTINGS_URL_KEY]
   }
+  applyDashboardSettingsToStorage(settings)
+  await saveDashboardSettingsToHost({ beforeReload: true })
   location.reload()
   return true
 }

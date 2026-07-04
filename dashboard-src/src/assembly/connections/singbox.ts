@@ -2,6 +2,7 @@
 // 维护成一张连接表,按 100ms 批量产出 { data, close } 流。
 import { getSingboxClient } from '@/api/singbox/client'
 import { runStream, type StreamHandle } from '@/api/singbox/streams'
+import { postHostMessage } from '@/composables/hostBridge'
 import {
   ConnectionEventType,
   type Connection as PbConnection,
@@ -30,6 +31,8 @@ const fetchSingboxConnections = <T>(): SingboxStream<T> => {
   let downloadTotal = 0
   let uploadTotal = 0
   let timer: ReturnType<typeof setTimeout> | null = null
+  const startedAt = performance.now()
+  let firstMessage = true
 
   const emit = () => {
     timer = null
@@ -48,6 +51,14 @@ const fetchSingboxConnections = <T>(): SingboxStream<T> => {
   const handle: StreamHandle = runStream(
     (signal) => client.subscribeConnections({ interval: SUBSCRIPTION_INTERVAL }, { signal }),
     (msg) => {
+      if (firstMessage) {
+        firstMessage = false
+        postHostMessage({
+          type: 'performance',
+          name: 'singbox:connections:firstMessage',
+          durationMs: Math.round(performance.now() - startedAt),
+        })
+      }
       if (msg.reset) {
         conns.clear()
       }

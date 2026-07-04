@@ -34,59 +34,36 @@
 </template>
 
 <script setup lang="ts">
+import {
+  addHostMessageListener,
+  applyHostMessage,
+  hasHostBridge,
+  hostWindowMaximized,
+  postHostMessage,
+  type HostMessage,
+} from '@/composables/hostBridge'
 import { MinusIcon, Square2StackIcon, StopIcon, XMarkIcon } from '@heroicons/vue/24/outline'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 
-type HostMessage = {
-  type?: string
-  isMaximized?: boolean
-  state?: {
-    isWindowMaximized?: boolean
-  }
-}
-
-type HostWindow = Window & {
-  chrome?: {
-    webview?: {
-      postMessage?: (message: unknown) => void
-      addEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
-      removeEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
-    }
-  }
-}
-
-const hostWindow = window as HostWindow
-const hasHostWindowControls = Boolean(hostWindow.chrome?.webview?.postMessage)
-const showWindowControls = hasHostWindowControls || import.meta.env.DEV
-const isMaximized = ref(false)
+const showWindowControls = hasHostBridge || import.meta.env.DEV
+const isMaximized = hostWindowMaximized
+let removeHostMessageListener: (() => void) | undefined
 
 const post = (type: string) => {
-  hostWindow.chrome?.webview?.postMessage?.({ type })
+  postHostMessage({ type })
 }
 
 const handleHostMessage = (event: MessageEvent<HostMessage>) => {
-  if (event.data?.type === 'windowState') {
-    isMaximized.value = !!event.data.isMaximized
-    return
-  }
-
-  if (event.data?.type === 'state') {
-    isMaximized.value = !!event.data.state?.isWindowMaximized
-  }
+  applyHostMessage(event.data)
 }
 
 onMounted(() => {
-  hostWindow.chrome?.webview?.addEventListener?.('message', handleHostMessage)
+  removeHostMessageListener = addHostMessageListener(handleHostMessage)
   post('requestWindowState')
 })
 
 onUnmounted(() => {
-  hostWindow.chrome?.webview?.removeEventListener?.('message', handleHostMessage)
+  removeHostMessageListener?.()
+  removeHostMessageListener = undefined
 })
 </script>

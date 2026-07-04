@@ -23,14 +23,18 @@
               :name="(route.meta.transition as string) || 'fade'"
               v-if="isMiddleScreen"
             >
-              <Component :is="Component" />
+              <KeepAlive include="OverviewPage">
+                <Component :is="Component" />
+              </KeepAlive>
             </Transition>
             <Transition
               v-else
               name="page"
               mode="out-in"
             >
-              <Component :is="Component" />
+              <KeepAlive include="OverviewPage">
+                <Component :is="Component" />
+              </KeepAlive>
             </Transition>
           </div>
         </div>
@@ -85,12 +89,13 @@
 import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
 import { useSwipeRouter } from '@/composables/swipe'
-import { PROXY_TAB_TYPE, ROUTE_ICON_MAP, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
+import { PROXY_TAB_TYPE, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
+import { ROUTE_ICON_MAP } from '@/constant/routeIcons'
 import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
-import { fetchConfigs } from '@/assembly/config'
-import { initConnections } from '@/store/connections'
-import { initLogs } from '@/store/logs'
+import { fetchConfigs, resetConfigs } from '@/assembly/config'
+import { initConnections, isPaused as connectionsPaused } from '@/store/connections'
+import { initLogs, isPaused as logsPaused } from '@/store/logs'
 import { initSatistic } from '@/store/overview'
 import { fetchProxies, proxiesTabShow } from '@/assembly/proxies'
 import { fetchRules, rulesTabShow } from '@/assembly/rules'
@@ -138,7 +143,8 @@ const ensureTask = (key: string, task: () => void) => {
 }
 
 const initializeGlobalData = () => {
-  ensureTask('connections', initConnections)
+  ensureTask('configs', fetchConfigs)
+  ensureTask('connections-full', () => initConnections('full'))
   ensureTask('proxies', fetchProxies)
   ensureTask('statistics', initSatistic)
 }
@@ -150,8 +156,6 @@ const initializeRouteData = () => {
   if (!routeName) {
     return
   }
-
-  ensureTask('configs', fetchConfigs)
 
   switch (routeName) {
     case ROUTE_NAME.rules:
@@ -168,6 +172,7 @@ watch(
   () => {
     if (!activeUuid.value) return
     initializedTasks.clear()
+    resetConfigs()
     rulesTabShow.value = RULE_TAB_TYPE.RULES
     proxiesTabShow.value = PROXY_TAB_TYPE.PROXIES
     initializeGlobalData()
@@ -189,9 +194,14 @@ watch(
 const documentVisible = useDocumentVisibility()
 
 watch(documentVisible, () => {
-  if (documentVisible.value !== 'visible') return
+  const visible = documentVisible.value === 'visible'
+  connectionsPaused.value = !visible
+  logsPaused.value = !visible
+  if (!visible) return
+
   if (initializedTasks.has('proxies')) {
     fetchProxies()
   }
+  initializeRouteData()
 })
 </script>

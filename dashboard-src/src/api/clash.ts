@@ -1,4 +1,5 @@
 import { getUrlFromBackend } from '@/helper/utils'
+import { postHostMessage } from '@/composables/hostBridge'
 import { activeBackend } from '@/store/setup'
 import type {
   Backend,
@@ -175,6 +176,8 @@ export const deleteStorageAPI = () => {
 }
 
 export const createClashWebSocket = <T>(url: string, searchParams?: Record<string, string>) => {
+  const startedAt = performance.now()
+  let firstMessage = true
   const backend = activeBackend.value!
   const resurl = new URL(`${getUrlFromBackend(backend).replace('http', 'ws')}/${url}`)
 
@@ -194,6 +197,14 @@ export const createClashWebSocket = <T>(url: string, searchParams?: Record<strin
   }
 
   const messageHandler = ({ data: message }: { data: string }) => {
+    if (firstMessage) {
+      firstMessage = false
+      postHostMessage({
+        type: 'performance',
+        name: `ws:${url}:firstMessage`,
+        durationMs: Math.round(performance.now() - startedAt),
+      })
+    }
     data.value = JSON.parse(message)
   }
 

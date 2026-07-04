@@ -100,12 +100,17 @@ export const addBackend = (
   const currentEnd = matchingBackends[0]
 
   if (currentEnd) {
-    Object.assign(currentEnd, backend)
     if (options?.replaceExisting) {
-      backendList.value = [currentEnd]
+      backendList.value = [{
+        ...backend,
+        uuid: currentEnd.uuid,
+      }]
     } else if (matchingBackends.length > 1) {
+      Object.assign(currentEnd, backend)
       const duplicateIds = new Set(matchingBackends.slice(1).map((end) => end.uuid))
       backendList.value = backendList.value.filter((end) => !duplicateIds.has(end.uuid))
+    } else {
+      Object.assign(currentEnd, backend)
     }
     activeUuid.value = currentEnd.uuid
     return

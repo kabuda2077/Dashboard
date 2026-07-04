@@ -3,6 +3,7 @@
 // isSingBoxCore 基于「运行时内核版本字符串」,与 assembly/backend.ts 的 isSingboxBackend
 //(基于配置类型)语义不同:Clash 通道也可能连到 sing-box 兼容核心。
 import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI, upgradeUIAPI } from '@/api/clash'
+import { hostWindow } from '@/composables/hostBridge'
 import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { autoUpgradeCore, autoUpgradeDashboard, checkUpgradeCore } from '@/store/settings'
@@ -16,10 +17,6 @@ export const zashboardVersion = ref(__APP_VERSION__)
 // sing-box gRPC API version (0 when unknown / non-sing-box). Gates capabilities
 // such as usbip, which requires apiVersion >= 2.
 export const singboxApiVersion = ref(0)
-
-type HostVersionWindow = Window & {
-  __mihomoHostCoreVersion?: string
-}
 
 export const isSingBoxCore = computed(() => version.value?.includes('sing-box'))
 
@@ -45,7 +42,7 @@ export const fetchVersionAPI = () => {
   return fetchClashVersion()
 }
 
-const getHostCoreVersion = () => (window as HostVersionWindow).__mihomoHostCoreVersion || ''
+const getHostCoreVersion = () => hostWindow.__mihomoHostCoreVersion || ''
 
 let versionFetchId = 0
 

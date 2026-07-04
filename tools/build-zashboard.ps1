@@ -1,5 +1,7 @@
 param(
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [ValidateSet('all', 'cdn', 'firasans', 'misans', 'none', 'pingfang', 'sarasa')]
+    [string]$Font = 'misans'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,12 +10,33 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $sourceRoot = Join-Path $repoRoot 'dashboard-src'
 $dashboardDir = Join-Path $repoRoot 'resources\dashboard'
 
+function Show-DashboardAssetStats {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $assetsDir = Join-Path $Path 'assets'
+    if (-not (Test-Path -LiteralPath $assetsDir)) {
+        return
+    }
+
+    $files = Get-ChildItem -LiteralPath $assetsDir -File
+    $total = ($files | Measure-Object Length -Sum).Sum
+    $js = ($files | Where-Object { $_.Extension -eq '.js' } | Measure-Object Length -Sum).Sum
+    $css = ($files | Where-Object { $_.Extension -eq '.css' } | Measure-Object Length -Sum).Sum
+    $fontBytes = ($files | Where-Object { $_.Extension -in '.woff', '.woff2', '.ttf' } | Measure-Object Length -Sum).Sum
+
+    Write-Host ("dashboard asset stats: total={0:N2}MB js={1:N2}MB css={2:N2}MB fonts={3:N2}MB files={4}" -f `
+        ($total / 1MB), ($js / 1MB), ($css / 1MB), ($fontBytes / 1MB), $files.Count)
+}
+
 if (-not (Test-Path (Join-Path $sourceRoot 'package.json'))) {
     throw "dashboard-src is missing. Restore the zashboard source before building."
 }
 
 $requiredFiles = @(
     'src\hostBootstrap.ts',
+    'src\composables\hostBridge.ts',
     'src\views\CorePage.vue',
     'src\router\index.ts',
     'src\constant\index.ts'
@@ -106,8 +129,11 @@ $zashboardSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\
 $zashboardSettings = Get-Content -LiteralPath $zashboardSettingsPath -Raw
 foreach ($pattern in @('zashboardVersion', '__COMMIT_ID__', 'github.com/Zephyruso/zashboard', 'isUIUpdateAvailable')) {
     if ($zashboardSettings -match $pattern) {
-        throw "dashboard source check failed: settings title must stay Dashboard without version or upstream link"
+        throw "dashboard source check failed: settings title must stay localized without version or upstream link"
     }
+}
+if ($zashboardSettings -notmatch 'zashboardSettings') {
+    throw "dashboard source check failed: settings title must use the zashboardSettings i18n key"
 }
 
 $generalSettingsPath = Join-Path $sourceRoot 'src\components\settings\general\GeneralSettings.vue'
@@ -219,12 +245,19 @@ try {
         throw "vite is missing. Run pnpm install in dashboard-src."
     }
 
+    $previousFont = $env:FONT
+    $previousDesktopBuild = $env:DESKTOP_BUILD
+    $env:FONT = $Font
+    $env:DESKTOP_BUILD = '1'
+
     & $vitePath build
     if ($LASTEXITCODE -ne 0) {
         throw "dashboard build failed with exit code $LASTEXITCODE"
     }
 }
 finally {
+    $env:FONT = $previousFont
+    $env:DESKTOP_BUILD = $previousDesktopBuild
     Pop-Location
 }
 
@@ -234,5 +267,6 @@ if (Test-Path $dashboardDir) {
 
 New-Item -ItemType Directory -Path $dashboardDir | Out-Null
 Copy-Item -Path (Join-Path $sourceRoot 'dist\*') -Destination $dashboardDir -Recurse -Force
+Show-DashboardAssetStats -Path $dashboardDir
 
 & (Join-Path $repoRoot 'tools\create-app-icon.ps1')

@@ -1,5 +1,6 @@
 // 组装层 · config 门面。持有统一的 configs 状态,按后端类型路由到 clash / singbox 实现。
 import { isSingboxBackend } from '@/assembly/backend'
+import { activeUuid } from '@/store/setup'
 import type { Config } from '@/types'
 import { ref } from 'vue'
 
@@ -22,11 +23,25 @@ export const defaultConfig: Config = {
 }
 
 export const configs = ref<Config>({ ...defaultConfig })
+export const configsLoaded = ref(false)
+export const configsLoadedBackendUuid = ref('')
+
+export const resetConfigs = () => {
+  configs.value = { ...defaultConfig }
+  configsLoaded.value = false
+  configsLoadedBackendUuid.value = ''
+}
 
 // 按需动态加载后端实现,避免 clash 后端下也实例化 sing-box gRPC。
 const load = () => (isSingboxBackend.value ? import('./singbox') : import('./clash'))
 
-export const fetchConfigs = async () => (await load()).fetchConfigs()
+export const fetchConfigs = async () => {
+  const backendUuid = activeUuid.value
+  const result = await (await load()).fetchConfigs()
+  configsLoaded.value = true
+  configsLoadedBackendUuid.value = backendUuid
+  return result
+}
 
 export const updateConfigs = async (cfg: Record<string, string | boolean | object | number>) =>
   (await load()).updateConfigs(cfg)

@@ -9,37 +9,43 @@
             <BackendVersion class="text-sm font-normal" />
           </span>
         </div>
-        <div
-          v-if="configs"
-          class="settings-grid"
-        >
+        <div class="settings-grid">
           <div
-            v-if="canShowTunMode"
+            v-if="tunState.visible"
             class="setting-item"
           >
             <div class="setting-item-label">
               {{ $t('tunMode') }}
             </div>
+            <span
+              v-if="tunState.loading"
+              class="loading loading-spinner loading-xs"
+            />
             <input
+              v-else
               class="toggle"
               type="checkbox"
-              :checked="tunModeEnabled"
-              :disabled="isTunModeReadOnly"
-              :class="isTunModeReadOnly && 'opacity-50'"
+              :checked="!!tunState.enabled"
+              :disabled="!tunState.writable"
+              :class="!tunState.writable && 'opacity-50'"
               @change="hanlderTunModeChange"
             />
           </div>
           <div
-            v-if="configs"
             class="setting-item"
           >
             <div class="setting-item-label">
               {{ $t('allowLan') }}
             </div>
+            <span
+              v-if="!isActiveConfigLoaded"
+              class="loading loading-spinner loading-xs"
+            />
             <input
+              v-else
               class="toggle"
               type="checkbox"
-              v-model="configs['allow-lan']"
+              :checked="!!configs['allow-lan']"
               @change="handlerAllowLanChange"
             />
           </div>
@@ -142,24 +148,23 @@ import { isSingBoxCore as isSingBox } from '@/assembly/version'
 import BackendVersion from '@/components/common/BackendVersion.vue'
 import TopDownloadConnections from '@/components/settings/backend/TopDownloadConnections.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
+import { useBackendRuntimeConfig } from '@/composables/useBackendRuntimeConfig'
 import { showNotification } from '@/helper/notification'
-import { configs, fetchConfigs, updateConfigs } from '@/assembly/config'
+import { fetchConfigs } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
 import { displayAllFeatures } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
-import { computed, inject, ref } from 'vue'
+import { inject, ref } from 'vue'
 
 const coreHostActions = inject(coreHostActionsKey, null)
-const hasWritableTunMode = computed(() => !!configs.value?.tun && !activeBackend.value?.disableTunMode)
-const hasReadOnlyTunMode = computed(() => typeof activeBackend.value?.readOnlyTunEnabled === 'boolean')
-const canShowTunMode = computed(() => hasWritableTunMode.value || hasReadOnlyTunMode.value)
-const isTunModeReadOnly = computed(() => !hasWritableTunMode.value && hasReadOnlyTunMode.value)
-const tunModeEnabled = computed(() =>
-  hasWritableTunMode.value
-    ? !!configs.value?.tun?.enable
-    : !!activeBackend.value?.readOnlyTunEnabled,
-)
+const {
+  configs,
+  isActiveConfigLoaded,
+  tunState,
+  updateAllowLan,
+  updateTunEnabled,
+} = useBackendRuntimeConfig()
+
 const reloadAll = () => {
   fetchConfigs()
   fetchRules()
@@ -201,14 +206,14 @@ const handlerClickUpdateGeo = async () => {
 }
 
 const hanlderTunModeChange = async () => {
-  if (!hasWritableTunMode.value) {
-    return
-  }
-
-  await updateConfigs({ tun: { enable: !configs.value?.tun?.enable } })
+  await updateTunEnabled(!configs.value?.tun?.enable)
 }
-const handlerAllowLanChange = async () => {
-  await updateConfigs({ ['allow-lan']: configs.value?.['allow-lan'] })
+const handlerAllowLanChange = async (event: Event) => {
+  if (!isActiveConfigLoaded.value) return
+  const checked = event.target instanceof HTMLInputElement
+    ? event.target.checked
+    : !!configs.value?.['allow-lan']
+  await updateAllowLan(checked)
 }
 
 const handleFlushDNSCache = async () => {

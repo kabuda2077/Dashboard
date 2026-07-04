@@ -174,6 +174,7 @@
 <script setup lang="ts">
 import { deleteStorageAPI, setStorageAPI } from '@/assembly/storage'
 import { isSingBoxCore } from '@/assembly/version'
+import { hasHostBridge } from '@/composables/hostBridge'
 import {
   autoImportSettings,
   autoSyncSettings,
@@ -182,14 +183,15 @@ import {
   importSettingsUrl,
   syncSettingsFromCore,
 } from '@/helper/autoImportSettings'
+import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { LOCAL_IMAGE } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
 import { useTooltip } from '@/helper/tooltip'
 import {
   applyDashboardSettingsToStorage,
+  clearDashboardSettingsFromStorage,
   exportSettings,
   getDashboardSettingsFromStorage,
-  resetSettings,
 } from '@/helper/utils'
 import { customBackgroundURL, displayAllFeatures } from '@/store/settings'
 import {
@@ -207,15 +209,19 @@ import TextInput from './TextInput.vue'
 const inputRef = ref<HTMLInputElement>()
 const dashboardSettingsDialogShow = ref(false)
 const isStorageSubmitting = ref(false)
-const showSyncSettings = computed(() => !isSingBoxCore.value || displayAllFeatures.value)
+const showSyncSettings = computed(
+  () => !hasHostBridge && (!isSingBoxCore.value || displayAllFeatures.value),
+)
 
 const { showTip } = useTooltip()
 const { t } = useI18n()
 
-const handlerClickResetSettings = () => {
+const handlerClickResetSettings = async () => {
   if (!window.confirm(t('resetSettingsConfirm'))) return
   dashboardSettingsDialogShow.value = false
-  resetSettings()
+  clearDashboardSettingsFromStorage()
+  await saveDashboardSettingsToHost({ beforeReload: true })
+  window.location.reload()
 }
 
 const handlerJsonUpload = () => {
@@ -228,6 +234,7 @@ const handlerJsonUpload = () => {
   reader.onload = async () => {
     const settings = JSON.parse(reader.result as string)
     applyDashboardSettingsToStorage(settings)
+    await saveDashboardSettingsToHost({ beforeReload: true })
     location.reload()
   }
   reader.readAsText(file)

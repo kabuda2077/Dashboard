@@ -1,0 +1,132 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+describe('backend URL parsing', () => {
+  beforeEach(() => {
+    history.replaceState(null, '', '/')
+    localStorage.clear()
+    Object.defineProperty(window, 'chrome', {
+      configurable: true,
+      value: undefined,
+    })
+  })
+
+  it('parses desktop query parameters into a clash backend shape', async () => {
+    history.replaceState(
+      null,
+      '',
+      '/?https=1&hostname=example.test&port=9443&secondaryPath=%2Fapi&secret=s3cr3t&label=Local&disableUpgradeCore=1&disableTunMode=tun',
+    )
+    const { getBackendFromUrl } = await import('@/helper/utils')
+
+    expect(getBackendFromUrl()).toMatchObject({
+      protocol: 'https',
+      host: 'example.test',
+      port: '9443',
+      secondaryPath: '/api',
+      password: 's3cr3t',
+      label: 'Local',
+      disableUpgradeCore: true,
+      disableTunMode: true,
+    })
+  })
+
+  it('parses backend parameters from hash URLs and formats backend URLs', async () => {
+    history.replaceState(null, '', '/#/core?http=1&hostname=127.0.0.1&port=9090')
+    const { getBackendFromUrl, getUrlFromBackend, getSingboxUrlFromBackend } = await import(
+      '@/helper/utils'
+    )
+
+    expect(getBackendFromUrl()).toMatchObject({
+      protocol: 'http',
+      host: '127.0.0.1',
+      port: '9090',
+      secondaryPath: '',
+    })
+    expect(
+      getUrlFromBackend({
+        protocol: 'http',
+        host: '127.0.0.1',
+        port: '9090',
+        secondaryPath: '/ui',
+      }),
+    ).toBe('http://127.0.0.1:9090/ui')
+    expect(
+      getSingboxUrlFromBackend({
+        type: 'singbox',
+        protocol: 'https',
+        host: 'box.local',
+        port: '9443',
+      }),
+    ).toBe('https://box.local:9443')
+  })
+})
+
+describe('dashboard settings storage', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    Object.defineProperty(window, 'chrome', {
+      configurable: true,
+      value: undefined,
+    })
+  })
+
+  it('collects only config-prefixed localStorage entries', async () => {
+    const { getDashboardSettingsFromStorage } = await import('@/helper/utils')
+
+    localStorage.setItem('config/default-theme', '"light"')
+    localStorage.setItem('config/proxy-sort-type', '"default"')
+    localStorage.setItem('cache/proxy-icon', '{}')
+    localStorage.setItem('setup/api-list', '[]')
+
+    expect(getDashboardSettingsFromStorage()).toEqual({
+      'config/default-theme': '"light"',
+      'config/proxy-sort-type': '"default"',
+    })
+  })
+
+  it('applies and clears only config-prefixed dashboard settings', async () => {
+    const { applyDashboardSettingsToStorage, clearDashboardSettingsFromStorage } = await import(
+      '@/helper/utils'
+    )
+
+    localStorage.setItem('setup/api-list', '[]')
+    applyDashboardSettingsToStorage({
+      'config/default-theme': '"dark"',
+      'cache/proxy-icon': '{}',
+      'config/not-a-string': false,
+    })
+
+    expect(localStorage.getItem('config/default-theme')).toBe('"dark"')
+    expect(localStorage.getItem('cache/proxy-icon')).toBeNull()
+    expect(localStorage.getItem('config/not-a-string')).toBeNull()
+
+    clearDashboardSettingsFromStorage()
+    expect(localStorage.getItem('config/default-theme')).toBeNull()
+    expect(localStorage.getItem('setup/api-list')).toBe('[]')
+  })
+
+  it('posts config settings to the desktop host bridge', async () => {
+    vi.resetModules()
+    const postMessage = vi.fn()
+    Object.defineProperty(window, 'chrome', {
+      configurable: true,
+      value: {
+        webview: {
+          postMessage,
+        },
+      },
+    })
+    localStorage.setItem('config/default-theme', '"light"')
+    localStorage.setItem('cache/proxy-icon', '{}')
+
+    const { saveDashboardSettingsToHost } = await import('@/helper/dashboardSettingsSync')
+    await saveDashboardSettingsToHost()
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'saveDashboardSettings',
+      settings: {
+        'config/default-theme': '"light"',
+      },
+    })
+  })
+})

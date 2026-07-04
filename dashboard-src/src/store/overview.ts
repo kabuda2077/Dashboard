@@ -1,6 +1,6 @@
 import { fetchMemoryAPI, fetchTrafficAPI } from '@/assembly/overview'
 import { ref, watch } from 'vue'
-import { activeConnections } from './connections'
+import { activeConnectionCount } from './connections'
 
 export const timeSaved = 60
 const initValue = new Array(timeSaved).fill(0).map((v, i) => ({ name: i, value: v }))
@@ -45,7 +45,7 @@ export const initSatistic = () => {
         name: timestamp,
       })
       connectionsHistory.value.push({
-        value: activeConnections.value.length,
+        value: activeConnectionCount.value,
         name: timestamp,
       })
 

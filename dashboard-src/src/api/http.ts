@@ -4,6 +4,7 @@
 import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { getUrlFromBackend } from '@/helper/utils'
+import router from '@/router'
 import { activeBackend, activeUuid } from '@/store/setup'
 import axios, { AxiosError } from 'axios'
 import { nextTick } from 'vue'
@@ -26,7 +27,6 @@ axios.interceptors.response.use(
     }>,
   ) => {
     if (error.status === 401 && activeUuid.value) {
-      const { default: router } = await import('@/router')
       const currentBackendUuid = activeUuid.value
       activeUuid.value = null
       router.push({

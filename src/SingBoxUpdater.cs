@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -10,7 +8,6 @@ namespace Dashboard;
 public static class SingBoxUpdater
 {
     private const string ReleasesApi = "https://api.github.com/repos/reF1nd/sing-box-releases/releases?per_page=50";
-    private const int MaxCoreBackups = 3;
 
     public static async Task<CoreUpgradeResult> UpgradeLatestAsync(
         string corePath,
@@ -28,7 +25,7 @@ public static class SingBoxUpdater
         }
 
         var installedVersion = await GetInstalledVersionAsync(corePath, cancellationToken);
-        using var client = CreateHttpClient();
+        using var client = CoreUpgradeSupport.CreateHttpClient();
         using var releaseResponse = await client.GetAsync(ReleasesApi, cancellationToken);
         releaseResponse.EnsureSuccessStatusCode();
 
@@ -43,40 +40,32 @@ public static class SingBoxUpdater
             return new CoreUpgradeResult(version, asset.Name, "", IsAlreadyLatest: true);
         }
 
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Dashboard", "sing-box-upgrade", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempRoot);
+        var tempRoot = CoreUpgradeSupport.CreateTempRoot("sing-box-upgrade");
         try
         {
             var archivePath = Path.Combine(tempRoot, asset.Name);
-            using (var assetResponse = await client.GetAsync(asset.DownloadUrl, cancellationToken))
-            {
-                assetResponse.EnsureSuccessStatusCode();
-                await using var assetStream = await assetResponse.Content.ReadAsStreamAsync(cancellationToken);
-                await using var fileStream = File.Create(archivePath);
-                await assetStream.CopyToAsync(fileStream, cancellationToken);
-            }
+            await CoreUpgradeSupport.DownloadFileAsync(client, asset.DownloadUrl, archivePath, cancellationToken);
 
             var extractedCore = ExtractCoreExecutable(archivePath, tempRoot);
-            if (await HasSameFileHashAsync(corePath, extractedCore, cancellationToken))
+            if (await CoreUpgradeSupport.HasSameFileHashAsync(corePath, extractedCore, cancellationToken))
             {
                 return new CoreUpgradeResult(version, asset.Name, "", IsAlreadyLatest: true);
             }
 
             beforeReplace?.Invoke();
-            var backupPath = BackupCore(corePath);
-            File.Copy(extractedCore, corePath, overwrite: true);
+            var backupPath = CoreUpgradeSupport.BackupCore(corePath);
+            CoreUpgradeSupport.ReplaceCoreWithRollback(extractedCore, corePath, backupPath);
 
-            return new CoreUpgradeResult(version, asset.Name, backupPath, IsAlreadyLatest: false);
+            return new CoreUpgradeResult(
+                version,
+                asset.Name,
+                backupPath,
+                IsAlreadyLatest: false,
+                Warning: "sing-box 发布文件未提供 SHA256 digest，本次升级无法进行发布方校验。");
         }
         finally
         {
-            try
-            {
-                Directory.Delete(tempRoot, recursive: true);
-            }
-            catch
-            {
-            }
+            CoreUpgradeSupport.DeleteDirectoryQuietly(tempRoot);
         }
     }
 
@@ -202,70 +191,6 @@ public static class SingBoxUpdater
         return executable ?? throw new InvalidOperationException("压缩包中没有找到 sing-box.exe。");
     }
 
-    private static async Task<bool> HasSameFileHashAsync(
-        string currentPath,
-        string candidatePath,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (new FileInfo(currentPath).Length != new FileInfo(candidatePath).Length)
-            {
-                return false;
-            }
-
-            var currentHash = await ComputeFileSha256Async(currentPath, cancellationToken);
-            var candidateHash = await ComputeFileSha256Async(candidatePath, cancellationToken);
-            return string.Equals(currentHash, candidateHash, StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static async Task<string> ComputeFileSha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    private static string BackupCore(string corePath)
-    {
-        var backupDirectory = Path.Combine(Path.GetDirectoryName(corePath) ?? AppContext.BaseDirectory, "backups");
-        Directory.CreateDirectory(backupDirectory);
-
-        var backupPath = Path.Combine(
-            backupDirectory,
-            $"{Path.GetFileNameWithoutExtension(corePath)}-{DateTime.Now:yyyyMMdd-HHmmss}{Path.GetExtension(corePath)}.bak");
-
-        File.Copy(corePath, backupPath, overwrite: false);
-        PruneOldBackups(backupDirectory, corePath);
-        return backupPath;
-    }
-
-    private static void PruneOldBackups(string backupDirectory, string corePath)
-    {
-        var prefix = $"{Path.GetFileNameWithoutExtension(corePath)}-";
-        var suffix = $"{Path.GetExtension(corePath)}.bak";
-        var backups = Directory
-            .EnumerateFiles(backupDirectory, $"{prefix}*{suffix}")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .Skip(MaxCoreBackups);
-
-        foreach (var backup in backups)
-        {
-            try
-            {
-                File.Delete(backup);
-            }
-            catch
-            {
-            }
-        }
-    }
-
     private static void TryKill(Process process)
     {
         try
@@ -278,13 +203,6 @@ public static class SingBoxUpdater
         catch
         {
         }
-    }
-
-    private static HttpClient CreateHttpClient()
-    {
-        var client = new HttpClient();
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Dashboard", "1.0"));
-        return client;
     }
 
     private sealed record CoreAsset(string Name, string DownloadUrl);

@@ -7,11 +7,8 @@ import { activeBackend } from '@/store/setup'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import CorePage from '@/views/CorePage.vue'
 import HomePage from '@/views/HomePage.vue'
-import LogsPage from '@/views/LogsPage.vue'
 import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
-import RulesPage from '@/views/RulesPage.vue'
-import SetupPage from '@/views/SetupPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
@@ -40,12 +37,12 @@ const childrenRouter = [
   {
     path: 'logs',
     name: ROUTE_NAME.logs,
-    component: LogsPage,
+    component: () => import('@/views/LogsPage.vue'),
   },
   {
     path: 'rules',
     name: ROUTE_NAME.rules,
-    component: RulesPage,
+    component: () => import('@/views/RulesPage.vue'),
   },
 ]
 
@@ -65,7 +62,7 @@ const router = createRouter({
     {
       path: '/setup',
       name: ROUTE_NAME.setup,
-      component: SetupPage,
+      component: () => import('@/views/SetupPage.vue'),
     },
     {
       path: '/:catchAll(.*)',

@@ -6,9 +6,13 @@ namespace Dashboard;
 public sealed class CoreProcessManager : IDisposable
 {
     private const int MaxLogLines = 500;
+    private const int LogEventFlushIntervalMs = 125;
     private readonly CircularBuffer<string> _logLines = new(MaxLogLines);
     private readonly object _processLock = new();
+    private readonly object _logEventLock = new();
     private readonly HashSet<int> _stoppingProcessIds = new();
+    private readonly StringBuilder _pendingLogEvents = new();
+    private System.Threading.Timer? _logEventTimer;
     private Process? _process;
 
     public event EventHandler? StatusChanged;
@@ -89,11 +93,6 @@ public sealed class CoreProcessManager : IDisposable
             throw new FileNotFoundException($"找不到 {coreName} 配置文件，请检查路径。", configPath);
         }
 
-        if (TryAttachExistingProcess(corePath, coreName))
-        {
-            return;
-        }
-
         var configDirectory = Path.GetDirectoryName(configPath) ?? AppContext.BaseDirectory;
         var arguments = settings.IsSingBox
             ? $"run -D \"{configDirectory}\" -c \"{configPath}\""
@@ -149,78 +148,6 @@ public sealed class CoreProcessManager : IDisposable
         process.BeginErrorReadLine();
         AppendLog($"{coreName} started. pid={processId}");
         StatusChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    private bool TryAttachExistingProcess(string corePath, string coreName)
-    {
-        var existingProcess = FindExistingProcess(corePath);
-        if (existingProcess is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            existingProcess.EnableRaisingEvents = true;
-            var processId = existingProcess.Id;
-            existingProcess.Exited += (_, _) =>
-            {
-                if (!ShouldSuppressExitedLog(processId))
-                {
-                    AppendLog($"{coreName} exited with code {GetExitCodeText(existingProcess)}.");
-                }
-                StatusChanged?.Invoke(this, EventArgs.Empty);
-            };
-
-            lock (_processLock)
-            {
-                _process = existingProcess;
-            }
-
-            AppendLog($"{coreName} already running. attached pid={processId}");
-            StatusChanged?.Invoke(this, EventArgs.Empty);
-            return true;
-        }
-        catch
-        {
-            existingProcess.Dispose();
-            return false;
-        }
-    }
-
-    private static Process? FindExistingProcess(string corePath)
-    {
-        var currentProcessId = Environment.ProcessId;
-        var processName = Path.GetFileNameWithoutExtension(corePath);
-        var fullCorePath = Path.GetFullPath(corePath);
-
-        foreach (var process in Process.GetProcessesByName(processName))
-        {
-            try
-            {
-                if (process.Id == currentProcessId || process.HasExited)
-                {
-                    process.Dispose();
-                    continue;
-                }
-
-                var modulePath = process.MainModule?.FileName;
-                if (string.IsNullOrWhiteSpace(modulePath)
-                    || !string.Equals(Path.GetFullPath(modulePath), fullCorePath, StringComparison.OrdinalIgnoreCase))
-                {
-                    process.Dispose();
-                    continue;
-                }
-
-                return process;
-            }
-            catch
-            {
-                process.Dispose();
-            }
-        }
-
-        return null;
     }
 
     public void Stop()
@@ -281,7 +208,41 @@ public sealed class CoreProcessManager : IDisposable
 
         var entry = $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
         _logLines.Add(entry);
-        LogReceived?.Invoke(this, entry);
+        QueueLogReceived(entry);
+    }
+
+    private void QueueLogReceived(string entry)
+    {
+        lock (_logEventLock)
+        {
+            _pendingLogEvents.Append(entry);
+            _logEventTimer ??= new System.Threading.Timer(
+                _ => FlushPendingLogReceived(),
+                null,
+                LogEventFlushIntervalMs,
+                Timeout.Infinite);
+        }
+    }
+
+    private void FlushPendingLogReceived()
+    {
+        string? batch = null;
+        lock (_logEventLock)
+        {
+            if (_pendingLogEvents.Length > 0)
+            {
+                batch = _pendingLogEvents.ToString();
+                _pendingLogEvents.Clear();
+            }
+
+            _logEventTimer?.Dispose();
+            _logEventTimer = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(batch))
+        {
+            LogReceived?.Invoke(this, batch);
+        }
     }
 
     private void DisposeExitedProcess()
@@ -366,6 +327,13 @@ public sealed class CoreProcessManager : IDisposable
         {
             process = _process;
             _process = null;
+        }
+
+        FlushPendingLogReceived();
+        lock (_logEventLock)
+        {
+            _logEventTimer?.Dispose();
+            _logEventTimer = null;
         }
 
         process?.Dispose();

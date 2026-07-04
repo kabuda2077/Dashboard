@@ -2,6 +2,7 @@
 // 把 Status 映射成 memory / traffic,并以与 Clash WS 相同的 { data, close } 形状产出。
 import { getSingboxClient } from '@/api/singbox/client'
 import { runStream, type StreamHandle } from '@/api/singbox/streams'
+import { postHostMessage } from '@/composables/hostBridge'
 import type { Status } from '@/gen/daemon/started_service_pb'
 import { ref, watch, type Ref } from 'vue'
 
@@ -31,9 +32,19 @@ const ensureSharedStatusStream = () => {
   const client = getSingboxClient()?.client
   if (!client) return false
 
+  const startedAt = performance.now()
+  let firstMessage = true
   statusHandle = runStream(
     (signal) => client.subscribeStatus({ interval: SUBSCRIPTION_INTERVAL }, { signal }),
     (status) => {
+      if (firstMessage) {
+        firstMessage = false
+        postHostMessage({
+          type: 'performance',
+          name: 'singbox:status:firstMessage',
+          durationMs: Math.round(performance.now() - startedAt),
+        })
+      }
       latestStatus = status
       statusListeners.forEach((listener) => listener(status))
     },

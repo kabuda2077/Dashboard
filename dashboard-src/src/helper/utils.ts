@@ -21,12 +21,20 @@ export const fromNow = (timestamp: string | number) => {
   return dayjs(timestamp).fromNow()
 }
 
+export const isDashboardSettingKey = (key: string | null | undefined): key is string => {
+  return !!key && key.startsWith('config/')
+}
+
 export const getDashboardSettingsFromStorage = () => {
   const settings: Record<string, string> = {}
 
-  for (const key in localStorage) {
-    if (key.startsWith('config/')) {
-      settings[key] = localStorage.getItem(key) as string
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (isDashboardSettingKey(key)) {
+      const value = localStorage.getItem(key)
+      if (typeof value === 'string') {
+        settings[key] = value
+      }
     }
   }
 
@@ -35,10 +43,21 @@ export const getDashboardSettingsFromStorage = () => {
 
 export const applyDashboardSettingsToStorage = (settings: Record<string, unknown>) => {
   for (const key in settings) {
-    if (key.startsWith('config/')) {
-      localStorage.setItem(key, settings[key] as string)
+    if (isDashboardSettingKey(key) && typeof settings[key] === 'string') {
+      localStorage.setItem(key, settings[key])
     }
   }
+}
+
+export const clearDashboardSettingsFromStorage = () => {
+  const keysToReset: string[] = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (isDashboardSettingKey(key)) {
+      keysToReset.push(key)
+    }
+  }
+  keysToReset.forEach((key) => localStorage.removeItem(key))
 }
 
 export const exportSettings = () => {
@@ -53,11 +72,7 @@ export const exportSettings = () => {
 }
 
 export const resetSettings = () => {
-  const keysToReset = Object.keys(localStorage).filter((key) => {
-    return key.startsWith('config/')
-  })
-
-  keysToReset.forEach((key) => localStorage.removeItem(key))
+  clearDashboardSettingsFromStorage()
   window.location.reload()
 }
 

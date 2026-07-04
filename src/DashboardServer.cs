@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace Dashboard;
 
@@ -10,12 +12,14 @@ public sealed class DashboardServer : IDisposable
     private const int PreferredPort = 33291;
     private static readonly TimeSpan RequestReadTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly string _root;
-    private readonly string _iconCacheRoot;
+    private readonly string _rootFullPath;
+    private readonly string _iconCacheRootFullPath;
     private readonly ConcurrentDictionary<string, CachedFile> _fileCache = new();
+    private readonly ConcurrentDictionary<string, CachedFile> _iconFileCache = new();
     private readonly TimeSpan _cacheExpiration = TimeSpan.FromMinutes(5);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
+    private int _firstRequestLogged;
 
     private sealed class CachedFile
     {
@@ -23,12 +27,14 @@ public sealed class DashboardServer : IDisposable
         public required string ContentType { get; init; }
         public required DateTime CachedAt { get; init; }
         public required DateTime LastWriteTimeUtc { get; init; }
+        public required long Length { get; init; }
+        public required string ETag { get; init; }
     }
 
     public DashboardServer(string root, string iconCacheRoot)
     {
-        _root = root;
-        _iconCacheRoot = iconCacheRoot;
+        _rootFullPath = Path.GetFullPath(root);
+        _iconCacheRootFullPath = Path.GetFullPath(iconCacheRoot);
     }
 
     public Uri Start()
@@ -79,12 +85,15 @@ public sealed class DashboardServer : IDisposable
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Dashboard server accept failed: {ex.Message}");
+                HostOperationLogger.Error("dashboard-server", "Dashboard server accept failed.", ex);
             }
         }
     }
 
     private async Task HandleAsync(TcpClient client, CancellationToken token)
     {
+        var requestStartedAt = Stopwatch.GetTimestamp();
+        var requestPathForLog = "";
         using var ownedClient = client;
         ownedClient.ReceiveTimeout = (int)RequestReadTimeout.TotalMilliseconds;
         await using var stream = ownedClient.GetStream();
@@ -98,12 +107,19 @@ public sealed class DashboardServer : IDisposable
                 return;
             }
 
-            while (!string.IsNullOrEmpty(await ReadLineWithTimeoutAsync(reader, token)))
+            string? ifNoneMatch = null;
+            string? headerLine;
+            while (!string.IsNullOrEmpty(headerLine = await ReadLineWithTimeoutAsync(reader, token)))
             {
+                if (headerLine.StartsWith("If-None-Match:", StringComparison.OrdinalIgnoreCase))
+                {
+                    ifNoneMatch = headerLine["If-None-Match:".Length..].Trim();
+                }
             }
 
             var parts = requestLine.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
             var rawPath = parts.Length > 1 ? parts[1] : "/";
+            requestPathForLog = rawPath;
             var requestPath = Uri.UnescapeDataString(rawPath.Split('?', 2)[0].TrimStart('/'));
             if (string.IsNullOrWhiteSpace(requestPath))
             {
@@ -114,8 +130,16 @@ public sealed class DashboardServer : IDisposable
             {
                 if (TryGetIconCacheFile(requestPath, out var iconCacheFile))
                 {
-                    var iconBytes = await File.ReadAllBytesAsync(iconCacheFile, token);
-                    await WriteResponseAsync(stream, "200 OK", GetContentType(Path.GetExtension(iconCacheFile)), iconBytes, "public, max-age=604800");
+                    var cachedIcon = await ReadCachedFileAsync(_iconFileCache, iconCacheFile, token);
+                    const string iconCacheControl = "public, max-age=604800, immutable";
+                    if (ETagMatches(ifNoneMatch, cachedIcon.ETag))
+                    {
+                        await WriteNotModifiedAsync(stream, iconCacheControl, cachedIcon.ETag);
+                    }
+                    else
+                    {
+                        await WriteResponseAsync(stream, "200 OK", cachedIcon.ContentType, cachedIcon.Content, iconCacheControl, cachedIcon.ETag);
+                    }
                 }
                 else
                 {
@@ -124,53 +148,44 @@ public sealed class DashboardServer : IDisposable
                 return;
             }
 
-            var candidate = Path.GetFullPath(Path.Combine(_root, requestPath.Replace('/', Path.DirectorySeparatorChar)));
-            var rootFullPath = Path.GetFullPath(_root);
-            if (!IsPathUnderRoot(candidate, rootFullPath) || !File.Exists(candidate))
+            var candidate = Path.GetFullPath(Path.Combine(_rootFullPath, requestPath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!IsPathUnderRoot(candidate, _rootFullPath) || !File.Exists(candidate))
             {
-                candidate = Path.Combine(rootFullPath, "index.html");
+                candidate = Path.Combine(_rootFullPath, "index.html");
             }
 
-            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(candidate);
-            if (_fileCache.TryGetValue(candidate, out var cached))
+            var staticFile = await ReadStaticFileAsync(candidate, token);
+            var cacheControl = GetStaticCacheControl(candidate);
+            if (ETagMatches(ifNoneMatch, staticFile.ETag))
             {
-                var cacheAge = DateTime.UtcNow - cached.CachedAt;
-                if (cacheAge < _cacheExpiration && cached.LastWriteTimeUtc == lastWriteTimeUtc)
-                {
-                    await WriteResponseAsync(stream, "200 OK", cached.ContentType, cached.Content);
-                    return;
-                }
-
-                _fileCache.TryRemove(candidate, out _);
+                await WriteNotModifiedAsync(stream, cacheControl, staticFile.ETag);
+                return;
             }
 
-            var bytes = await File.ReadAllBytesAsync(candidate, token);
-            var contentType = GetContentType(Path.GetExtension(candidate));
-
-            if (ShouldCacheStaticFile(candidate, bytes.Length))
-            {
-                _fileCache[candidate] = new CachedFile
-                {
-                    Content = bytes,
-                    ContentType = contentType,
-                    CachedAt = DateTime.UtcNow,
-                    LastWriteTimeUtc = lastWriteTimeUtc
-                };
-            }
-
-            await WriteResponseAsync(stream, "200 OK", contentType, bytes);
+            await WriteResponseAsync(stream, "200 OK", staticFile.ContentType, staticFile.Content, cacheControl, staticFile.ETag);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch
+        catch (Exception ex)
         {
+            HostOperationLogger.Error("dashboard-server", "Dashboard server request handling failed.", ex);
             try
             {
                 await WriteResponseAsync(stream, "500 Internal Server Error", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Internal Server Error"));
             }
             catch
             {
+            }
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(requestPathForLog)
+                && Interlocked.Exchange(ref _firstRequestLogged, 1) == 0)
+            {
+                HostOperationLogger.Info(
+                    "performance",
+                    $"dashboard-server:firstRequest path={requestPathForLog} durationMs={Stopwatch.GetElapsedTime(requestStartedAt).TotalMilliseconds:0}");
             }
         }
     }
@@ -204,9 +219,8 @@ public sealed class DashboardServer : IDisposable
             return false;
         }
 
-        var candidate = Path.GetFullPath(Path.Combine(_iconCacheRoot, fileName));
-        var rootFullPath = Path.GetFullPath(_iconCacheRoot);
-        if (!IsPathUnderRoot(candidate, rootFullPath) || !File.Exists(candidate))
+        var candidate = Path.GetFullPath(Path.Combine(_iconCacheRootFullPath, fileName));
+        if (!IsPathUnderRoot(candidate, _iconCacheRootFullPath) || !File.Exists(candidate))
         {
             return false;
         }
@@ -216,6 +230,84 @@ public sealed class DashboardServer : IDisposable
     }
 
     private const string IconCacheRequestPrefix = "__mihomo/icon-cache/";
+
+    private async Task<CachedFile> ReadStaticFileAsync(string path, CancellationToken token)
+    {
+        var fileInfo = new FileInfo(path);
+        var etag = BuildETag(fileInfo);
+        if (_fileCache.TryGetValue(path, out var cached))
+        {
+            var cacheAge = DateTime.UtcNow - cached.CachedAt;
+            if (cacheAge < _cacheExpiration
+                && cached.LastWriteTimeUtc == fileInfo.LastWriteTimeUtc
+                && cached.Length == fileInfo.Length)
+            {
+                return cached;
+            }
+
+            _fileCache.TryRemove(path, out _);
+        }
+
+        var file = await ReadFileAsync(path, fileInfo, etag, token);
+        if (ShouldCacheStaticFile(path, file.Content.Length))
+        {
+            _fileCache[path] = file;
+        }
+
+        return file;
+    }
+
+    private static async Task<CachedFile> ReadCachedFileAsync(
+        ConcurrentDictionary<string, CachedFile> cache,
+        string path,
+        CancellationToken token)
+    {
+        var fileInfo = new FileInfo(path);
+        if (cache.TryGetValue(path, out var cached)
+            && cached.LastWriteTimeUtc == fileInfo.LastWriteTimeUtc
+            && cached.Length == fileInfo.Length)
+        {
+            return cached;
+        }
+
+        var file = await ReadFileAsync(path, fileInfo, BuildETag(fileInfo), token);
+        cache[path] = file;
+        return file;
+    }
+
+    private static async Task<CachedFile> ReadFileAsync(
+        string path,
+        FileInfo fileInfo,
+        string etag,
+        CancellationToken token)
+    {
+        return new CachedFile
+        {
+            Content = await File.ReadAllBytesAsync(path, token),
+            ContentType = GetContentType(fileInfo.Extension),
+            CachedAt = DateTime.UtcNow,
+            LastWriteTimeUtc = fileInfo.LastWriteTimeUtc,
+            Length = fileInfo.Length,
+            ETag = etag
+        };
+    }
+
+    private static string BuildETag(FileInfo fileInfo)
+    {
+        return $"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"";
+    }
+
+    private static bool ETagMatches(string? ifNoneMatch, string etag)
+    {
+        if (string.IsNullOrWhiteSpace(ifNoneMatch))
+        {
+            return false;
+        }
+
+        return ifNoneMatch
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Any(value => string.Equals(value, etag, StringComparison.Ordinal));
+    }
 
     private static bool ShouldCacheStaticFile(string path, int byteLength)
     {
@@ -236,10 +328,36 @@ public sealed class DashboardServer : IDisposable
         return requestPath.StartsWith(IconCacheRequestPrefix, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task WriteResponseAsync(Stream stream, string status, string contentType, byte[] body, string cacheControl = "no-cache")
+    private static string GetStaticCacheControl(string path)
+    {
+        if (IsHashedAsset(path))
+        {
+            return "public, max-age=31536000, immutable";
+        }
+
+        return "no-cache";
+    }
+
+    private static bool IsHashedAsset(string path)
+    {
+        var directory = Path.GetFileName(Path.GetDirectoryName(path) ?? string.Empty);
+        var fileName = Path.GetFileNameWithoutExtension(path);
+        return directory.Equals("assets", StringComparison.OrdinalIgnoreCase)
+            && fileName.Contains('-', StringComparison.Ordinal);
+    }
+
+    private static async Task WriteNotModifiedAsync(Stream stream, string cacheControl, string etag)
     {
         var header = Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: {cacheControl}\r\nConnection: close\r\n\r\n");
+            $"HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\nCache-Control: {cacheControl}\r\nETag: {etag}\r\nConnection: close\r\n\r\n");
+        await stream.WriteAsync(header);
+    }
+
+    private static async Task WriteResponseAsync(Stream stream, string status, string contentType, byte[] body, string cacheControl = "no-cache", string? etag = null)
+    {
+        var etagHeader = string.IsNullOrWhiteSpace(etag) ? "" : $"ETag: {etag}\r\n";
+        var header = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: {cacheControl}\r\n{etagHeader}Connection: close\r\n\r\n");
         await stream.WriteAsync(header);
         await stream.WriteAsync(body);
     }
@@ -277,5 +395,6 @@ public sealed class DashboardServer : IDisposable
         _listener?.Stop();
         _cts?.Dispose();
         _fileCache.Clear();
+        _iconFileCache.Clear();
     }
 }

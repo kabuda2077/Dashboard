@@ -49,18 +49,27 @@ export const sourceIPFilter = ref<string[] | null>(null)
 
 export const activeConnections = ref<Connection[]>([])
 export const closedConnections = ref<Connection[]>([])
+export const activeConnectionCount = ref(0)
 export const isPaused = ref(false)
 
 export const downloadTotal = ref(0)
 export const uploadTotal = ref(0)
 
-let cancel: () => void
+let cancel: (() => void) | undefined
 let previousConnectionsMap = new Map<string, Connection>()
+type ConnectionsMode = 'summary' | 'full'
+let connectionMode: ConnectionsMode | null = null
 
-export const initConnections = () => {
+export const initConnections = (mode: ConnectionsMode = 'full') => {
+  if (cancel && connectionMode === mode) {
+    return
+  }
+
   cancel?.()
+  connectionMode = mode
   activeConnections.value = []
   closedConnections.value = []
+  activeConnectionCount.value = 0
   downloadTotal.value = 0
   uploadTotal.value = 0
   previousConnectionsMap.clear()
@@ -76,8 +85,13 @@ export const initConnections = () => {
 
     downloadTotal.value = data.downloadTotal
     uploadTotal.value = data.uploadTotal
+    activeConnectionCount.value = data.connections?.length ?? 0
 
     if (isPaused.value) {
+      return
+    }
+
+    if (mode === 'summary') {
       return
     }
 
@@ -102,6 +116,7 @@ export const initConnections = () => {
         currentConnectionsMap.set(connection.id, connection)
         return connection
       }) ?? []
+    activeConnectionCount.value = activeConnections.value.length
 
     const newlyClosedConnections = Array.from(previousConnectionsMap.values())
     closedConnections.value = closedConnections.value.concat(newlyClosedConnections).slice(-500)

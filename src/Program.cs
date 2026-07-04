@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Dashboard;
 
 internal static class Program
@@ -5,6 +7,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        var startedAt = Stopwatch.GetTimestamp();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => ReportCrash(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -47,6 +50,7 @@ internal static class Program
             {
                 using var mainForm = new MainForm(startMinimized, startCore);
                 form = mainForm;
+                HostOperationLogger.Info("performance", $"host:mainFormCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
                 Application.Run(mainForm);
             }
         }
