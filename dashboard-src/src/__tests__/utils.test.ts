@@ -19,6 +19,7 @@ describe('backend URL parsing', () => {
     const { getBackendFromUrl } = await import('@/helper/utils')
 
     expect(getBackendFromUrl()).toMatchObject({
+      type: 'clash',
       protocol: 'https',
       host: 'example.test',
       port: '9443',
@@ -30,6 +31,18 @@ describe('backend URL parsing', () => {
     })
   })
 
+  it('parses sing-box backend type from URL parameters', async () => {
+    history.replaceState(null, '', '/?type=singbox&http=1&hostname=box.local&port=9091')
+    const { getBackendFromUrl } = await import('@/helper/utils')
+
+    expect(getBackendFromUrl()).toMatchObject({
+      type: 'singbox',
+      protocol: 'http',
+      host: 'box.local',
+      port: '9091',
+    })
+  })
+
   it('parses backend parameters from hash URLs and formats backend URLs', async () => {
     history.replaceState(null, '', '/#/core?http=1&hostname=127.0.0.1&port=9090')
     const { getBackendFromUrl, getUrlFromBackend, getSingboxUrlFromBackend } = await import(
@@ -37,6 +50,7 @@ describe('backend URL parsing', () => {
     )
 
     expect(getBackendFromUrl()).toMatchObject({
+      type: 'clash',
       protocol: 'http',
       host: '127.0.0.1',
       port: '9090',

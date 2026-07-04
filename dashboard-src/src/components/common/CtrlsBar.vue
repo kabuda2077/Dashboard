@@ -10,7 +10,7 @@
     >
       <div
         class="ctrls-bar pointer-events-auto relative min-w-0 overflow-visible!"
-        :class="showWindowControls ? 'w-fit' : 'w-full'"
+        :class="[showWindowControls ? 'w-fit' : 'w-full', solid && 'ctrls-bar-solid']"
         :style="ctrlsBarContentStyle"
       >
         <slot></slot>
@@ -34,6 +34,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 const ctrlsBarRef = ref<HTMLDivElement | null>(null)
 defineProps<{
   rowClass?: string
+  solid?: boolean
 }>()
 const { bottom: ctrlsBarBottom } = useElementBounding(ctrlsBarRef)
 const showWindowControls = computed(

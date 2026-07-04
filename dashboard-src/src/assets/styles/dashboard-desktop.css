@@ -95,6 +95,11 @@
   overflow: visible !important;
 }
 
+.ctrls-bar.ctrls-bar-solid {
+  @apply rounded-xl shadow-xs;
+  background: var(--color-base-100) !important;
+}
+
 .ctrls-bar > * {
   padding: 0 !important;
 }

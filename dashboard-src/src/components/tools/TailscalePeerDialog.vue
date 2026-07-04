@@ -285,10 +285,23 @@ const stopPing = () => {
   pingRunning.value = false
 }
 
-// Stop pinging whenever the dialog closes.
+const resetPing = () => {
+  stopPing()
+  pingError.value = ''
+  pingLatest.value = undefined
+  pingHistory.value = []
+}
+
+// Stop pinging and clear stale results whenever the dialog closes or the dialog
+// instance is reused for a different peer.
 watch(isOpen, (open) => {
-  if (!open) stopPing()
+  if (!open) resetPing()
 })
+
+watch(
+  () => props.peer.stableID,
+  () => resetPing(),
+)
 
 onBeforeUnmount(stopPing)
 </script>

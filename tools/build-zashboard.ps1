@@ -86,15 +86,20 @@ $overviewCtrlPath = Join-Path $sourceRoot 'src\components\controls\OverviewCtrl.
 $overviewCtrl = Get-Content -LiteralPath $overviewCtrlPath -Raw
 foreach ($pattern in @('BackendVersion', 'getLabelFromBackend', 'activeBackend')) {
     if ($overviewCtrl -match $pattern) {
-        throw "dashboard source check failed: overview top bar should only show the settings button"
+        throw "dashboard source check failed: overview top bar should not restore backend switch/version text"
+    }
+}
+foreach ($pattern in @('BackendUptime', 'startedAt', 'OverviewCardSettingsDialog')) {
+    if ($overviewCtrl -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: overview top bar must keep settings and optional uptime only"
     }
 }
 
 $networkCardPath = Join-Path $sourceRoot 'src\components\overview\NetworkCard.vue'
 $networkCard = Get-Content -LiteralPath $networkCardPath -Raw
-foreach ($pattern in @('lg:grid-cols-3', 'lg:col-span-2', 'ConnectionStatus', 'IPCheck')) {
+foreach ($pattern in @('network-card', 'network-card-grid', 'network-card-status', '@container (min-width: 768px)', 'grid-template-columns: repeat(3', 'grid-column: span 2', 'ConnectionStatus', 'IPCheck')) {
     if ($networkCard -notmatch [regex]::Escape($pattern)) {
-        throw "dashboard source check failed: overview NetworkCard must align Latency across two columns and Network Info across one column"
+        throw "dashboard source check failed: overview NetworkCard must use container-query layout with Latency across two columns and Network Info across one column"
     }
 }
 

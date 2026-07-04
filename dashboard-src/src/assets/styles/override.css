@@ -38,6 +38,7 @@
 
 @utility select {
   @apply w-auto;
+  appearance: none;
 }
 
 .input,

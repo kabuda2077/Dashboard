@@ -17,6 +17,7 @@ import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
 import { getMinCardWidth } from '@/helper/utils'
 import { activeConnections } from '@/store/connections'
+import { isProxyFolderModeActive } from '@/store/proxyFolders'
 import {
   automaticDisconnection,
   collapseGroupMap,
@@ -77,6 +78,10 @@ export default defineComponent({
     const hasProviders = computed(() => {
       return proxyProviederList.value.length > 0
     })
+
+    const foldersUiVisible = computed(
+      () => isProxyFolderModeActive.value && proxiesTabShow.value === PROXY_TAB_TYPE.PROXIES,
+    )
 
     const defaultModes = ['direct', 'rule', 'global']
     const modeList = computed(() => {
@@ -382,7 +387,7 @@ export default defineComponent({
         </div>
       )
 
-      return <CtrlsBar>{content}</CtrlsBar>
+      return <CtrlsBar solid={foldersUiVisible.value}>{content}</CtrlsBar>
     }
   },
 })

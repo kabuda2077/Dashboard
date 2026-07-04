@@ -1,5 +1,5 @@
 import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
-import type { Backend } from '@/types'
+import type { Backend, BackendType } from '@/types'
 import { useMediaQuery } from '@vueuse/core'
 import dayjs from 'dayjs'
 import prettyBytes, { type Options } from 'pretty-bytes'
@@ -173,6 +173,7 @@ export const getBackendFromUrl = () => {
 
   if (query.has('hostname')) {
     return {
+      type: (query.get('type') === 'singbox' ? 'singbox' : 'clash') as BackendType,
       protocol: query.get('http')
         ? 'http'
         : query.get('https')

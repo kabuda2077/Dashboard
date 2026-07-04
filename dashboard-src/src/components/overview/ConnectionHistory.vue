@@ -19,7 +19,10 @@
           @mouseenter="showTip($event, totalConnectionsTip)"
         />
       </div>
-      <div class="flex items-center gap-2 max-sm:flex-col max-sm:items-start">
+      <div
+        v-memo="[aggregationType, autoCleanupInterval, locale]"
+        class="flex items-center gap-2 max-sm:flex-col max-sm:items-start"
+      >
         <div class="flex items-center gap-2">
           <span class="text-base-content/60 text-xs">{{ $t('aggregateBy') }}</span>
           <select
@@ -222,7 +225,7 @@ import { useI18n } from 'vue-i18n'
 import DialogWrapper from '../common/DialogWrapper.vue'
 import ProxyName from '../proxies/ProxyName.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { showTip } = useTooltip()
 
 enum AutoCleanupInterval {

@@ -87,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { getSingboxClient, runStream, type StreamHandle } from '@/assembly/tools'
+import { getSingboxClient, runStream, serverStream, type StreamHandle } from '@/assembly/tools'
 import TerminalSession from '@/components/tools/TerminalSession.vue'
 import TerminalSettingsDialog from '@/components/tools/TerminalSettingsDialog.vue'
 import {
@@ -102,7 +102,7 @@ import {
   type SSHSessionOptions,
 } from '@/composables/tailscaleSSH'
 import { useViewportHeight } from '@/composables/useViewportHeight'
-import type { TailscaleEndpointStatus } from '@/gen/daemon/started_service_pb'
+import { StartedService, type TailscaleEndpointStatus } from '@/gen/daemon/started_service_pb'
 import {
   Cog6ToothIcon,
   DocumentDuplicateIcon,
@@ -198,10 +198,9 @@ const openRememberedPeer = (stableID: string) => {
 // Adding the initial session, and any later launches from the Tailscale tab.
 onMounted(() => {
   addSession(props.launch)
-  const c = getSingboxClient()
-  if (c) {
+  if (getSingboxClient()) {
     statusHandle = runStream(
-      (signal) => c.client.subscribeTailscaleStatus({}, { signal }),
+      (signal) => serverStream(StartedService.method.subscribeTailscaleStatus, {}, signal),
       (msg) => (endpoints.value = msg.endpoints),
     )
   }

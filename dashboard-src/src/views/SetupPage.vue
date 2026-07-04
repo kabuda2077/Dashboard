@@ -131,13 +131,13 @@
                 {{ getLabelFromBackend(element) }}
               </button>
               <button
-                class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-base-content opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-base-content opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                 @click="editBackend(element)"
               >
                 <PencilIcon class="h-4 w-4" />
               </button>
               <button
-                class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-error opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-error opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                 @click="removeBackend(element.uuid)"
               >
                 <TrashIcon class="h-4 w-4" />
@@ -199,6 +199,8 @@ const form = reactive({
 
 const showEditModal = ref(false)
 const editingBackendUuid = ref('')
+const isManualSetupRoute = () => router.currentRoute.value.query.setupMode === 'manual'
+const isEditBackendRoute = () => typeof router.currentRoute.value.query.editBackend === 'string'
 
 watch(
   () => router.currentRoute.value.query.editBackend,
@@ -273,10 +275,10 @@ const handleSubmit = async (setupForm: SetupForm, quiet = false) => {
   }
 }
 
-const backend = getBackendFromUrl()
+const backend = isManualSetupRoute() || isEditBackendRoute() ? null : getBackendFromUrl()
 
 if (backend) {
-  handleSubmit({ type: 'clash', ...backend })
+  handleSubmit(backend)
 } else if (backendList.value.length === 0) {
   handleSubmit(form, true)
 }

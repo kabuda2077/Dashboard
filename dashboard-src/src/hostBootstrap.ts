@@ -272,7 +272,7 @@ const installWindowChromeBridge = () => {
 
 if (!hostWindow.chrome?.webview) {
   const backend = getBackendFromUrl()
-  applyBackend(backend ? { type: 'clash', ...backend } : null)
+  applyBackend(backend)
 }
 
 installWindowChromeBridge()

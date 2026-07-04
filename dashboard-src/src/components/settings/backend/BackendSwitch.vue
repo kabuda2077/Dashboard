@@ -63,7 +63,7 @@ const showEditModal = ref(false)
 
 const addBackend = () => {
   activeUuid.value = null
-  router.push({ name: ROUTE_NAME.setup })
+  router.push({ name: ROUTE_NAME.setup, query: { setupMode: 'manual' } })
 }
 
 const editBackend = () => {
