@@ -71,6 +71,11 @@ export default defineComponent<{
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress)}
           </span>
         ),
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP]: (
+          <span class="w-80 grow truncate break-all">
+            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP)}
+          </span>
+        ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP]: (
           <span class="w-40 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP)}

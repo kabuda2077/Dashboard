@@ -107,6 +107,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      net: fileURLToPath(new URL('./src/shims/net.ts', import.meta.url)),
+      'node:net': fileURLToPath(new URL('./src/shims/net.ts', import.meta.url)),
     },
   },
   build: {

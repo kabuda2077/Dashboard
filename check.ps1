@@ -39,6 +39,22 @@ function Get-PnpmPath {
     throw 'pnpm is required. Install pnpm 10.15.0, for example: npm install -g pnpm@10.15.0'
 }
 
+function Invoke-Pnpm {
+    param(
+        [Parameter(Mandatory = $true)][string]$PnpmPath,
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
+    )
+
+    $previousCi = $env:CI
+    try {
+        $env:CI = 'true'
+        & $PnpmPath @Arguments
+    }
+    finally {
+        $env:CI = $previousCi
+    }
+}
+
 Set-Location $repoRoot
 
 Invoke-Step 'Dashboard desktop source contract' {
@@ -72,7 +88,7 @@ if (-not $SkipFrontendTypeCheck -or -not $SkipFrontendTests -or -not $SkipFronte
         New-Item -ItemType Directory -Force -Path $pnpmStoreDir | Out-Null
         Push-Location $dashboardRoot
         try {
-            & $pnpmPath install --frozen-lockfile --store-dir $pnpmStoreDir
+            Invoke-Pnpm $pnpmPath install --frozen-lockfile --store-dir $pnpmStoreDir
             if ($LASTEXITCODE -ne 0) {
                 throw "pnpm install failed with exit code $LASTEXITCODE"
             }
@@ -88,7 +104,7 @@ if (-not $SkipFrontendTests) {
         $pnpmPath = Get-PnpmPath
         Push-Location $dashboardRoot
         try {
-            & $pnpmPath exec vitest run
+            Invoke-Pnpm $pnpmPath exec vitest run
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend unit tests failed with exit code $LASTEXITCODE"
             }
@@ -104,7 +120,7 @@ if (-not $SkipFrontendTypeCheck) {
         $pnpmPath = Get-PnpmPath
         Push-Location $dashboardRoot
         try {
-            & $pnpmPath exec vue-tsc --build --force
+            Invoke-Pnpm $pnpmPath exec vue-tsc --build --force
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend type-check failed with exit code $LASTEXITCODE"
             }
@@ -124,7 +140,7 @@ if (-not $SkipFrontendBuild) {
             $previousDesktopBuild = $env:DESKTOP_BUILD
             $env:FONT = 'misans'
             $env:DESKTOP_BUILD = '1'
-            & $pnpmPath exec vite build
+            Invoke-Pnpm $pnpmPath exec vite build
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend build failed with exit code $LASTEXITCODE"
             }

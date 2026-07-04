@@ -3,8 +3,20 @@ import {
   createGetConnectionDisplayValue,
   type ConnectionAccessor,
 } from '@/assembly/connections/accessor'
+import { connectionTableColumns } from '@/store/settings'
 import type { Connection } from '@/types'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/api/geoip', () => ({
+  getGeoIPInfoSync: vi.fn(() => ({
+    ip: '203.0.113.1',
+    country: 'Testland',
+    region: '',
+    city: '',
+    asn: '64500',
+    organization: 'Example ASN',
+  })),
+}))
 
 const accessor: ConnectionAccessor = {
   chains: () => ['ProxyA', 'ProxyB', 'DIRECT'],
@@ -56,5 +68,14 @@ describe('connection field accessors', () => {
       showFullProxyChain: true,
       proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
     })).toBe('-')
+    expect(getValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP, {
+      mode: 'table',
+      showFullProxyChain: true,
+      proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
+    })).toBe('Testland / Example ASN')
+  })
+
+  it('keeps GeoIP out of the default connection table columns', () => {
+    expect(connectionTableColumns.value).not.toContain(CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP)
   })
 })

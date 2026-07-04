@@ -1,14 +1,16 @@
 // 组装层 · 版本与升级。
-// fetchVersionAPI 统一使用 Clash-compatible /version。
+// fetchVersionAPI 按后端类型选择 Clash /version 或 sing-box gRPC getVersion。
 // isSingBoxCore 基于「运行时内核版本字符串」,与 assembly/backend.ts 的 isSingboxBackend
 //(基于配置类型)语义不同:Clash 通道也可能连到 sing-box 兼容核心。
 import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI, upgradeUIAPI } from '@/api/clash'
+import { getSingboxClient } from '@/api/singbox/client'
 import { hostWindow } from '@/composables/hostBridge'
-import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
+import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { autoUpgradeCore, autoUpgradeDashboard, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import { computed, ref, watch } from 'vue'
+import { isSingboxBackend } from './backend'
 
 export const version = ref()
 export const isCoreUpdateAvailable = ref(false)
@@ -17,6 +19,7 @@ export const zashboardVersion = ref(__APP_VERSION__)
 // sing-box gRPC API version (0 when unknown / non-sing-box). Gates capabilities
 // such as usbip, which requires apiVersion >= 2.
 export const singboxApiVersion = ref(0)
+export const startedAt = ref(0)
 
 export const isSingBoxCore = computed(() => version.value?.includes('sing-box'))
 
@@ -37,12 +40,36 @@ export const mihomo = computed<[MIHOMO, string] | undefined>(() => {
   }
 })
 
+const fetchSingboxVersion = async () => {
+  const client = getSingboxClient()?.client
+  if (!client) return { data: { version: 'sing-box' } }
+  const data = await client.getVersion({})
+  singboxApiVersion.value = data.apiVersion
+  const version = data.version.includes('sing-box') ? data.version : `sing-box ${data.version}`
+
+  return { data: { version } }
+}
+
 export const fetchVersionAPI = () => {
+  if (isSingboxBackend.value) return fetchSingboxVersion()
   singboxApiVersion.value = 0
+  startedAt.value = 0
   return fetchClashVersion()
 }
 
 const getHostCoreVersion = () => hostWindow.__mihomoHostCoreVersion || ''
+
+const fetchSingboxStartedAt = async (): Promise<number> => {
+  const client = getSingboxClient()?.client
+  if (!client) return 0
+  try {
+    const res = await client.getStartedAt({})
+
+    return Number(res.startedAt)
+  } catch {
+    return 0
+  }
+}
 
 let versionFetchId = 0
 
@@ -61,6 +88,8 @@ const refreshVersion = async () => {
   if (currentFetchId !== versionFetchId) return
 
   version.value = nextVersion || getHostCoreVersion()
+  startedAt.value = isSingboxBackend.value ? await fetchSingboxStartedAt() : 0
+  if (currentFetchId !== versionFetchId) return
   if (isSingBoxCore.value || !checkUpgradeCore.value || activeBackend.value?.disableUpgradeCore) {
     return
   }

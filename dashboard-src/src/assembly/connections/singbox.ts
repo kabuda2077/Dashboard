@@ -1,10 +1,11 @@
 // sing-box native 后端的连接组装:订阅 gRPC SubscribeConnections,把 protobuf 事件
 // 维护成一张连接表,按 100ms 批量产出 { data, close } 流。
 import { getSingboxClient } from '@/api/singbox/client'
-import { runStream, type StreamHandle } from '@/api/singbox/streams'
+import { subscribeStream } from '@/api/singbox/subscriptions'
 import { postHostMessage } from '@/composables/hostBridge'
 import {
   ConnectionEventType,
+  type ConnectionEvents,
   type Connection as PbConnection,
 } from '@/gen/daemon/started_service_pb'
 import type { Connection } from '@/types'
@@ -13,86 +14,96 @@ import {
   createGetConnectionDisplayValue,
   createGetConnectionVisibleSearchValues,
   type ConnectionAccessor,
+  type ConnectionsSnapshot,
 } from './accessor'
 
-const SUBSCRIPTION_INTERVAL = 1_000_000_000n // 1s(ns)
-
-interface SingboxStream<T> {
-  data: Ref<T | undefined>
+const fetchSingboxConnections = (): {
+  data: Ref<ConnectionsSnapshot | undefined>
   close: () => void
-}
-
-const fetchSingboxConnections = <T>(): SingboxStream<T> => {
-  const data = ref<T>()
-  const client = getSingboxClient()?.client
-  if (!client) return { data, close: () => {} }
-
-  const conns = new Map<string, PbConnection>()
-  let downloadTotal = 0
-  let uploadTotal = 0
+} => {
+  const data = ref<ConnectionsSnapshot>()
+  const conns = new Map<string, Connection>()
+  let newlyClosed: Connection[] = []
   let timer: ReturnType<typeof setTimeout> | null = null
   const startedAt = performance.now()
   let firstMessage = true
 
+  const enrich = (c: PbConnection | Connection, down: number, up: number): Connection =>
+    Object.assign({}, c, { downloadSpeed: down, uploadSpeed: up }) as Connection
+
+  const close = (id: string, base?: PbConnection | Connection) => {
+    const c = base ?? conns.get(id)
+    conns.delete(id)
+    if (c) newlyClosed.push(enrich(c, 0, 0))
+  }
+
   const emit = () => {
     timer = null
     data.value = {
-      connections: Array.from(conns.values()),
-      downloadTotal,
-      uploadTotal,
-      memory: 0,
-    } as T
+      active: Array.from(conns.values()),
+      closed: newlyClosed,
+    }
+    newlyClosed = []
   }
   const scheduleEmit = () => {
     if (timer) return
     timer = setTimeout(emit, 100)
   }
 
-  const handle: StreamHandle = runStream(
-    (signal) => client.subscribeConnections({ interval: SUBSCRIPTION_INTERVAL }, { signal }),
-    (msg) => {
-      if (firstMessage) {
-        firstMessage = false
-        postHostMessage({
-          type: 'performance',
-          name: 'singbox:connections:firstMessage',
-          durationMs: Math.round(performance.now() - startedAt),
-        })
-      }
-      if (msg.reset) {
-        conns.clear()
-      }
-      for (const event of msg.events) {
-        uploadTotal += Number(event.uplinkDelta)
-        downloadTotal += Number(event.downlinkDelta)
+  const handle = subscribeStream<ConnectionEvents>('connections', (msg) => {
+    if (firstMessage) {
+      firstMessage = false
+      postHostMessage({
+        type: 'performance',
+        name: 'singbox:connections:firstMessage',
+        durationMs: Math.round(performance.now() - startedAt),
+      })
+    }
+    if (msg.reset) {
+      conns.clear()
+    }
+    for (const event of msg.events) {
+      const downDelta = Number(event.downlinkDelta)
+      const upDelta = Number(event.uplinkDelta)
 
-        switch (event.type) {
-          case ConnectionEventType.CONNECTION_EVENT_NEW:
-            if (event.connection) conns.set(event.id, event.connection)
-            break
-          case ConnectionEventType.CONNECTION_EVENT_UPDATE: {
-            if (event.connection) {
-              conns.set(event.id, event.connection)
-            } else {
-              const existing = conns.get(event.id)
-              if (existing) {
-                conns.set(event.id, {
-                  ...existing,
-                  uplinkTotal: existing.uplinkTotal + event.uplinkDelta,
-                  downlinkTotal: existing.downlinkTotal + event.downlinkDelta,
-                })
-              }
-            }
-            break
+      switch (event.type) {
+        case ConnectionEventType.CONNECTION_EVENT_NEW:
+          if (event.connection) {
+            if (event.connection.closedAt > 0n) close(event.id, event.connection)
+            else conns.set(event.id, enrich(event.connection, 0, 0))
           }
-          case ConnectionEventType.CONNECTION_EVENT_CLOSED:
-            conns.delete(event.id)
-            break
+          break
+        case ConnectionEventType.CONNECTION_EVENT_UPDATE: {
+          if (event.connection) {
+            if (event.connection.closedAt > 0n) close(event.id, event.connection)
+            else conns.set(event.id, enrich(event.connection, downDelta, upDelta))
+          } else {
+            const prev = conns.get(event.id)
+            if (prev) {
+              const s = asSingbox(prev)
+              conns.set(
+                event.id,
+                enrich(
+                  {
+                    ...s,
+                    uplinkTotal: s.uplinkTotal + event.uplinkDelta,
+                    downlinkTotal: s.downlinkTotal + event.downlinkDelta,
+                  },
+                  downDelta,
+                  upDelta,
+                ),
+              )
+            }
+          }
+          break
         }
+        case ConnectionEventType.CONNECTION_EVENT_CLOSED:
+          close(event.id, event.connection)
+          break
       }
-      scheduleEmit()
-    },
-  )
+    }
+    scheduleEmit()
+  })
 
   return {
     data,

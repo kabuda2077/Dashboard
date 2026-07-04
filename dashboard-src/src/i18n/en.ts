@@ -185,6 +185,11 @@ const en = {
   sourcePort: 'Source port',
   destination: 'Resolved address',
   destinationType: 'Resolved type',
+  geoip: 'GeoIP',
+  geoipCountryDatabaseURL: 'GeoIP country database URL',
+  geoipASNDatabaseURL: 'GeoIP ASN database URL',
+  geoipDatabaseURLTip:
+    'Used to resolve connection IP country and ASN info locally. The mmdb file is downloaded from this URL and cached in the browser. Leave empty to use the default.',
   inboundUser: 'Inbound user',
   outboundType: 'Outbound type',
   fromOutbound: 'From outbound',

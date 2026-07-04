@@ -186,6 +186,11 @@ const zh: LANG_MESSAGE = {
   sourcePort: '源端口',
   destination: '解析地址',
   destinationType: '解析类型',
+  geoip: '归属信息',
+  geoipCountryDatabaseURL: 'GeoIP 国家库地址',
+  geoipASNDatabaseURL: 'GeoIP ASN 库地址',
+  geoipDatabaseURLTip:
+    '用于在本地解析连接 IP 的国家和 ASN 信息。mmdb 文件会从该地址下载并缓存在浏览器中，留空会使用默认地址。',
   inboundUser: '入站用户',
   outboundType: '出站类型',
   fromOutbound: '来源出站',

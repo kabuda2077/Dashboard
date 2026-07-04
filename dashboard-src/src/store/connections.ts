@@ -17,7 +17,7 @@ import {
   getNetworkTypeFromConnection,
 } from '@/helper'
 import { toSearchRegex } from '@/helper/search'
-import type { Connection, ConnectionRawMessage } from '@/types'
+import type { Connection } from '@/types'
 import { useStorage, watchOnce } from '@vueuse/core'
 import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
@@ -56,7 +56,6 @@ export const downloadTotal = ref(0)
 export const uploadTotal = ref(0)
 
 let cancel: (() => void) | undefined
-let previousConnectionsMap = new Map<string, Connection>()
 type ConnectionsMode = 'summary' | 'full'
 let connectionMode: ConnectionsMode | null = null
 
@@ -72,20 +71,16 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
   activeConnectionCount.value = 0
   downloadTotal.value = 0
   uploadTotal.value = 0
-  previousConnectionsMap.clear()
   initAggregatedDataMap()
-  const ws = fetchConnectionsAPI<{
-    connections: ConnectionRawMessage[]
-    downloadTotal: number
-    uploadTotal: number
-    memory: number
-  }>()
-  const unwatch = watch(ws.data, (data) => {
-    if (!data) return
+  const ws = fetchConnectionsAPI()
+  const unwatch = watch(ws.data, (snapshot) => {
+    if (!snapshot) return
 
-    downloadTotal.value = data.downloadTotal
-    uploadTotal.value = data.uploadTotal
-    activeConnectionCount.value = data.connections?.length ?? 0
+    if (snapshot.downloadTotal != null && snapshot.uploadTotal != null) {
+      downloadTotal.value = snapshot.downloadTotal
+      uploadTotal.value = snapshot.uploadTotal
+    }
+    activeConnectionCount.value = snapshot.active.length
 
     if (isPaused.value) {
       return
@@ -95,37 +90,13 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
       return
     }
 
-    const currentConnectionsMap = new Map<string, Connection>()
-
-    activeConnections.value =
-      data.connections?.map((conn) => {
-        const connection = conn as Connection
-        const preConnection = previousConnectionsMap.get(connection.id)
-
-        if (!preConnection) {
-          connection.downloadSpeed = 0
-          connection.uploadSpeed = 0
-        } else {
-          connection.downloadSpeed =
-            getConnectionDownload(connection) - getConnectionDownload(preConnection)
-          connection.uploadSpeed =
-            getConnectionUpload(connection) - getConnectionUpload(preConnection)
-        }
-
-        previousConnectionsMap.delete(connection.id)
-        currentConnectionsMap.set(connection.id, connection)
-        return connection
-      }) ?? []
+    activeConnections.value = snapshot.active
     activeConnectionCount.value = activeConnections.value.length
 
-    const newlyClosedConnections = Array.from(previousConnectionsMap.values())
-    closedConnections.value = closedConnections.value.concat(newlyClosedConnections).slice(-500)
-
-    if (newlyClosedConnections.length > 0) {
-      saveConnectionHistory(newlyClosedConnections)
+    if (snapshot.closed.length > 0) {
+      closedConnections.value = closedConnections.value.concat(snapshot.closed).slice(-500)
+      saveConnectionHistory(snapshot.closed)
     }
-
-    previousConnectionsMap = currentConnectionsMap
   })
 
   if (autoDisconnectIdleUDP.value) {

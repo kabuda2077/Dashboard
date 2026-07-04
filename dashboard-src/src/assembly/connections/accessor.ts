@@ -3,6 +3,7 @@
 // 读取/派生 view 需要的字段 —— 不再把 sing-box 塑造成 clash 形状。
 // createGetConnectionDisplayValue 基于某一份 accessor 生成对应后端的 getConnectionDisplayValue,
 // 由 index.ts 门面按当前后端动态选用。
+import { getGeoIPInfoSync } from '@/api/geoip'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
 import { getIPLabelFromMap } from '@/helper/sourceip'
 import { fromNow, prettyBytesHelper } from '@/helper/utils'
@@ -13,6 +14,13 @@ export type ConnectionDisplayOptions = {
   mode: 'card' | 'table'
   proxyChainDirection: PROXY_CHAIN_DIRECTION | string
   showFullProxyChain: boolean
+}
+
+export interface ConnectionsSnapshot {
+  active: Connection[]
+  closed: Connection[]
+  downloadTotal?: number
+  uploadTotal?: number
 }
 
 // 各后端原始数据 → view 字段的读取契约。实现内部按各自后端的原始类型取值。
@@ -110,6 +118,11 @@ export const createGetConnectionDisplayValue =
         return accessor.destination(connection)
       case CONNECTIONS_TABLE_ACCESSOR_KEY.DestinationType:
         return getDestinationType(accessor.destination(connection))
+      case CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP: {
+        const { country, organization } = getGeoIPInfoSync(accessor.destination(connection))
+
+        return [country, organization].filter(Boolean).join(' / ')
+      }
       case CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress:
         return accessor.remoteAddress(connection) || '-'
       case CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser:

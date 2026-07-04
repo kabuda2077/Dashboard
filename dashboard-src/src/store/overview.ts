@@ -1,6 +1,6 @@
 import { fetchMemoryAPI, fetchTrafficAPI } from '@/assembly/overview'
 import { ref, watch } from 'vue'
-import { activeConnectionCount } from './connections'
+import { activeConnectionCount, downloadTotal, uploadTotal } from './connections'
 
 export const timeSaved = 60
 const initValue = new Array(timeSaved).fill(0).map((v, i) => ({ name: i, value: v }))
@@ -57,6 +57,8 @@ export const initSatistic = () => {
   const { data: trafficWsData, close: trafficWsClose } = fetchTrafficAPI<{
     down: number
     up: number
+    downTotal?: number
+    upTotal?: number
   }>()
   const unwatchTraffic = watch(
     () => trafficWsData.value,
@@ -67,6 +69,10 @@ export const initSatistic = () => {
 
       downloadSpeed.value = data.down
       uploadSpeed.value = data.up
+      if (data.downTotal != null && data.upTotal != null) {
+        downloadTotal.value = data.downTotal
+        uploadTotal.value = data.upTotal
+      }
 
       downloadSpeedHistory.value.push({
         value: data.down,

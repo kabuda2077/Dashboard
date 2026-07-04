@@ -42,6 +42,7 @@ export enum CONNECTIONS_TABLE_ACCESSOR_KEY {
   SniffHost = 'sniffHost',
   Destination = 'destination',
   DestinationType = 'destinationType',
+  GeoIP = 'geoip',
   RemoteAddress = 'remoteAddress',
   InboundUser = 'inboundUser',
   Protocol = 'protocol',
@@ -269,6 +270,11 @@ export enum IP_INFO_API {
   IPWHOIS = 'ipwho.is',
   IPAPI = 'ipapi.is',
 }
+
+export const GEOIP_COUNTRY_DATABASE_URL =
+  'https://testingcf.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-Country.mmdb'
+export const GEOIP_ASN_DATABASE_URL =
+  'https://testingcf.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-ASN.mmdb'
 
 export enum SETTINGS_MENU_KEY {
   general = 'generalSettings',

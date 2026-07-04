@@ -1,8 +1,7 @@
 // sing-box native 后端的日志组装:订阅 gRPC SubscribeLog,保留 ANSI 颜色码、
 // 映射日志级别,并把按批到达的日志逐条投递成与 Clash WS 相同的 { data, close } 流。
-import { getSingboxClient } from '@/api/singbox/client'
-import { runStream } from '@/api/singbox/streams'
-import { LogLevel } from '@/gen/daemon/started_service_pb'
+import { subscribeStream } from '@/api/singbox/subscriptions'
+import { LogLevel, type Log as PbLog } from '@/gen/daemon/started_service_pb'
 import type { Log } from '@/types'
 import { ref, type Ref } from 'vue'
 
@@ -53,8 +52,6 @@ const logLevelFilterFromParam = (level?: string): LogLevel | null | undefined =>
 
 const fetchSingboxLogs = <T>(params: Record<string, string> = {}): SingboxStream<T> => {
   const data = ref<T>()
-  const client = getSingboxClient()?.client
-  if (!client) return { data, close: () => {} }
   const levelFilter = logLevelFilterFromParam(params.level)
 
   // 日志按批到达,但消费方(logs store)逐条 watch ws.data,需要逐条投递。
@@ -75,17 +72,14 @@ const fetchSingboxLogs = <T>(params: Record<string, string> = {}): SingboxStream
     step()
   }
 
-  const handle = runStream(
-    (signal) => client.subscribeLog({}, { signal }),
-    (msg) => {
-      if (msg.reset) queue.length = 0
-      for (const m of msg.messages) {
-        if (levelFilter === null || (levelFilter !== undefined && m.level > levelFilter)) continue
-        queue.push({ type: logLevelToType(m.level), payload: m.message })
-      }
-      drain()
-    },
-  )
+  const handle = subscribeStream<PbLog>('logs', (msg) => {
+    if (msg.reset) queue.length = 0
+    for (const m of msg.messages) {
+      if (levelFilter === null || (levelFilter !== undefined && m.level > levelFilter)) continue
+      queue.push({ type: logLevelToType(m.level), payload: m.message })
+    }
+    drain()
+  })
 
   return {
     data,

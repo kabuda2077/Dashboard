@@ -60,6 +60,34 @@
           </option>
         </select>
       </SettingItem>
+      <SettingItem :setting-key="k.geoipCountryDatabaseURL">
+        <div class="setting-item-label">
+          {{ $t('geoipCountryDatabaseURL') }}
+          <QuestionMarkCircleIcon
+            class="h-4 w-4 cursor-pointer"
+            @mouseenter="showTip($event, $t('geoipDatabaseURLTip'))"
+          />
+        </div>
+        <TextInput
+          class="flex-2"
+          v-model="geoipCountryDatabaseURL"
+          :clearable="true"
+        />
+      </SettingItem>
+      <SettingItem :setting-key="k.geoipASNDatabaseURL">
+        <div class="setting-item-label">
+          {{ $t('geoipASNDatabaseURL') }}
+          <QuestionMarkCircleIcon
+            class="h-4 w-4 cursor-pointer"
+            @mouseenter="showTip($event, $t('geoipDatabaseURLTip'))"
+          />
+        </div>
+        <TextInput
+          class="flex-2"
+          v-model="geoipASNDatabaseURL"
+          :clearable="true"
+        />
+      </SettingItem>
       <SettingItem
         :setting-key="k.scrollAnimationEffect"
         class="md:hidden!"
@@ -142,6 +170,7 @@
 <script setup lang="ts">
 import { isSingBoxCore } from '@/assembly/version'
 import DashboardSettings from '@/components/common/DashboardSettings.vue'
+import TextInput from '@/components/common/TextInput.vue'
 import KeyboardShortcutsSettings from '@/components/settings/general/KeyboardShortcutsSettings.vue'
 import LanguageSelect from '@/components/settings/general/LanguageSelect.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
@@ -155,6 +184,8 @@ import {
   autoDisconnectIdleUDPTime,
   disablePullToRefresh,
   displayAllFeatures,
+  geoipASNDatabaseURL,
+  geoipCountryDatabaseURL,
   IPInfoAPI,
   scrollAnimationEffect,
   swipeInPages,
@@ -173,6 +204,8 @@ const isVisibleShortcuts = computed(() => isVisibleShortcutsSetting.value && !is
 const isVisibleAutoDisconnectIdleUDP = useIsSettingVisible(k.autoDisconnectIdleUDP)
 const isVisibleAutoDisconnectIdleUDPTime = useIsSettingVisible(k.autoDisconnectIdleUDPTime)
 const isVisibleIPInfoAPI = useIsSettingVisible(k.IPInfoAPI)
+const isVisibleGeoipCountryDatabaseURL = useIsSettingVisible(k.geoipCountryDatabaseURL)
+const isVisibleGeoipASNDatabaseURL = useIsSettingVisible(k.geoipASNDatabaseURL)
 const isVisibleScrollAnimationEffect = useIsSettingVisible(k.scrollAnimationEffect)
 const isVisibleSwipeInPages = useIsSettingVisible(k.swipeInPages)
 const isVisibleSwipeInTabs = useIsSettingVisible(k.swipeInTabs)
@@ -187,6 +220,8 @@ const hasVisibleGeneralItems = computed(() => {
     isVisibleAutoDisconnectIdleUDP.value ||
     (autoDisconnectIdleUDP.value && isVisibleAutoDisconnectIdleUDPTime.value) ||
     isVisibleIPInfoAPI.value ||
+    isVisibleGeoipCountryDatabaseURL.value ||
+    isVisibleGeoipASNDatabaseURL.value ||
     isVisibleScrollAnimationEffect.value ||
     isVisibleSwipeInPages.value ||
     (swipeInPages.value && isVisibleSwipeInTabs.value) ||

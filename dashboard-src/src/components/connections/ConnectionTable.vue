@@ -287,6 +287,7 @@ const columnWidthMap = useStorage('config/table-column-width', {
   [CONNECTIONS_TABLE_ACCESSOR_KEY.SourcePort]: 100,
   [CONNECTIONS_TABLE_ACCESSOR_KEY.SniffHost]: 200,
   [CONNECTIONS_TABLE_ACCESSOR_KEY.Destination]: 150,
+  [CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP]: 200,
   [CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime]: 100,
 } as Record<CONNECTIONS_TABLE_ACCESSOR_KEY, number>)
 
@@ -517,6 +518,12 @@ const columns: ColumnDef<Connection>[] = [
     accessorFn: (original) =>
       getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.DestinationType),
     cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.DestinationType),
+  },
+  {
+    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP),
+    id: CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP,
+    accessorFn: (original) => getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP),
+    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP),
   },
   {
     header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress),

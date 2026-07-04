@@ -4,17 +4,69 @@ import { proxyMap } from '@/assembly/proxies'
 import { PROXY_TYPE } from '@/constant'
 import type { ClashConnectionRawMessage, Connection } from '@/types'
 import { head } from 'lodash'
+import { ref, watch } from 'vue'
 import {
   createGetConnectionDisplayValue,
   createGetConnectionVisibleSearchValues,
   type ConnectionAccessor,
+  type ConnectionsSnapshot,
 } from './accessor'
 
 export const disconnectByIdAPI = disconnectClashByIdAPI
 
 export const disconnectAllAPI = disconnectAllClashAPI
 
-export const fetchConnectionsAPI = <T>() => createClashWebSocket<T>('connections')
+export const fetchConnectionsAPI = () => {
+  const ws = createClashWebSocket<{
+    connections: ClashConnectionRawMessage[]
+    downloadTotal: number
+    uploadTotal: number
+    memory: number
+  }>('connections')
+
+  const data = ref<ConnectionsSnapshot>()
+  let previousMap = new Map<string, Connection>()
+
+  const unwatch = watch(ws.data, (raw) => {
+    if (!raw) return
+
+    const currentMap = new Map<string, Connection>()
+    const active = (raw.connections ?? []).map((conn) => {
+      const connection = conn as Connection
+      const pre = previousMap.get(connection.id)
+
+      if (!pre) {
+        connection.downloadSpeed = 0
+        connection.uploadSpeed = 0
+      } else {
+        connection.downloadSpeed = asClash(connection).download - asClash(pre).download
+        connection.uploadSpeed = asClash(connection).upload - asClash(pre).upload
+      }
+
+      previousMap.delete(connection.id)
+      currentMap.set(connection.id, connection)
+      return connection
+    })
+
+    const closed = Array.from(previousMap.values())
+    previousMap = currentMap
+
+    data.value = {
+      active,
+      closed,
+      downloadTotal: raw.downloadTotal,
+      uploadTotal: raw.uploadTotal,
+    }
+  })
+
+  return {
+    data,
+    close: () => {
+      unwatch()
+      ws.close()
+    },
+  }
+}
 
 const asClash = (connection: Connection) => connection as ClashConnectionRawMessage
 

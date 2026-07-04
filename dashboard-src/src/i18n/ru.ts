@@ -187,6 +187,11 @@ const ru: LANG_MESSAGE = {
   sourcePort: 'Исходный порт',
   destination: 'Разрешенный адрес',
   destinationType: 'Тип разрешения',
+  geoip: 'GeoIP',
+  geoipCountryDatabaseURL: 'URL базы стран GeoIP',
+  geoipASNDatabaseURL: 'URL базы ASN GeoIP',
+  geoipDatabaseURLTip:
+    'Используется для локального определения страны и ASN IP-адресов соединений. Файл mmdb загружается по этому URL и кэшируется в браузере. Оставьте пустым для значения по умолчанию.',
   inboundUser: 'Входящий пользователь',
   outboundType: 'Тип исходящего',
   fromOutbound: 'Из исходящего',
