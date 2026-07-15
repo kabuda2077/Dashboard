@@ -163,7 +163,7 @@ export default defineComponent({
 
       const logTypeSelect = (
         <DropdownSelect
-          class={isLargeCtrlsBar.value ? 'w-36 shrink-0' : 'min-w-24 max-w-40 flex-1'}
+          class={isLargeCtrlsBar.value ? 'w-36 shrink-0' : 'max-w-40 min-w-24 flex-1'}
           modelValue={logTypeFilter.value}
           onUpdate:modelValue={(value) => (logTypeFilter.value = value as string)}
           options={[
@@ -227,7 +227,7 @@ export default defineComponent({
                   </div>
                   <input
                     type="checkbox"
-                    class="toggle toggle-sm"
+                    class="toggle"
                     v-model={logFilterEnabled.value}
                   />
                 </div>

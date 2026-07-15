@@ -17,6 +17,7 @@
 
 <script setup lang="ts">
 import { isMiddleScreen } from '@/helper/utils'
+import { timeSaved, type HistoryPoint } from '@/store/overview'
 import { font, theme } from '@/store/settings'
 import { useElementSize } from '@vueuse/core'
 import { LineChart } from 'echarts/charts'
@@ -30,7 +31,7 @@ echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const props = withDefaults(
   defineProps<{
-    data: { name: number; value: number }[]
+    data: (HistoryPoint | { name: number; value: number })[]
     min?: number
     color?: 'primary' | 'info' | 'lowLatency' | 'mediumLatency' | 'highLatency'
     name?: string
@@ -103,71 +104,87 @@ const areaColor = computed(() => {
   return colorSet.primary30
 })
 
-const options = computed(() => ({
-  grid: { left: 0, top: 0, right: props.labelFormatter ? 30 : 0, bottom: 0 },
-  tooltip: props.tooltipFormatter
+const isTimeSeries = computed(() => Array.isArray(props.data.at(-1)?.value))
+
+const options = computed(() => {
+  const latest = props.data.at(-1)?.name ?? Date.now()
+  const xAxis = isTimeSeries.value
     ? {
-        show: true,
-        trigger: 'axis' as const,
-        backgroundColor: colorSet.base70,
-        borderColor: colorSet.base70,
-        confine: true,
-        padding: [0, 5],
-        textStyle: {
-          color: colorSet.baseContent,
-          fontFamily,
-          fontSize: 11,
-        },
-        formatter: props.tooltipFormatter,
+        type: 'time' as const,
+        show: false,
+        min: latest - (timeSaved - 1) * 1000,
+        max: latest - 1000,
       }
-    : { show: false },
-  xAxis: {
-    type: 'category' as const,
-    show: false,
-    boundaryGap: false,
-  },
-  yAxis: {
-    type: 'value' as const,
-    show: true,
-    position: 'right' as const,
-    splitNumber: 2,
-    min: 0,
-    max: (value: { max: number }) => Math.max(value.max, props.min),
-    axisLine: { show: false },
-    axisTick: { show: false },
-    splitLine: { show: false },
-    axisLabel: props.labelFormatter
+    : {
+        type: 'category' as const,
+        show: false,
+        boundaryGap: false,
+      }
+
+  return {
+    animationDurationUpdate: isTimeSeries.value ? 1000 : 0,
+    animationEasingUpdate: 'linear' as const,
+    grid: { left: 0, top: 0, right: props.labelFormatter ? 30 : 0, bottom: 0 },
+    tooltip: props.tooltipFormatter
       ? {
           show: true,
-          inside: false,
-          fontSize: 9,
-          color: colorSet.baseContent40,
-          fontFamily,
-          margin: 4,
-          formatter: (value: number) => (value === 0 ? '' : props.labelFormatter!(value)),
+          trigger: 'axis' as const,
+          backgroundColor: colorSet.base70,
+          borderColor: colorSet.base70,
+          confine: true,
+          padding: [0, 5],
+          textStyle: {
+            color: colorSet.baseContent,
+            fontFamily,
+            fontSize: 11,
+          },
+          formatter: props.tooltipFormatter,
         }
       : { show: false },
-  },
-  series: [
-    {
-      type: 'line' as const,
-      name: props.name,
-      symbol: props.showSymbols ? 'circle' : 'none',
-      symbolSize: 3,
-      smooth: true,
-      lineStyle: { width: 1.5 },
-      data: props.data,
-      color: seriesColor.value,
-      emphasis: { disabled: true },
-      areaStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: seriesColor.value },
-          { offset: 1, color: areaColor.value },
-        ]),
-      },
+    xAxis,
+    yAxis: {
+      type: 'value' as const,
+      show: true,
+      position: 'right' as const,
+      splitNumber: 2,
+      min: 0,
+      max: (value: { max: number }) => Math.max(value.max, props.min),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: props.labelFormatter
+        ? {
+            show: true,
+            inside: false,
+            fontSize: 9,
+            color: colorSet.baseContent40,
+            fontFamily,
+            margin: 4,
+            formatter: (value: number) => (value === 0 ? '' : props.labelFormatter!(value)),
+          }
+        : { show: false },
     },
-  ],
-}))
+    series: [
+      {
+        type: 'line' as const,
+        name: props.name,
+        symbol: props.showSymbols ? 'circle' : 'none',
+        symbolSize: 3,
+        smooth: true,
+        lineStyle: { width: 1.5 },
+        data: props.data,
+        color: seriesColor.value,
+        emphasis: { disabled: true },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: seriesColor.value },
+            { offset: 1, color: areaColor.value },
+          ]),
+        },
+      },
+    ],
+  }
+})
 
 let myChart: echarts.ECharts | null = null
 let touchEndHandler: ((e: TouchEvent) => void) | null = null

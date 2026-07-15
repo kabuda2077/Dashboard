@@ -8,7 +8,7 @@
         <div class="setting-item-label">
           {{ $t('dashboardSettings') }}
         </div>
-        <DashboardSettings />
+        <DashboardSettings icon-only />
       </SettingItem>
       <LanguageSelect />
       <SettingItem :setting-key="k.autoDisconnectIdleUDP">

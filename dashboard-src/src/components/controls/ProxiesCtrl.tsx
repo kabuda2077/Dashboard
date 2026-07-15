@@ -270,7 +270,7 @@ export default defineComponent({
                   <div class="setting-item">
                     <div class="setting-item-label">{t('useSmartGroupSort')}</div>
                     <input
-                      class="toggle toggle-sm"
+                      class="toggle"
                       type="checkbox"
                       v-model={useSmartGroupSort.value}
                     />
@@ -280,7 +280,7 @@ export default defineComponent({
                   <div class="setting-item-label">{t('groupProxiesByProvider')}</div>
                   <input
                     type="checkbox"
-                    class="toggle toggle-sm"
+                    class="toggle"
                     v-model={groupProxiesByProvider.value}
                   />
                 </div>
@@ -288,14 +288,14 @@ export default defineComponent({
                   <div class="setting-item-label">{t('unavailableProxy')}</div>
                   <input
                     type="checkbox"
-                    class="toggle toggle-sm"
+                    class="toggle"
                     v-model={hideUnavailableProxies.value}
                   />
                 </div>
                 <div class="setting-item">
                   <div class="setting-item-label">{t('manageHiddenGroup')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={manageHiddenGroup.value}
                   />
@@ -303,7 +303,7 @@ export default defineComponent({
                 <div class="setting-item">
                   <div class="setting-item-label">{t('automaticDisconnection')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={automaticDisconnection.value}
                   />
@@ -311,7 +311,7 @@ export default defineComponent({
                 <div class="setting-item">
                   <div class="setting-item-label">{t('displayFinalOutbound')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={displayFinalOutbound.value}
                   />
@@ -319,7 +319,7 @@ export default defineComponent({
                 <div class="setting-item">
                   <div class="setting-item-label">{t('disableProxiesPageTextSelect')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={disableProxiesPageTextSelect.value}
                   />

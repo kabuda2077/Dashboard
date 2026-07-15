@@ -174,6 +174,7 @@ const ru: LANG_MESSAGE = {
   updateGeoSuccess: 'Geo база данных успешно обновлена',
   chains: 'Цепочки',
   outbound: 'Исходящий',
+  proxyGroup: 'Группа прокси',
   sortBy: 'Сортировать по',
   rule: 'Правило',
   sourceIP: 'Исходный IP',
@@ -420,6 +421,10 @@ const ru: LANG_MESSAGE = {
   uploadSettingsIconReflectListRemoved:
     'Данные пользовательских иконок слишком велики и были удалены при загрузке. Уменьшите их размер и попробуйте снова.',
   syncSettingsSuccess: 'Настройки успешно синхронизированы',
+  syncSettingsConfirm:
+    'В бэкенде сохранены настройки, которые перезапишут следующие локальные настройки:\n\n{keys}\n\nПрименить их?',
+  importSettingsConfirm:
+    'Импортированные настройки перезапишут следующие локальные настройки:\n\n{keys}\n\nПрименить их?',
   deleteUploadedSettingsSuccess: 'Загруженные настройки успешно удалены',
   deleteUploadedSettingsConfirm:
     'Вы уверены, что хотите удалить загруженные на бэкенд настройки? Это действие нельзя отменить.',
@@ -493,6 +498,7 @@ const ru: LANG_MESSAGE = {
   aggregateByDestination: 'По назначению',
   aggregateByProcess: 'По процессу',
   aggregateByOutbound: 'По исходящему',
+  aggregateByProxyGroup: 'По группе прокси',
   totalTraffic: 'Общий трафик',
   total: 'Итого',
   clearConnectionHistory: 'Очистить историю соединений',

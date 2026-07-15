@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
+import ConfirmDialogHost from './components/common/ConfirmDialogHost.vue'
 import { useKeyboard } from './composables/keyboard'
 import { EMOJIS, FONTS } from './constant'
 import {
@@ -53,7 +54,9 @@ const fontClassName = computed(() => {
 })
 
 const setThemeColor = () => {
-  const themeColor = getComputedStyle(app.value!).getPropertyValue('background-color').trim()
+  if (!app.value) return
+
+  const themeColor = getComputedStyle(app.value).getPropertyValue('background-color').trim()
   const metaThemeColor = document.querySelector('meta[name="theme-color"]')
   if (metaThemeColor) {
     metaThemeColor.setAttribute('content', themeColor)
@@ -61,6 +64,14 @@ const setThemeColor = () => {
 }
 
 watch(isPreferredDark, setThemeColor)
+watch(
+  theme,
+  () => {
+    document.body.setAttribute('data-theme', theme.value)
+    setThemeColor()
+  },
+  { immediate: true },
+)
 
 // iOS bounces the whole page when a vertical drag has nowhere left to scroll:
 // either it's over a non-scrollable area (so the drag pans the layout viewport),
@@ -161,6 +172,8 @@ const autoSwitchToURLBackendIfExists = () => {
 autoSwitchToURLBackendIfExists()
 
 onMounted(async () => {
+  setThemeColor()
+
   if (autoImportSettings.value) {
     await importSettingsFromUrl()
   }
@@ -172,17 +185,6 @@ onMounted(async () => {
       console.error('Failed to auto-sync settings on app load:', e)
     }
   }
-
-  watch(
-    theme,
-    () => {
-      document.body.setAttribute('data-theme', theme.value)
-      setThemeColor()
-    },
-    {
-      immediate: true,
-    },
-  )
 })
 
 const blurClass = computed(() => {
@@ -210,6 +212,7 @@ useKeyboard()
     :style="[backgroundImage, { height: 'var(--app-height, 100dvh)' }]"
   >
     <RouterView />
+    <ConfirmDialogHost />
     <div
       ref="toast"
       class="toast-sm toast toast-end toast-top z-[100000] max-w-80 text-sm md:max-w-96 md:translate-y-8"

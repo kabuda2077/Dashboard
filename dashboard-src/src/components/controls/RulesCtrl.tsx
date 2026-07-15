@@ -122,7 +122,7 @@ export default defineComponent({
                 <div class="setting-item">
                   <div class="setting-item-label">{t('displaySelectedNode')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={displayNowNodeInRule.value}
                   />
@@ -130,7 +130,7 @@ export default defineComponent({
                 <div class="setting-item">
                   <div class="setting-item-label">{t('displayLatencyNumber')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={displayLatencyInRule.value}
                   />
@@ -138,7 +138,7 @@ export default defineComponent({
                 <div class="setting-item">
                   <div class="setting-item-label">{t('disconnectOnRuleDisable')}</div>
                   <input
-                    class="toggle toggle-sm"
+                    class="toggle"
                     type="checkbox"
                     v-model={disconnectOnRuleDisable.value}
                   />

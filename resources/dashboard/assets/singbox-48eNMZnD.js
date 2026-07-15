@@ -1,1 +1,0 @@
-import{F as o,A as r}from"./index-DQjsLHsO.js";import"./vue-vendor-BbAxUs2A.js";import"./table-vendor-BzsNQRDo.js";import"./utils-vendor-BMTKWwNZ.js";import"./tooltip-vendor-BBoaU1_F.js";import"./charts-vendor-CQ_iXTzi.js";const t=async()=>{o.value=[],r.value=[]};export{t as fetchRules};
