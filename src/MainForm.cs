@@ -14,11 +14,8 @@ public sealed class MainForm : Form
     private readonly DashboardStatePublisher _statePublisher;
     private readonly Uri _dashboardUri;
     private readonly Icon _appIcon;
-    private readonly Icon _trayIconImage;
-    private readonly NotifyIcon _trayIcon;
     private Panel _contentPanel = null!;
     private WebView2? _webView;
-    private TrayMenuForm? _trayMenu;
     private Rectangle _trayRestoreBounds;
     private FormWindowState _trayRestoreWindowState = FormWindowState.Normal;
     private bool _hiddenToTray;
@@ -27,12 +24,9 @@ public sealed class MainForm : Form
     private bool _initialized;
     private bool _dashboardInitialized;
     private Task? _dashboardInitializationTask;
-    private bool _startMinimized;
-    private bool _startCoreAfterLaunch;
     private bool _webViewSuspended;
     private int _dashboardSuspendVersion;
     private readonly System.Windows.Forms.Timer _dashboardDisposeTimer = new() { Interval = DelayedDashboardDisposeMs };
-    private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
     private const int ResizeBorderThickness = 8;
     private const int MaximizedContentPadding = 8;
     private const int DelayedDashboardDisposeMs = 60000;
@@ -79,14 +73,11 @@ public sealed class MainForm : Form
         }
     }
 
-    internal MainForm(DashboardHost host, bool startMinimized, bool startCoreAfterLaunch)
+    internal MainForm(DashboardHost host)
     {
         _host = host;
-        _startMinimized = startMinimized;
-        _startCoreAfterLaunch = startCoreAfterLaunch;
         _settings = host.Settings;
         _dashboardUri = host.DashboardUri;
-        _host.ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch;
         _statePublisher = new DashboardStatePublisher(
             () => _host.BuildState(WindowState == FormWindowState.Maximized),
             () => _host.BuildRuntimeState(WindowState == FormWindowState.Maximized),
@@ -103,10 +94,8 @@ public sealed class MainForm : Form
         _trayRestoreBounds = Bounds;
         StartPosition = FormStartPosition.CenterScreen;
         _appIcon = LoadAppIcon();
-        _trayIconImage = LoadTrayIcon(_appIcon);
         Icon = _appIcon;
 
-        _trayIcon = CreateTrayIcon();
         BuildLayout();
         _hostMessageRouter = new HostMessageRouter(new HostMessageHandlers
         {
@@ -147,20 +136,7 @@ public sealed class MainForm : Form
         _initialized = true;
         RefreshStatus();
         _host.RefreshIconCache();
-
-        if (_startMinimized)
-        {
-            HideToTray(animate: false);
-        }
-        else
-        {
-            await EnsureDashboardInitializedAsync();
-        }
-
-        if (_settings.StartCoreOnLaunch || _startCoreAfterLaunch)
-        {
-            RunCoreOperation(() => _host.StartCore());
-        }
+        await EnsureDashboardInitializedAsync();
 
         HostOperationLogger.Info("performance", $"host:onShown durationMs={Stopwatch.GetElapsedTime(shownStartedAt).TotalMilliseconds:0}");
     }
@@ -284,9 +260,6 @@ public sealed class MainForm : Form
         _host.LogReceived += OnHostLogReceived;
         _host.IconCacheChanged += OnHostIconCacheChanged;
         _host.NoticeRequested += OnHostNoticeRequested;
-        _host.TrayNotificationRequested += OnHostTrayNotificationRequested;
-        _host.MessageRequested += OnHostMessageRequested;
-        _host.RelaunchRequested += OnHostRelaunchRequested;
         _dashboardDisposeTimer.Tick += (_, _) =>
         {
             _dashboardDisposeTimer.Stop();
@@ -315,55 +288,6 @@ public sealed class MainForm : Form
     private void OnHostNoticeRequested(object? sender, string message)
     {
         RunOnUiThread(() => _ = ShowDashboardNoticeAsync(message));
-    }
-
-    private void OnHostTrayNotificationRequested(object? sender, string message)
-    {
-        RunOnUiThread(() => _trayIcon.ShowBalloonTip(1800, "Dashboard", message, ToolTipIcon.Info));
-    }
-
-    private void OnHostMessageRequested(object? sender, HostMessageRequest request)
-    {
-        RunOnUiThread(() => MessageBox.Show(this, request.Message, request.Title, MessageBoxButtons.OK, request.Icon));
-    }
-
-    private void OnHostRelaunchRequested(object? sender, HostRelaunchRequest request)
-    {
-        RunOnUiThread(() => RelaunchAsAdministrator(request.StartCore, request.StartMinimized, request.ElevatedRestart));
-    }
-
-    private NotifyIcon CreateTrayIcon()
-    {
-        var icon = new NotifyIcon
-        {
-            Icon = _trayIconImage,
-            Text = "Dashboard",
-            Visible = true
-        };
-        icon.MouseUp += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                OpenTrayWindow();
-            }
-            else if (e.Button == MouseButtons.Right)
-            {
-                ShowTrayMenu(Cursor.Position);
-            }
-        };
-        return icon;
-    }
-
-    private void OpenTrayWindow()
-    {
-        var now = DateTime.UtcNow;
-        if ((now - _lastTrayIconToggleAt).TotalMilliseconds < 250)
-        {
-            return;
-        }
-
-        _lastTrayIconToggleAt = now;
-        ShowFromTray();
     }
 
     private void MinimizeToTaskbar()
@@ -403,30 +327,6 @@ public sealed class MainForm : Form
             ? SW_SHOWMAXIMIZED
             : SW_RESTORE;
         _ = ShowWindowAsync(Handle, command);
-    }
-
-    private void ShowTrayMenu(Point location)
-    {
-        _trayMenu?.Close();
-
-        var isRunning = _host.IsRunning;
-        _trayMenu = new TrayMenuForm(new[]
-        {
-            new TrayMenuItem("显示窗口", ShowFromTray),
-            new TrayMenuItem("重启内核", () => _host.RestartCore(showTrayNotification: true), Enabled: isRunning && !_host.IsUpgradeInProgress),
-            new TrayMenuItem("停止内核", () => _host.StopCore(showTrayNotification: true), Enabled: isRunning && !_host.IsUpgradeInProgress),
-            TrayMenuItem.Separator(),
-            new TrayMenuItem("退出", ExitApplication)
-        });
-        _trayMenu.FormClosed += (sender, _) =>
-        {
-            if (ReferenceEquals(sender, _trayMenu))
-            {
-                _trayMenu.Dispose();
-                _trayMenu = null;
-            }
-        };
-        _trayMenu.ShowNear(location);
     }
 
     private void EnsureWebViewCreated()
@@ -629,8 +529,6 @@ public sealed class MainForm : Form
 
     private void RefreshStatus()
     {
-        var running = _host.IsRunning;
-        _trayIcon.Text = running ? "Dashboard - 运行中" : "Dashboard - 未运行";
         _statePublisher.SendRuntimeState();
     }
 
@@ -833,48 +731,6 @@ public sealed class MainForm : Form
         await ShowDashboardNoticeAsync($"找不到{label}所在位置。");
     }
 
-    private bool ShouldKeepMinimizedForRelaunch()
-    {
-        return _startMinimized
-            || _hiddenToTray
-            || !Visible
-            || !ShowInTaskbar
-            || WindowState == FormWindowState.Minimized;
-    }
-
-    private void RelaunchAsAdministrator(bool startCore, bool startMinimized, bool elevatedRestart)
-    {
-        try
-        {
-            var arguments = new List<string>();
-            if (startCore)
-            {
-                arguments.Add("--start-core");
-            }
-            if (startMinimized)
-            {
-                arguments.Add("--minimized");
-            }
-            if (elevatedRestart)
-            {
-                arguments.Add("--elevated-restart");
-            }
-
-            var startInfo = new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
-            {
-                UseShellExecute = true,
-                Verb = "runas"
-            };
-            Process.Start(startInfo);
-            _allowClose = true;
-            Close();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, $"无法以管理员权限重启：{ex.Message}", "管理员重启失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-    }
-
     protected override void OnLocationChanged(EventArgs e)
     {
         base.OnLocationChanged(e);
@@ -944,8 +800,6 @@ public sealed class MainForm : Form
 
         RememberTrayRestoreState();
         _trayTransitionInProgress = true;
-        _trayMenu?.Close();
-
         try
         {
             _hiddenToTray = true;
@@ -986,7 +840,6 @@ public sealed class MainForm : Form
             return;
         }
 
-        _trayMenu?.Close();
         if (Visible && WindowState != FormWindowState.Minimized)
         {
             ResumeDashboard();
@@ -1027,7 +880,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private void ExitApplication()
+    internal void CloseForApplicationExit()
     {
         _allowClose = true;
         Close();
@@ -1041,17 +894,9 @@ public sealed class MainForm : Form
             _host.LogReceived -= OnHostLogReceived;
             _host.IconCacheChanged -= OnHostIconCacheChanged;
             _host.NoticeRequested -= OnHostNoticeRequested;
-            _host.TrayNotificationRequested -= OnHostTrayNotificationRequested;
-            _host.MessageRequested -= OnHostMessageRequested;
-            _host.RelaunchRequested -= OnHostRelaunchRequested;
-            _host.ShouldKeepMinimizedForRelaunch = null;
             DisposeDashboardView();
-            _trayIcon.Visible = false;
-            _trayIcon.Dispose();
             _statePublisher.Dispose();
             _dashboardDisposeTimer.Dispose();
-            _trayMenu?.Dispose();
-            _trayIconImage.Dispose();
             _appIcon.Dispose();
         }
 
@@ -1064,14 +909,6 @@ public sealed class MainForm : Form
         return File.Exists(iconPath)
             ? new Icon(iconPath)
             : Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? (Icon)SystemIcons.Application.Clone();
-    }
-
-    private static Icon LoadTrayIcon(Icon fallback)
-    {
-        var iconPath = Path.Combine(AppSettings.AppDirectory, "resources", "tray.ico");
-        return File.Exists(iconPath)
-            ? new Icon(iconPath)
-            : (Icon)fallback.Clone();
     }
 
     protected override void OnHandleCreated(EventArgs e)

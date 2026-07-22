@@ -25,20 +25,19 @@ internal static class Program
             var startMinimized = args.Any(arg => string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase));
             var startCore = args.Any(arg => string.Equals(arg, "--start-core", StringComparison.OrdinalIgnoreCase));
             var elevatedRestart = args.Any(arg => string.Equals(arg, "--elevated-restart", StringComparison.OrdinalIgnoreCase));
-            MainForm? form = null;
+            DashboardApplicationContext? context = null;
+            var activationPending = 0;
             if (!SingleInstance.TryCreate(
                     () =>
                     {
-                        try
+                        var currentContext = context;
+                        if (currentContext is null)
                         {
-                            if (form is not null && !form.IsDisposed && form.IsHandleCreated)
-                            {
-                                form.BeginInvoke(new Action(form.ShowFromTray));
-                            }
+                            Interlocked.Exchange(ref activationPending, 1);
+                            return;
                         }
-                        catch
-                        {
-                        }
+
+                        currentContext.ActivateMainWindow();
                     },
                     waitForPreviousExit: elevatedRestart,
                     out var singleInstance))
@@ -48,11 +47,14 @@ internal static class Program
 
             using (singleInstance!)
             {
-                using var host = new DashboardHost();
-                using var mainForm = new MainForm(host, startMinimized, startCore);
-                form = mainForm;
-                HostOperationLogger.Info("performance", $"host:mainFormCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
-                Application.Run(mainForm);
+                using var applicationContext = new DashboardApplicationContext(startMinimized, startCore);
+                context = applicationContext;
+                if (Interlocked.Exchange(ref activationPending, 0) != 0)
+                {
+                    applicationContext.ActivateMainWindow();
+                }
+                HostOperationLogger.Info("performance", $"host:applicationContextCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
+                Application.Run(applicationContext);
             }
         }
         catch (Exception exception)
