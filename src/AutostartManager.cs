@@ -62,7 +62,8 @@ internal static class AutostartManager
             query.StandardOutput,
             Application.ExecutablePath,
             AppSettings.AppDirectory,
-            GetCurrentUserSid());
+            GetCurrentUserSid(),
+            WindowsIdentity.GetCurrent().Name);
     }
 
     public static bool HasCurrentLegacyRunEntry()
@@ -129,7 +130,8 @@ internal static class AutostartManager
         string xml,
         string executablePath,
         string workingDirectory,
-        string userSid)
+        string userSid,
+        string? userAccount = null)
     {
         try
         {
@@ -153,17 +155,17 @@ internal static class AutostartManager
                 (PathsEqual(command, executablePath), "Executable path does not match the current application."),
                 (string.Equals(arguments?.Trim(), ScheduledArguments, StringComparison.Ordinal), "Arguments do not match."),
                 (PathsEqual(taskWorkingDirectory, workingDirectory), "Working directory does not match."),
-                (string.Equals(principal?.Element(ns + "UserId")?.Value, userSid, StringComparison.OrdinalIgnoreCase), "Principal SID does not match."),
+                (UserIdMatches(principal?.Element(ns + "UserId")?.Value, userSid, userAccount), "Principal user does not match."),
                 (string.Equals(principal?.Element(ns + "LogonType")?.Value, "InteractiveToken", StringComparison.OrdinalIgnoreCase), "Logon type is not InteractiveToken."),
                 (string.Equals(principal?.Element(ns + "RunLevel")?.Value, "HighestAvailable", StringComparison.OrdinalIgnoreCase), "Run level is not HighestAvailable."),
-                (string.Equals(trigger?.Element(ns + "UserId")?.Value, userSid, StringComparison.OrdinalIgnoreCase), "Logon trigger SID does not match."),
+                (UserIdMatches(trigger?.Element(ns + "UserId")?.Value, userSid, userAccount), "Logon trigger user does not match."),
                 (string.Equals(trigger?.Element(ns + "Delay")?.Value, "PT5S", StringComparison.OrdinalIgnoreCase), "Logon delay is not PT5S."),
-                (ReadBool(trigger?.Element(ns + "Enabled")), "Logon trigger is disabled."),
+                (ReadBool(trigger?.Element(ns + "Enabled"), defaultValue: true), "Logon trigger is disabled."),
                 (string.Equals(settings?.Element(ns + "MultipleInstancesPolicy")?.Value, "IgnoreNew", StringComparison.OrdinalIgnoreCase), "Multiple instance policy is not IgnoreNew."),
                 (ReadBool(settings?.Element(ns + "StartWhenAvailable")), "StartWhenAvailable is disabled."),
                 (!ReadBool(settings?.Element(ns + "DisallowStartIfOnBatteries")), "Task is blocked on battery power."),
                 (!ReadBool(settings?.Element(ns + "StopIfGoingOnBatteries")), "Task stops on battery power."),
-                (ReadBool(settings?.Element(ns + "Enabled")), "Task is disabled."),
+                (ReadBool(settings?.Element(ns + "Enabled"), defaultValue: true), "Task is disabled."),
                 (string.Equals(settings?.Element(ns + "ExecutionTimeLimit")?.Value, "PT0S", StringComparison.OrdinalIgnoreCase), "Execution time is limited.")
             };
             var failed = checks.Where(check => !check.Success).Select(check => check.Message).FirstOrDefault();
@@ -319,7 +321,7 @@ internal static class AutostartManager
             {
                 dashboardFolderObject = service.GetFolder("\\Dashboard");
             }
-            catch (COMException)
+            catch (Exception ex) when (IsMissingTaskFolderException(ex))
             {
                 rootFolderObject = service.GetFolder("\\");
                 dynamic rootFolder = rootFolderObject;
@@ -332,6 +334,13 @@ internal static class AutostartManager
             ReleaseComObject(rootFolderObject);
             ReleaseComObject(serviceObject);
         }
+    }
+
+    internal static bool IsMissingTaskFolderException(Exception exception)
+    {
+        const int fileNotFoundHResult = unchecked((int)0x80070002);
+        return exception is FileNotFoundException or DirectoryNotFoundException
+            || exception.HResult == fileNotFoundHResult;
     }
 
     private static void ReleaseComObject(object? value)
@@ -395,9 +404,18 @@ internal static class AutostartManager
         return current?.Value;
     }
 
-    private static bool ReadBool(XElement? element)
+    private static bool ReadBool(XElement? element, bool defaultValue = false)
     {
-        return bool.TryParse(element?.Value, out var value) && value;
+        return element is null
+            ? defaultValue
+            : bool.TryParse(element.Value, out var value) && value;
+    }
+
+    private static bool UserIdMatches(string? actual, string userSid, string? userAccount)
+    {
+        return string.Equals(actual, userSid, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(userAccount)
+                && string.Equals(actual, userAccount, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool PathsEqual(string? left, string right)

@@ -74,6 +74,55 @@ public sealed class AutostartManagerTests
     }
 
     [Fact]
+    public void VerifyTaskXmlAcceptsSchedulerNormalizedDefaultsAndAccountName()
+    {
+        const string executablePath = @"C:\Dashboard\Dashboard.exe";
+        const string workingDirectory = @"C:\Dashboard";
+        const string userSid = "S-1-5-21-1000";
+        const string userAccount = @"DESKTOP\user";
+        var document = XDocument.Parse(AutostartManager.BuildTaskXml(executablePath, workingDirectory, userSid));
+        var root = Assert.IsType<XElement>(document.Root);
+        XNamespace ns = root.Name.Namespace;
+        var trigger = Assert.IsType<XElement>(root.Element(ns + "Triggers")?.Element(ns + "LogonTrigger"));
+
+        trigger.Element(ns + "UserId")!.Value = userAccount;
+        trigger.Element(ns + "Enabled")?.Remove();
+        root.Element(ns + "Settings")?.Element(ns + "Enabled")?.Remove();
+
+        var status = AutostartManager.VerifyTaskXml(
+            document.ToString(SaveOptions.DisableFormatting),
+            executablePath,
+            workingDirectory,
+            userSid,
+            userAccount);
+
+        Assert.True(status.Exists);
+        Assert.True(status.IsValid, status.Message);
+    }
+
+    [Fact]
+    public void VerifyTaskXmlRejectsExplicitlyDisabledTask()
+    {
+        const string executablePath = @"C:\Dashboard\Dashboard.exe";
+        const string workingDirectory = @"C:\Dashboard";
+        const string userSid = "S-1-5-21-1000";
+        var document = XDocument.Parse(AutostartManager.BuildTaskXml(executablePath, workingDirectory, userSid));
+        var root = Assert.IsType<XElement>(document.Root);
+        XNamespace ns = root.Name.Namespace;
+
+        root.Element(ns + "Settings")?.Element(ns + "Enabled")?.SetValue("false");
+
+        var status = AutostartManager.VerifyTaskXml(
+            document.ToString(SaveOptions.DisableFormatting),
+            executablePath,
+            workingDirectory,
+            userSid);
+
+        Assert.False(status.IsValid);
+        Assert.Contains("disabled", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FinalizeOperationKeepsLegacyEntryUntilTaskIsVerified()
     {
         var legacyRemoved = false;
@@ -125,5 +174,15 @@ public sealed class AutostartManagerTests
     public void InvalidManagementOperationReturnsFailureExitCode()
     {
         Assert.Equal(2, AutostartManager.RunManagementCommand("invalid"));
+    }
+
+    [Fact]
+    public void MissingTaskFolderRecognizesSchedulerAndDotNetErrors()
+    {
+        Assert.True(AutostartManager.IsMissingTaskFolderException(new FileNotFoundException()));
+        Assert.True(AutostartManager.IsMissingTaskFolderException(new DirectoryNotFoundException()));
+        Assert.True(AutostartManager.IsMissingTaskFolderException(
+            new System.Runtime.InteropServices.COMException("missing", unchecked((int)0x80070002))));
+        Assert.False(AutostartManager.IsMissingTaskFolderException(new UnauthorizedAccessException()));
     }
 }
