@@ -48,7 +48,8 @@ internal static class Program
 
             using (singleInstance!)
             {
-                using var mainForm = new MainForm(startMinimized, startCore);
+                using var host = new DashboardHost();
+                using var mainForm = new MainForm(host, startMinimized, startCore);
                 form = mainForm;
                 HostOperationLogger.Info("performance", $"host:mainFormCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
                 Application.Run(mainForm);

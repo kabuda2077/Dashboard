@@ -1,8 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -10,13 +8,9 @@ namespace Dashboard;
 
 public sealed class MainForm : Form
 {
+    private readonly DashboardHost _host;
     private readonly AppSettings _settings;
-    private readonly CoreProcessManager _core = new();
-    private readonly ProxyGroupIconCache _iconCache = new();
-    private readonly DashboardServer _dashboardServer;
-    private readonly CoreLifecycleController _coreLifecycle;
     private readonly HostMessageRouter _hostMessageRouter;
-    private readonly DashboardStateBuilder _stateBuilder;
     private readonly DashboardStatePublisher _statePublisher;
     private readonly Uri _dashboardUri;
     private readonly Icon _appIcon;
@@ -37,12 +31,6 @@ public sealed class MainForm : Form
     private bool _startCoreAfterLaunch;
     private bool _webViewSuspended;
     private int _dashboardSuspendVersion;
-    private string _cachedCoreVersionKey = "";
-    private string _cachedCoreVersion = "";
-    private string _loadingCoreVersionKey = "";
-    private Task? _coreVersionLoadTask;
-    private string _cachedSingBoxTunKey = "";
-    private bool _cachedSingBoxTunConfigured;
     private readonly System.Windows.Forms.Timer _dashboardDisposeTimer = new() { Interval = DelayedDashboardDisposeMs };
     private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
     private const int ResizeBorderThickness = 8;
@@ -91,43 +79,18 @@ public sealed class MainForm : Form
         }
     }
 
-    public MainForm(bool startMinimized, bool startCoreAfterLaunch)
+    internal MainForm(DashboardHost host, bool startMinimized, bool startCoreAfterLaunch)
     {
+        _host = host;
         _startMinimized = startMinimized;
         _startCoreAfterLaunch = startCoreAfterLaunch;
-        _settings = AppSettings.Load();
-        SyncAutostartSetting();
-        _dashboardServer = new DashboardServer(Path.Combine(AppSettings.AppDirectory, "resources", "dashboard"), _iconCache.CacheDirectory);
-        _dashboardUri = _dashboardServer.Start();
-        _coreLifecycle = new CoreLifecycleController(
-            _settings,
-            _core,
-            new CoreLifecycleServices
-            {
-                IsRunningAsAdministrator = IsRunningAsAdministrator,
-                ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch,
-                RelaunchAsAdministrator = RelaunchAsAdministrator,
-                ShowNoticeAsync = ShowDashboardNoticeOnUiThreadAsync,
-                PublishState = () => RunOnUiThread(SendStateToDashboard),
-                RefreshIconCache = () => RunOnUiThread(RefreshIconCache),
-                ShowTrayNotification = message => RunOnUiThread(() => _trayIcon!.ShowBalloonTip(1800, "Dashboard", message, ToolTipIcon.Info)),
-                ShowMessage = (title, message, icon) =>
-                    RunOnUiThread(() => MessageBox.Show(this, message, title, MessageBoxButtons.OK, icon)),
-                RunOnUiThread = RunOnUiThread
-            });
-        _stateBuilder = new DashboardStateBuilder(
-            _settings,
-            _core,
-            _iconCache,
-            GetCachedActiveCoreVersion,
-            () => WindowState == FormWindowState.Maximized,
-            IsActiveTunConfigured,
-            () => _core.GetLogTail(8000),
-            () => _dashboardUri,
-            () => _coreLifecycle.IsUpgradeInProgress,
-            () => _coreLifecycle.IsSwitchInProgress);
+        _settings = host.Settings;
+        _dashboardUri = host.DashboardUri;
+        _host.ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch;
         _statePublisher = new DashboardStatePublisher(
-            _stateBuilder,
+            () => _host.BuildState(WindowState == FormWindowState.Maximized),
+            () => _host.BuildRuntimeState(WindowState == FormWindowState.Maximized),
+            _host.GetIconCacheMap,
             HasDashboardWebView,
             ShouldHoldDashboardUpdates,
             PostDashboardMessage);
@@ -152,14 +115,14 @@ public sealed class MainForm : Form
             WindowToggleMaximize = ToggleMaximize,
             WindowMinimize = MinimizeToTaskbar,
             WindowClose = Close,
-            SaveSettings = SaveSettingsFromMessage,
-            SaveDashboardSettings = SaveDashboardSettingsFromMessage,
-            CompleteSetup = CompleteSetup,
-            StartCore = () => RunCoreOperation(() => _coreLifecycle.Start()),
-            StopCore = () => RunCoreOperation(_coreLifecycle.Stop),
-            RestartCore = () => RunCoreOperation(() => _coreLifecycle.Restart()),
-            SwitchCoreAsync = targetCoreType => Task.Run(() => _coreLifecycle.SwitchAsync(targetCoreType)),
-            UpgradeCoreAsync = () => Task.Run(_coreLifecycle.UpgradeAsync),
+            SaveSettings = _host.SaveSettings,
+            SaveDashboardSettings = _host.SaveDashboardSettings,
+            CompleteSetup = _host.CompleteSetup,
+            StartCore = () => RunCoreOperation(() => _host.StartCore()),
+            StopCore = () => RunCoreOperation(() => _host.StopCore()),
+            RestartCore = () => RunCoreOperation(() => _host.RestartCore()),
+            SwitchCoreAsync = targetCoreType => Task.Run(() => _host.SwitchCoreAsync(targetCoreType)),
+            UpgradeCoreAsync = () => Task.Run(_host.UpgradeCoreAsync),
             BrowseCorePath = BrowseCorePath,
             BrowseConfigPath = BrowseConfigPath,
             OpenCoreLocationAsync = () => OpenPathLocationAsync(_settings.ActiveCorePath, "内核文件"),
@@ -169,7 +132,6 @@ public sealed class MainForm : Form
             SendWindowChromeState = SendWindowChromeState
         });
         BindEvents();
-        _iconCache.LoadExisting(_settings.ConfigPath);
     }
 
     protected override async void OnShown(EventArgs e)
@@ -184,7 +146,7 @@ public sealed class MainForm : Form
 
         _initialized = true;
         RefreshStatus();
-        RefreshIconCache();
+        _host.RefreshIconCache();
 
         if (_startMinimized)
         {
@@ -197,7 +159,7 @@ public sealed class MainForm : Form
 
         if (_settings.StartCoreOnLaunch || _startCoreAfterLaunch)
         {
-            RunCoreOperation(() => _coreLifecycle.Start());
+            RunCoreOperation(() => _host.StartCore());
         }
 
         HostOperationLogger.Info("performance", $"host:onShown durationMs={Stopwatch.GetElapsedTime(shownStartedAt).TotalMilliseconds:0}");
@@ -318,12 +280,13 @@ public sealed class MainForm : Form
 
     private void BindEvents()
     {
-        _core.StatusChanged += (_, _) => RunOnUiThread(RefreshStatus);
-        _core.LogReceived += (_, entry) => RunOnUiThread(() =>
-        {
-            _coreLifecycle.ObserveLogEntry(entry);
-            _statePublisher.QueueLogAppend(entry);
-        });
+        _host.StateChanged += OnHostStateChanged;
+        _host.LogReceived += OnHostLogReceived;
+        _host.IconCacheChanged += OnHostIconCacheChanged;
+        _host.NoticeRequested += OnHostNoticeRequested;
+        _host.TrayNotificationRequested += OnHostTrayNotificationRequested;
+        _host.MessageRequested += OnHostMessageRequested;
+        _host.RelaunchRequested += OnHostRelaunchRequested;
         _dashboardDisposeTimer.Tick += (_, _) =>
         {
             _dashboardDisposeTimer.Stop();
@@ -332,7 +295,41 @@ public sealed class MainForm : Form
                 DisposeDashboardView();
             }
         };
-        _iconCache.CacheChanged += (_, _) => RunOnUiThread(_statePublisher.SendIconCacheUpdated);
+    }
+
+    private void OnHostStateChanged(object? sender, EventArgs e)
+    {
+        RunOnUiThread(RefreshStatus);
+    }
+
+    private void OnHostLogReceived(object? sender, string entry)
+    {
+        RunOnUiThread(() => _statePublisher.QueueLogAppend(entry));
+    }
+
+    private void OnHostIconCacheChanged(object? sender, EventArgs e)
+    {
+        RunOnUiThread(_statePublisher.SendIconCacheUpdated);
+    }
+
+    private void OnHostNoticeRequested(object? sender, string message)
+    {
+        RunOnUiThread(() => _ = ShowDashboardNoticeAsync(message));
+    }
+
+    private void OnHostTrayNotificationRequested(object? sender, string message)
+    {
+        RunOnUiThread(() => _trayIcon.ShowBalloonTip(1800, "Dashboard", message, ToolTipIcon.Info));
+    }
+
+    private void OnHostMessageRequested(object? sender, HostMessageRequest request)
+    {
+        RunOnUiThread(() => MessageBox.Show(this, request.Message, request.Title, MessageBoxButtons.OK, request.Icon));
+    }
+
+    private void OnHostRelaunchRequested(object? sender, HostRelaunchRequest request)
+    {
+        RunOnUiThread(() => RelaunchAsAdministrator(request.StartCore, request.StartMinimized, request.ElevatedRestart));
     }
 
     private NotifyIcon CreateTrayIcon()
@@ -412,12 +409,12 @@ public sealed class MainForm : Form
     {
         _trayMenu?.Close();
 
-        var isRunning = _core.IsRunning;
+        var isRunning = _host.IsRunning;
         _trayMenu = new TrayMenuForm(new[]
         {
             new TrayMenuItem("显示窗口", ShowFromTray),
-            new TrayMenuItem("重启内核", () => _coreLifecycle.Restart(showTrayNotification: true), Enabled: isRunning && !_coreLifecycle.IsUpgradeInProgress),
-            new TrayMenuItem("停止内核", () => _coreLifecycle.Stop(showTrayNotification: true), Enabled: isRunning && !_coreLifecycle.IsUpgradeInProgress),
+            new TrayMenuItem("重启内核", () => _host.RestartCore(showTrayNotification: true), Enabled: isRunning && !_host.IsUpgradeInProgress),
+            new TrayMenuItem("停止内核", () => _host.StopCore(showTrayNotification: true), Enabled: isRunning && !_host.IsUpgradeInProgress),
             TrayMenuItem.Separator(),
             new TrayMenuItem("退出", ExitApplication)
         });
@@ -565,69 +562,6 @@ public sealed class MainForm : Form
         }
     }
 
-    private void CompleteSetup()
-    {
-        _settings.SetupCompleted = true;
-        _settings.Save();
-    }
-
-    private void SaveSettingsFromMessage(JsonElement root, bool showMessage)
-    {
-        _settings.CoreType = AppSettings.NormalizeCoreType(GetString(root, "coreType", _settings.CoreType));
-        _settings.CorePath = GetString(root, "mihomoCorePath", _settings.CorePath).Trim();
-        _settings.ConfigPath = GetString(root, "mihomoConfigPath", _settings.ConfigPath).Trim();
-        _settings.DashboardApiUrl = GetString(root, "mihomoApiUrl", _settings.DashboardApiUrl).Trim();
-        _settings.Secret = GetString(root, "mihomoSecret", _settings.Secret);
-        _settings.SingBoxCorePath = GetString(root, "singBoxCorePath", _settings.SingBoxCorePath).Trim();
-        _settings.SingBoxConfigPath = GetString(root, "singBoxConfigPath", _settings.SingBoxConfigPath).Trim();
-        _settings.SingBoxApiUrl = GetString(root, "singBoxApiUrl", _settings.SingBoxApiUrl).Trim();
-        _settings.SingBoxSecret = GetString(root, "singBoxSecret", _settings.SingBoxSecret);
-        _settings.ActiveCorePath = GetString(root, "corePath", _settings.ActiveCorePath).Trim();
-        _settings.ActiveConfigPath = GetString(root, "configPath", _settings.ActiveConfigPath).Trim();
-        _settings.ActiveDashboardApiUrl = GetString(root, "apiUrl", _settings.ActiveDashboardApiUrl).Trim();
-        _settings.ActiveSecret = GetString(root, "secret", _settings.ActiveSecret);
-        _settings.StartCoreOnLaunch = GetBool(root, "startCoreOnLaunch", _settings.StartCoreOnLaunch);
-        _settings.MinimizeToTray = GetBool(root, "minimizeToTray", _settings.MinimizeToTray);
-        _settings.LightweightMode = GetBool(root, "lightweightMode", _settings.LightweightMode);
-        _settings.SetupCompleted = GetBool(root, "setupCompleted", _settings.SetupCompleted);
-        if (root.TryGetProperty("autostart", out var autostart) && autostart.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            _settings.Autostart = autostart.GetBoolean();
-            AutostartManager.SetEnabled(_settings.Autostart);
-        }
-        _settings.Save();
-        RefreshIconCache();
-
-        if (showMessage)
-        {
-            _ = ShowDashboardNoticeAsync("设置已保存。");
-        }
-    }
-
-    private void SaveDashboardSettingsFromMessage(JsonElement root)
-    {
-        if (!root.TryGetProperty("settings", out var settingsProperty)
-            || settingsProperty.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        var dashboardSettings = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var setting in settingsProperty.EnumerateObject())
-        {
-            if (!setting.Name.StartsWith("config/", StringComparison.Ordinal)
-                || setting.Value.ValueKind != JsonValueKind.String)
-            {
-                continue;
-            }
-
-            dashboardSettings[setting.Name] = setting.Value.GetString() ?? "";
-        }
-
-        _settings.DashboardSettings = dashboardSettings;
-        _settings.Save();
-    }
-
     private string BuildDashboardSettingsBootstrapScript()
     {
         var hasDashboardSettings = _settings.DashboardSettings is not null;
@@ -693,27 +627,9 @@ public sealed class MainForm : Form
         _ = Task.Run(action);
     }
 
-    private Task ShowDashboardNoticeOnUiThreadAsync(string message)
-    {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        RunOnUiThread(() =>
-        {
-            try
-            {
-                _ = ShowDashboardNoticeAsync(message);
-                completion.TrySetResult();
-            }
-            catch (Exception ex)
-            {
-                completion.TrySetException(ex);
-            }
-        });
-        return completion.Task;
-    }
-
     private void RefreshStatus()
     {
-        var running = _core.IsRunning;
+        var running = _host.IsRunning;
         _trayIcon.Text = running ? "Dashboard - 运行中" : "Dashboard - 未运行";
         _statePublisher.SendRuntimeState();
     }
@@ -721,210 +637,6 @@ public sealed class MainForm : Form
     private void SendStateToDashboard()
     {
         _statePublisher.SendState();
-    }
-
-    private bool? IsActiveTunConfigured()
-    {
-        return _settings.IsSingBox
-            ? IsSingBoxTunConfigured()
-            : null;
-    }
-
-    private bool IsSingBoxTunConfigured()
-    {
-        if (string.IsNullOrWhiteSpace(_settings.SingBoxConfigPath) || !File.Exists(_settings.SingBoxConfigPath))
-        {
-            _cachedSingBoxTunKey = "";
-            _cachedSingBoxTunConfigured = false;
-            return false;
-        }
-
-        try
-        {
-            var fullPath = Path.GetFullPath(_settings.SingBoxConfigPath);
-            var lastWrite = File.GetLastWriteTimeUtc(fullPath).Ticks;
-            var key = $"{fullPath}|{lastWrite}";
-            if (string.Equals(key, _cachedSingBoxTunKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return _cachedSingBoxTunConfigured;
-            }
-
-            _cachedSingBoxTunKey = key;
-            _cachedSingBoxTunConfigured = ReadSingBoxTunConfigured(fullPath);
-            return _cachedSingBoxTunConfigured;
-        }
-        catch
-        {
-            return _cachedSingBoxTunConfigured;
-        }
-    }
-
-    private static bool ReadSingBoxTunConfigured(string configPath)
-    {
-        try
-        {
-            using var stream = File.OpenRead(configPath);
-            using var document = JsonDocument.Parse(stream, new JsonDocumentOptions
-            {
-                AllowTrailingCommas = true,
-                CommentHandling = JsonCommentHandling.Skip
-            });
-
-            if (!document.RootElement.TryGetProperty("inbounds", out var inbounds)
-                || inbounds.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
-            foreach (var inbound in inbounds.EnumerateArray())
-            {
-                if (inbound.ValueKind != JsonValueKind.Object
-                    || !inbound.TryGetProperty("type", out var typeProperty)
-                    || typeProperty.ValueKind != JsonValueKind.String)
-                {
-                    continue;
-                }
-
-                if (!string.Equals(typeProperty.GetString(), "tun", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (inbound.TryGetProperty("enabled", out var enabledProperty)
-                    && enabledProperty.ValueKind == JsonValueKind.False)
-                {
-                    return false;
-                }
-
-                if (inbound.TryGetProperty("disabled", out var disabledProperty)
-                    && disabledProperty.ValueKind == JsonValueKind.True)
-                {
-                    return false;
-                }
-
-                return true;
-            }
-        }
-        catch
-        {
-        }
-
-        return false;
-    }
-
-    private string GetCachedActiveCoreVersion()
-    {
-        var corePath = _settings.ActiveCorePath;
-        if (string.IsNullOrWhiteSpace(corePath) || !File.Exists(corePath))
-        {
-            _cachedCoreVersionKey = "";
-            _cachedCoreVersion = "";
-            return "";
-        }
-
-        try
-        {
-            var lastWrite = File.GetLastWriteTimeUtc(corePath).Ticks;
-            var key = $"{_settings.CoreType}|{Path.GetFullPath(corePath)}|{lastWrite}";
-            if (string.Equals(key, _cachedCoreVersionKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return _cachedCoreVersion;
-            }
-
-            StartCoreVersionReadIfNeeded(key, corePath, _settings.IsSingBox);
-            return _cachedCoreVersion;
-        }
-        catch
-        {
-            return _cachedCoreVersion;
-        }
-    }
-
-    private void StartCoreVersionReadIfNeeded(string key, string corePath, bool isSingBox)
-    {
-        if (string.Equals(key, _loadingCoreVersionKey, StringComparison.OrdinalIgnoreCase)
-            && _coreVersionLoadTask is { IsCompleted: false })
-        {
-            return;
-        }
-
-        _loadingCoreVersionKey = key;
-        _coreVersionLoadTask = Task.Run(() => ReadCoreVersion(corePath, isSingBox))
-            .ContinueWith(task =>
-            {
-                RunOnUiThread(() =>
-                {
-                    if (!string.Equals(key, _loadingCoreVersionKey, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return;
-                    }
-
-                    _cachedCoreVersionKey = key;
-                    _cachedCoreVersion = task.Status == TaskStatus.RanToCompletion ? task.Result : "";
-                    _statePublisher.SendRuntimeState();
-                });
-            }, TaskScheduler.Default);
-    }
-
-    private static string ReadCoreVersion(string corePath, bool isSingBox)
-    {
-        var startInfo = new ProcessStartInfo(corePath, isSingBox ? "version" : "-v")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        try
-        {
-            using var process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return "";
-            }
-
-            if (!process.WaitForExit(2000))
-            {
-                TryKill(process);
-                return "";
-            }
-
-            var output = $"{process.StandardOutput.ReadToEnd()} {process.StandardError.ReadToEnd()}";
-            return FormatCoreVersion(output, isSingBox);
-        }
-        catch
-        {
-            return "";
-        }
-    }
-
-    private static string FormatCoreVersion(string output, bool isSingBox)
-    {
-        var match = Regex.Match(output, @"v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?");
-        if (!match.Success)
-        {
-            return "";
-        }
-
-        var version = match.Value.Trim();
-        return isSingBox
-            ? $"sing-box {version.TrimStart('v', 'V')}"
-            : version;
-    }
-
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch
-        {
-        }
     }
 
     private Task ShowDashboardNoticeAsync(string message)
@@ -1067,8 +779,7 @@ public sealed class MainForm : Form
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            _settings.ActiveCorePath = dialog.FileName;
-            _settings.Save();
+            _host.SetActiveCorePath(dialog.FileName);
         }
     }
 
@@ -1083,9 +794,7 @@ public sealed class MainForm : Form
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            _settings.ActiveConfigPath = dialog.FileName;
-            _settings.Save();
-            RefreshIconCache();
+            _host.SetActiveConfigPath(dialog.FileName);
         }
     }
 
@@ -1122,34 +831,6 @@ public sealed class MainForm : Form
         }
 
         await ShowDashboardNoticeAsync($"找不到{label}所在位置。");
-    }
-
-    private void RefreshIconCache()
-    {
-        if (_settings.IsSingBox)
-        {
-            return;
-        }
-
-        var configPath = _settings.ConfigPath;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _iconCache.RefreshAsync(configPath);
-            }
-            catch (Exception ex)
-            {
-                HostOperationLogger.Error("icon-cache", "Icon cache refresh failed.", ex);
-            }
-        });
-    }
-
-    private static bool IsRunningAsAdministrator()
-    {
-        using var identity = WindowsIdentity.GetCurrent();
-        var principal = new WindowsPrincipal(identity);
-        return principal.IsInRole(WindowsBuiltInRole.Administrator);
     }
 
     private bool ShouldKeepMinimizedForRelaunch()
@@ -1356,7 +1037,14 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
-            _core.Dispose();
+            _host.StateChanged -= OnHostStateChanged;
+            _host.LogReceived -= OnHostLogReceived;
+            _host.IconCacheChanged -= OnHostIconCacheChanged;
+            _host.NoticeRequested -= OnHostNoticeRequested;
+            _host.TrayNotificationRequested -= OnHostTrayNotificationRequested;
+            _host.MessageRequested -= OnHostMessageRequested;
+            _host.RelaunchRequested -= OnHostRelaunchRequested;
+            _host.ShouldKeepMinimizedForRelaunch = null;
             DisposeDashboardView();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
@@ -1365,7 +1053,6 @@ public sealed class MainForm : Form
             _trayMenu?.Dispose();
             _trayIconImage.Dispose();
             _appIcon.Dispose();
-            _dashboardServer.Dispose();
         }
 
         base.Dispose(disposing);
@@ -1385,22 +1072,6 @@ public sealed class MainForm : Form
         return File.Exists(iconPath)
             ? new Icon(iconPath)
             : (Icon)fallback.Clone();
-    }
-
-    private void SyncAutostartSetting()
-    {
-        var registryEnabled = AutostartManager.IsEnabled();
-        if (_settings.Autostart)
-        {
-            AutostartManager.SetEnabled(true);
-            return;
-        }
-
-        if (registryEnabled)
-        {
-            _settings.Autostart = true;
-            _settings.Save();
-        }
     }
 
     protected override void OnHandleCreated(EventArgs e)

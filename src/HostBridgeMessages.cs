@@ -159,6 +159,7 @@ internal sealed record DashboardState
     public required bool MinimizeToTray { get; init; }
     public required bool LightweightMode { get; init; }
     public required bool Autostart { get; init; }
+    public bool IsAutostartUpdating { get; init; }
     public required bool CanUpgradeCore { get; init; }
     public required bool IsCoreUpgrading { get; init; }
     public required bool IsCoreSwitching { get; init; }

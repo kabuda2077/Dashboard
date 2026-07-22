@@ -7,7 +7,9 @@ internal sealed class DashboardStatePublisher : IDisposable
     private const int MinRefreshIntervalMs = 150;
     private const int MaxRefreshDelayMs = 1000;
 
-    private readonly DashboardStateBuilder _stateBuilder;
+    private readonly Func<DashboardState> _buildState;
+    private readonly Func<DashboardRuntimeState> _buildRuntimeState;
+    private readonly Func<IReadOnlyDictionary<string, string>> _buildIconCacheMap;
     private readonly Func<bool> _hasDashboardWebView;
     private readonly Func<bool> _shouldHoldUpdates;
     private readonly Action<object> _postDashboardMessage;
@@ -20,12 +22,16 @@ internal sealed class DashboardStatePublisher : IDisposable
     private DateTime _lastStateRefresh = DateTime.MinValue;
 
     public DashboardStatePublisher(
-        DashboardStateBuilder stateBuilder,
+        Func<DashboardState> buildState,
+        Func<DashboardRuntimeState> buildRuntimeState,
+        Func<IReadOnlyDictionary<string, string>> buildIconCacheMap,
         Func<bool> hasDashboardWebView,
         Func<bool> shouldHoldUpdates,
         Action<object> postDashboardMessage)
     {
-        _stateBuilder = stateBuilder;
+        _buildState = buildState;
+        _buildRuntimeState = buildRuntimeState;
+        _buildIconCacheMap = buildIconCacheMap;
         _hasDashboardWebView = hasDashboardWebView;
         _shouldHoldUpdates = shouldHoldUpdates;
         _postDashboardMessage = postDashboardMessage;
@@ -87,7 +93,7 @@ internal sealed class DashboardStatePublisher : IDisposable
             return;
         }
 
-        _postDashboardMessage(HostOutboundMessage.StateMessage(_stateBuilder.Build()));
+        _postDashboardMessage(HostOutboundMessage.StateMessage(_buildState()));
         ClearPendingLogAppend();
         _dashboardStateDirty = false;
         FlushPendingNotice();
@@ -101,7 +107,7 @@ internal sealed class DashboardStatePublisher : IDisposable
             return;
         }
 
-        _postDashboardMessage(HostOutboundMessage.Runtime(_stateBuilder.BuildRuntime()));
+        _postDashboardMessage(HostOutboundMessage.Runtime(_buildRuntimeState()));
         FlushPendingNotice();
     }
 
@@ -134,7 +140,7 @@ internal sealed class DashboardStatePublisher : IDisposable
             return;
         }
 
-        _postDashboardMessage(HostOutboundMessage.IconCacheUpdated(_stateBuilder.BuildIconCacheMap()));
+        _postDashboardMessage(HostOutboundMessage.IconCacheUpdated(_buildIconCacheMap()));
     }
 
     public Task ShowNoticeAsync(string message)
