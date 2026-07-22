@@ -48,6 +48,8 @@ function Invoke-Pnpm {
     $previousCi = $env:CI
     try {
         $env:CI = 'true'
+        $env:PNPM_STORE_DIR = $pnpmStoreDir
+        $env:npm_config_store_dir = $pnpmStoreDir
         & $PnpmPath @Arguments
     }
     finally {
@@ -101,10 +103,9 @@ if (-not $SkipFrontendTypeCheck -or -not $SkipFrontendTests -or -not $SkipFronte
 
 if (-not $SkipFrontendTests) {
     Invoke-Step 'Frontend unit tests' {
-        $pnpmPath = Get-PnpmPath
         Push-Location $dashboardRoot
         try {
-            Invoke-Pnpm $pnpmPath exec vitest run
+            & .\node_modules\.bin\vitest.cmd run
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend unit tests failed with exit code $LASTEXITCODE"
             }
@@ -117,10 +118,9 @@ if (-not $SkipFrontendTests) {
 
 if (-not $SkipFrontendTypeCheck) {
     Invoke-Step 'Frontend type-check' {
-        $pnpmPath = Get-PnpmPath
         Push-Location $dashboardRoot
         try {
-            Invoke-Pnpm $pnpmPath exec vue-tsc --build --force
+            & .\node_modules\.bin\vue-tsc.cmd --build --force
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend type-check failed with exit code $LASTEXITCODE"
             }
@@ -133,14 +133,13 @@ if (-not $SkipFrontendTypeCheck) {
 
 if (-not $SkipFrontendBuild) {
     Invoke-Step 'Frontend build' {
-        $pnpmPath = Get-PnpmPath
         Push-Location $dashboardRoot
         try {
             $previousFont = $env:FONT
             $previousDesktopBuild = $env:DESKTOP_BUILD
             $env:FONT = 'misans'
             $env:DESKTOP_BUILD = '1'
-            Invoke-Pnpm $pnpmPath exec vite build
+            & .\node_modules\.bin\vite.cmd build
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend build failed with exit code $LASTEXITCODE"
             }

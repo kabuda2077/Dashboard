@@ -21,6 +21,8 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _host = new DashboardHost();
         _host.ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch;
         _host.StateChanged += OnHostStateChanged;
+        _host.RuntimeStateChanged += OnHostStateChanged;
+        _host.NoticeRequested += OnNoticeRequested;
         _host.TrayNotificationRequested += OnTrayNotificationRequested;
         _host.MessageRequested += OnMessageRequested;
         _host.RelaunchRequested += OnRelaunchRequested;
@@ -29,19 +31,29 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _trayIconImage = LoadTrayIcon(_appIcon);
         _trayIcon = CreateTrayIcon();
         UpdateTrayStatus();
-
-        if (_host.Settings.StartCoreOnLaunch || startCoreAfterLaunch)
+        var shouldStartCore = _host.Settings.StartCoreOnLaunch || startCoreAfterLaunch;
+        if (!ShouldDeferAutostartReconcile(shouldStartCore, DashboardHost.IsRunningAsAdministrator()))
         {
-            _ = Task.Run(() => _host.StartCore());
+            _ = Task.Run(_host.ReconcileAutostartAsync);
         }
 
         if (!startMinimized)
         {
             ShowMainWindow();
         }
+
+        if (shouldStartCore)
+        {
+            _ = Task.Run(() => _host.StartCore());
+        }
     }
 
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
+
+    internal static bool ShouldDeferAutostartReconcile(bool shouldStartCore, bool isAdministrator)
+    {
+        return shouldStartCore && !isAdministrator;
+    }
 
     internal void ActivateMainWindow()
     {
@@ -132,6 +144,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     private void OnMainFormClosed(object? sender, FormClosedEventArgs e)
     {
+        HostOperationLogger.Info("window-lifecycle", $"context observed formClosed reason={e.CloseReason} exiting={_exiting}");
         if (sender is MainForm form)
         {
             form.FormClosed -= OnMainFormClosed;
@@ -154,14 +167,34 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         RunOnUiThread(() => _trayIcon.ShowBalloonTip(1800, "Dashboard", message, ToolTipIcon.Info));
     }
 
+    private void OnNoticeRequested(object? sender, string message)
+    {
+        RunOnUiThread(() =>
+        {
+            if (_mainForm is null || _mainForm.IsDisposed || !_mainForm.Visible)
+            {
+                _trayIcon.ShowBalloonTip(1800, "Dashboard", message, ToolTipIcon.Info);
+            }
+        });
+    }
+
     private void OnMessageRequested(object? sender, HostMessageRequest request)
     {
-        RunOnUiThread(() => MessageBox.Show(
-            _mainForm,
-            request.Message,
-            request.Title,
-            MessageBoxButtons.OK,
-            request.Icon));
+        RunOnUiThread(() =>
+        {
+            if (_mainForm is null || _mainForm.IsDisposed || !_mainForm.Visible)
+            {
+                _trayIcon.ShowBalloonTip(2500, request.Title, request.Message, ToToolTipIcon(request.Icon));
+                return;
+            }
+
+            MessageBox.Show(
+                _mainForm,
+                request.Message,
+                request.Title,
+                MessageBoxButtons.OK,
+                request.Icon);
+        });
     }
 
     private void OnRelaunchRequested(object? sender, HostRelaunchRequest request)
@@ -255,6 +288,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         }
 
         _exiting = true;
+        HostOperationLogger.Info("window-lifecycle", "context exit requested.");
         _trayMenu?.Close();
         if (_mainForm is { IsDisposed: false } form)
         {
@@ -266,6 +300,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        HostOperationLogger.Info("window-lifecycle", "context ExitThreadCore.");
         DisposeOwnedResources();
         base.ExitThreadCore();
     }
@@ -289,6 +324,8 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
         _disposed = true;
         _host.StateChanged -= OnHostStateChanged;
+        _host.RuntimeStateChanged -= OnHostStateChanged;
+        _host.NoticeRequested -= OnNoticeRequested;
         _host.TrayNotificationRequested -= OnTrayNotificationRequested;
         _host.MessageRequested -= OnMessageRequested;
         _host.RelaunchRequested -= OnRelaunchRequested;
@@ -308,6 +345,16 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         return File.Exists(iconPath)
             ? new Icon(iconPath)
             : Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? (Icon)SystemIcons.Application.Clone();
+    }
+
+    private static ToolTipIcon ToToolTipIcon(MessageBoxIcon icon)
+    {
+        return icon switch
+        {
+            MessageBoxIcon.Error => ToolTipIcon.Error,
+            MessageBoxIcon.Warning => ToolTipIcon.Warning,
+            _ => ToolTipIcon.Info
+        };
     }
 
     private static Icon LoadTrayIcon(Icon fallback)

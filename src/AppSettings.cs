@@ -5,6 +5,7 @@ namespace Dashboard;
 
 public sealed class AppSettings
 {
+    private static readonly object SaveLock = new();
     public const string CoreTypeMihomo = "mihomo";
     public const string CoreTypeSingBox = "sing-box";
     private const string AppDirectoryName = "Dashboard";
@@ -171,11 +172,14 @@ public sealed class AppSettings
 
     public void Save()
     {
-        Directory.CreateDirectory(SettingsDirectory);
-        ProtectedSecret = SecretProtector.Protect(Secret);
-        ProtectedSingBoxSecret = SecretProtector.Protect(SingBoxSecret);
-        CoreType = NormalizeCoreType(CoreType);
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
+        lock (SaveLock)
+        {
+            Directory.CreateDirectory(SettingsDirectory);
+            ProtectedSecret = SecretProtector.Protect(Secret);
+            ProtectedSingBoxSecret = SecretProtector.Protect(SingBoxSecret);
+            CoreType = NormalizeCoreType(CoreType);
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
+        }
     }
 
     private static string DefaultMihomoCorePath => Path.Combine(AppDirectory, "mihomo", "mihomo.exe");

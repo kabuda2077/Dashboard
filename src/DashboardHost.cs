@@ -11,6 +11,7 @@ internal sealed class DashboardHost : IDisposable
     private readonly ProxyGroupIconCache _iconCache = new();
     private readonly DashboardServer _dashboardServer;
     private readonly CoreLifecycleController _coreLifecycle;
+    private readonly SemaphoreSlim _autostartGate = new(1, 1);
     private string _cachedCoreVersionKey = "";
     private string _cachedCoreVersion = "";
     private string _loadingCoreVersionKey = "";
@@ -22,7 +23,6 @@ internal sealed class DashboardHost : IDisposable
     public DashboardHost()
     {
         Settings = AppSettings.Load();
-        SyncLegacyAutostartSetting();
         _dashboardServer = new DashboardServer(
             Path.Combine(AppSettings.AppDirectory, "resources", "dashboard"),
             _iconCache.CacheDirectory);
@@ -61,6 +61,7 @@ internal sealed class DashboardHost : IDisposable
     public Func<bool>? ShouldKeepMinimizedForRelaunch { get; set; }
 
     public event EventHandler? StateChanged;
+    public event EventHandler? RuntimeStateChanged;
     public event EventHandler<string>? LogReceived;
     public event EventHandler? IconCacheChanged;
     public event EventHandler<string>? NoticeRequested;
@@ -157,8 +158,13 @@ internal sealed class DashboardHost : IDisposable
         Settings.Save();
     }
 
-    public void SaveSettings(JsonElement root, bool showMessage)
+    public async Task SaveSettingsAsync(JsonElement root, bool showMessage)
     {
+        var previousAutostart = Settings.Autostart;
+        var requestedAutostart = root.TryGetProperty("autostart", out var autostart)
+            && autostart.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? autostart.GetBoolean()
+            : previousAutostart;
         Settings.CoreType = AppSettings.NormalizeCoreType(HostBridgeJson.GetString(root, "coreType", Settings.CoreType));
         Settings.CorePath = HostBridgeJson.GetString(root, "mihomoCorePath", Settings.CorePath).Trim();
         Settings.ConfigPath = HostBridgeJson.GetString(root, "mihomoConfigPath", Settings.ConfigPath).Trim();
@@ -176,19 +182,56 @@ internal sealed class DashboardHost : IDisposable
         Settings.MinimizeToTray = HostBridgeJson.GetBool(root, "minimizeToTray", Settings.MinimizeToTray);
         Settings.LightweightMode = HostBridgeJson.GetBool(root, "lightweightMode", Settings.LightweightMode);
         Settings.SetupCompleted = HostBridgeJson.GetBool(root, "setupCompleted", Settings.SetupCompleted);
-        if (root.TryGetProperty("autostart", out var autostart)
-            && autostart.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            Settings.Autostart = autostart.GetBoolean();
-            AutostartManager.SetEnabled(Settings.Autostart);
-        }
-
+        Settings.Autostart = requestedAutostart;
         Settings.Save();
         RefreshIconCache();
         PublishStateChanged();
+
+        var autostartSucceeded = true;
+        if (requestedAutostart != previousAutostart)
+        {
+            autostartSucceeded = await ApplyAutostartSettingAsync(
+                requestedAutostart,
+                previousAutostart,
+                isMigration: false);
+        }
+
         if (showMessage)
         {
-            _ = ShowNoticeAsync("设置已保存。");
+            _ = ShowNoticeAsync(autostartSucceeded ? "设置已保存。" : "其他设置已保存。");
+        }
+    }
+
+    public async Task ReconcileAutostartAsync()
+    {
+        try
+        {
+            var hasLegacyEntry = AutostartManager.HasCurrentLegacyRunEntry();
+            var status = AutostartManager.QueryStatus();
+            if (hasLegacyEntry && !Settings.Autostart)
+            {
+                Settings.Autostart = true;
+                Settings.Save();
+            }
+
+            if (Settings.Autostart)
+            {
+                if (!status.IsValid || hasLegacyEntry)
+                {
+                    await ApplyAutostartSettingAsync(true, true, isMigration: true);
+                }
+                return;
+            }
+
+            if (status.Exists || hasLegacyEntry)
+            {
+                await ApplyAutostartSettingAsync(false, status.Exists || hasLegacyEntry, isMigration: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("autostart", "Failed to reconcile autostart state.", ex);
+            _ = ShowNoticeAsync($"检查开机自启失败：{ex.Message}");
         }
     }
 
@@ -267,7 +310,7 @@ internal sealed class DashboardHost : IDisposable
 
     private void OnCoreStatusChanged(object? sender, EventArgs e)
     {
-        PublishStateChanged();
+        RuntimeStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnCoreLogReceived(object? sender, string entry)
@@ -420,7 +463,7 @@ internal sealed class DashboardHost : IDisposable
                 _loadingCoreVersionKey = "";
             }
 
-            PublishStateChanged();
+            RuntimeStateChanged?.Invoke(this, EventArgs.Empty);
         }, TaskScheduler.Default);
     }
 
@@ -491,19 +534,55 @@ internal sealed class DashboardHost : IDisposable
         }
     }
 
-    private void SyncLegacyAutostartSetting()
+    private async Task<bool> ApplyAutostartSettingAsync(bool enabled, bool rollbackValue, bool isMigration)
     {
-        var registryEnabled = AutostartManager.IsEnabled();
-        if (Settings.Autostart)
+        await _autostartGate.WaitAsync();
+        try
         {
-            AutostartManager.SetEnabled(true);
-            return;
-        }
+            IsAutostartUpdating = true;
+            PublishStateChanged();
+            AutostartOperationResult result;
+            try
+            {
+                result = await AutostartManager.SetEnabledAsync(enabled);
+            }
+            catch (Exception ex)
+            {
+                HostOperationLogger.Error("autostart", "Autostart update failed unexpectedly.", ex);
+                result = AutostartOperationResult.Failure(ex.Message);
+            }
+            finally
+            {
+                IsAutostartUpdating = false;
+            }
 
-        if (registryEnabled)
-        {
-            Settings.Autostart = true;
+            if (result.Success)
+            {
+                Settings.Autostart = enabled;
+                Settings.Save();
+                PublishStateChanged();
+                if (isMigration)
+                {
+                    _ = ShowNoticeAsync(enabled
+                        ? "开机自启已迁移到计划任务。"
+                        : "已清理旧的开机自启配置。");
+                }
+                return true;
+            }
+
+            Settings.Autostart = rollbackValue;
             Settings.Save();
+            PublishStateChanged();
+            var message = enabled
+                ? $"开机自启设置失败：{result.Message}"
+                : $"关闭开机自启失败：{result.Message}";
+            HostOperationLogger.Error("autostart", message, new InvalidOperationException(result.Message));
+            _ = ShowNoticeAsync(message);
+            return false;
+        }
+        finally
+        {
+            _autostartGate.Release();
         }
     }
 

@@ -51,46 +51,46 @@ internal sealed class HostMessageRouter
                 _handlers.SaveDashboardSettings(root);
                 return;
             case HostBridgeCommand.Save:
-                _handlers.SaveSettings(root, true);
+                await _handlers.SaveSettingsAsync(root, true);
                 break;
             case HostBridgeCommand.CompleteSetup:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 _handlers.CompleteSetup();
                 await _handlers.ShowNoticeAsync("首次启动设置已完成。");
                 break;
             case HostBridgeCommand.Start:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 _handlers.StartCore();
                 break;
             case HostBridgeCommand.Restart:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 _handlers.RestartCore();
                 break;
             case HostBridgeCommand.SwitchCore:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 await _handlers.SwitchCoreAsync(HostBridgeJson.GetString(root, "targetCoreType", string.Empty));
                 return;
             case HostBridgeCommand.Stop:
                 _handlers.StopCore();
                 break;
             case HostBridgeCommand.UpgradeCore:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 await _handlers.UpgradeCoreAsync();
                 break;
             case HostBridgeCommand.BrowseCore:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 _handlers.BrowseCorePath();
                 break;
             case HostBridgeCommand.BrowseConfig:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 _handlers.BrowseConfigPath();
                 break;
             case HostBridgeCommand.OpenCoreLocation:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 await _handlers.OpenCoreLocationAsync();
                 break;
             case HostBridgeCommand.OpenConfigLocation:
-                _handlers.SaveSettings(root, false);
+                await _handlers.SaveSettingsAsync(root, false);
                 await _handlers.OpenConfigLocationAsync();
                 break;
         }
@@ -106,7 +106,7 @@ internal sealed class HostMessageHandlers
     public required Action WindowToggleMaximize { get; init; }
     public required Action WindowMinimize { get; init; }
     public required Action WindowClose { get; init; }
-    public required Action<JsonElement, bool> SaveSettings { get; init; }
+    public required Func<JsonElement, bool, Task> SaveSettingsAsync { get; init; }
     public required Action<JsonElement> SaveDashboardSettings { get; init; }
     public required Action CompleteSetup { get; init; }
     public required Action StartCore { get; init; }

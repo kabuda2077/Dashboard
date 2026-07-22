@@ -82,7 +82,7 @@ Example `sing-box` config fragment:
 - Use Clash-compatible API as the main UI channel for both `mihomo` and `sing-box`.
 - Tray menu for showing the window, restarting/stopping the core, and exiting.
 - Minimize-to-tray and lightweight mode for WebView lifecycle control.
-- Per-user autostart via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+- Per-user autostart through the `\Dashboard\Autostart` scheduled task, delayed 5 seconds after logon and run at the highest available privilege.
 - Settings stored next to the portable app in `settings.json`.
 - Secrets protected with Windows DPAPI.
 
@@ -99,6 +99,12 @@ Check that the API address on the Core page matches your core config. For most u
 
 **TUN mode fails or asks for administrator permission.**  
 TUN usually needs administrator permission on Windows. Start Dashboard as administrator or allow the UAC relaunch prompt.
+
+**Why does enabling autostart show UAC once?**
+Dashboard creates and verifies a highest-privilege scheduled task. Later logons do not prompt again: after about 5 seconds only the tray host, core manager, and local server start; WebView2 is created only when the window is opened.
+
+**Do I need to configure autostart again after moving the portable folder?**
+No. The next manual launch detects a stale task path and requests a repair. Legacy registry startup entries are kept until task verification succeeds, and disabling autostart removes both the scheduled task and legacy entries.
 
 **Can I use only sing-box native API?**  
 No. This desktop build uses sing-box's Clash-compatible API for the main dashboard pages.

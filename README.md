@@ -81,7 +81,7 @@ secret: ""
 - mihomo 和 sing-box 都通过 Clash-compatible API 驱动主面板页面。
 - 系统托盘菜单支持显示窗口、重启内核、停止内核和退出。
 - 支持关闭到托盘和轻量模式，用于控制 WebView 生命周期。
-- 支持当前用户开机自启，写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
+- 支持当前用户开机自启，通过 `\Dashboard\Autostart` 计划任务在登录 5 秒后以最高权限静默启动托盘宿主。
 - 设置保存到便携目录旁的 `settings.json`。
 - Secret 使用 Windows DPAPI 保护。
 
@@ -98,6 +98,12 @@ secret: ""
 
 **TUN 启动失败或要求管理员权限。**  
 Windows 上 TUN 通常需要管理员权限。请以管理员身份启动 Dashboard，或允许应用弹出的 UAC 重启提示。
+
+**开启开机自启时为什么会弹一次 UAC？**
+Dashboard 需要创建最高权限计划任务。任务创建并验证成功后，后续登录不会再弹 UAC；登录约 5 秒后只启动托盘、内核管理和本地服务，打开窗口时才创建 WebView2。
+
+**移动软件目录后需要重新设置开机自启吗？**
+不需要。下次手动启动 Dashboard 时会检测计划任务路径不一致并请求修复。修复成功前不会删除旧的注册表启动项；关闭开机自启会同时清理计划任务和遗留启动项。
 
 **可以只用 sing-box native API 吗？**  
 不可以。当前桌面版主面板页面使用 sing-box 的 Clash-compatible API。

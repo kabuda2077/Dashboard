@@ -104,7 +104,7 @@ public sealed class MainForm : Form
             WindowToggleMaximize = ToggleMaximize,
             WindowMinimize = MinimizeToTaskbar,
             WindowClose = Close,
-            SaveSettings = _host.SaveSettings,
+            SaveSettingsAsync = _host.SaveSettingsAsync,
             SaveDashboardSettings = _host.SaveDashboardSettings,
             CompleteSetup = _host.CompleteSetup,
             StartCore = () => RunCoreOperation(() => _host.StartCore()),
@@ -257,6 +257,7 @@ public sealed class MainForm : Form
     private void BindEvents()
     {
         _host.StateChanged += OnHostStateChanged;
+        _host.RuntimeStateChanged += OnHostRuntimeStateChanged;
         _host.LogReceived += OnHostLogReceived;
         _host.IconCacheChanged += OnHostIconCacheChanged;
         _host.NoticeRequested += OnHostNoticeRequested;
@@ -271,6 +272,11 @@ public sealed class MainForm : Form
     }
 
     private void OnHostStateChanged(object? sender, EventArgs e)
+    {
+        RunOnUiThread(SendStateToDashboard);
+    }
+
+    private void OnHostRuntimeStateChanged(object? sender, EventArgs e)
     {
         RunOnUiThread(RefreshStatus);
     }
@@ -506,6 +512,11 @@ public sealed class MainForm : Form
 
         try
         {
+            if (!IsHandleCreated)
+            {
+                return;
+            }
+
             if (IsHandleCreated && InvokeRequired)
             {
                 BeginInvoke(action);
@@ -776,9 +787,13 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        HostOperationLogger.Info(
+            "window-lifecycle",
+            $"formClosing reason={e.CloseReason} allowClose={_allowClose} minimizeToTray={_settings.MinimizeToTray} visible={Visible} windowState={WindowState}");
         if (!_allowClose && _settings.MinimizeToTray && ShouldHideToTrayOnClose(e.CloseReason))
         {
             e.Cancel = true;
+            HostOperationLogger.Info("window-lifecycle", "formClosing cancelled; hiding to tray.");
             HideToTray();
             return;
         }
@@ -805,7 +820,6 @@ public sealed class MainForm : Form
             _hiddenToTray = true;
             if (animate && Visible && WindowState != FormWindowState.Minimized)
             {
-                ShowInTaskbar = true;
                 MinimizeWindowWithAnimation();
                 await Task.Delay(TrayHideAnimationDelayMs);
             }
@@ -819,7 +833,6 @@ public sealed class MainForm : Form
                 return;
             }
 
-            ShowInTaskbar = false;
             Hide();
             if (_settings.LightweightMode)
             {
@@ -855,7 +868,6 @@ public sealed class MainForm : Form
         {
             _hiddenToTray = false;
             Opacity = 1;
-            ShowInTaskbar = true;
 
             if (_trayRestoreWindowState != FormWindowState.Maximized && !_trayRestoreBounds.IsEmpty)
             {
@@ -886,11 +898,18 @@ public sealed class MainForm : Form
         Close();
     }
 
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        HostOperationLogger.Info("window-lifecycle", $"formClosed reason={e.CloseReason}");
+        base.OnFormClosed(e);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
             _host.StateChanged -= OnHostStateChanged;
+            _host.RuntimeStateChanged -= OnHostRuntimeStateChanged;
             _host.LogReceived -= OnHostLogReceived;
             _host.IconCacheChanged -= OnHostIconCacheChanged;
             _host.NoticeRequested -= OnHostNoticeRequested;

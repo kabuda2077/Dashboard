@@ -22,7 +22,21 @@ internal static class Program
         {
             ApplicationConfiguration.Initialize();
 
-            var startMinimized = args.Any(arg => string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase));
+            var autostartOperationIndex = Array.FindIndex(
+                args,
+                arg => string.Equals(arg, "--manage-autostart", StringComparison.OrdinalIgnoreCase));
+            if (autostartOperationIndex >= 0)
+            {
+                var operation = autostartOperationIndex + 1 < args.Length
+                    ? args[autostartOperationIndex + 1]
+                    : "";
+                Environment.ExitCode = AutostartManager.RunManagementCommand(operation);
+                return;
+            }
+
+            var startMinimized = args.Any(arg =>
+                string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "--scheduled-start", StringComparison.OrdinalIgnoreCase));
             var startCore = args.Any(arg => string.Equals(arg, "--start-core", StringComparison.OrdinalIgnoreCase));
             var elevatedRestart = args.Any(arg => string.Equals(arg, "--elevated-restart", StringComparison.OrdinalIgnoreCase));
             DashboardApplicationContext? context = null;

@@ -26,6 +26,7 @@ export type HostState = {
   minimizeToTray?: boolean
   lightweightMode?: boolean
   autostart?: boolean
+  isAutostartUpdating?: boolean
   canUpgradeCore?: boolean
   isCoreUpgrading?: boolean
   isCoreSwitching?: boolean

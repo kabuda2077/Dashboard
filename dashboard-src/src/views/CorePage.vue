@@ -177,6 +177,7 @@
                 v-model="settings.autostart"
                 class="toggle"
                 type="checkbox"
+                :disabled="isAutostartUpdating"
                 @change="saveSettings"
               />
             </div>
@@ -412,6 +413,7 @@ const chromeRightPadding = 12
 const showSwitchConfirm = ref(false)
 const switchPending = ref(false)
 const setupCompleted = ref(true)
+const isAutostartUpdating = ref(false)
 let resizeObserver: ResizeObserver | undefined
 let syncFrame = 0
 let sidebarSyncRaf = 0
@@ -604,6 +606,7 @@ const setState = (state: HostState) => {
   settings.minimizeToTray = !!state.minimizeToTray
   settings.lightweightMode = state.lightweightMode ?? true
   settings.autostart = !!state.autostart
+  isAutostartUpdating.value = !!state.isAutostartUpdating
   setupCompleted.value = state.setupCompleted ?? true
   if (!setupCompleted.value && runtime.isRunning) {
     completeSetup()

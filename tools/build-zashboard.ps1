@@ -89,6 +89,20 @@ foreach ($pattern in @('BackendVersion', 'getLabelFromBackend', 'activeBackend')
         throw "dashboard source check failed: overview top bar should not restore backend switch/version text"
     }
 }
+
+$hostBridgePath = Join-Path $sourceRoot 'src\composables\hostBridge.ts'
+$hostBridge = Get-Content -LiteralPath $hostBridgePath -Raw
+if ($hostBridge -notmatch 'isAutostartUpdating\?: boolean') {
+    throw "dashboard source check failed: host state must expose isAutostartUpdating"
+}
+
+$corePagePath = Join-Path $sourceRoot 'src\views\CorePage.vue'
+$corePage = Get-Content -LiteralPath $corePagePath -Raw
+foreach ($pattern in @(':disabled="isAutostartUpdating"', 'state.isAutostartUpdating')) {
+    if ($corePage -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: CorePage autostart control must follow the authoritative host update state"
+    }
+}
 foreach ($pattern in @('BackendUptime', 'startedAt', 'OverviewCardSettingsDialog')) {
     if ($overviewCtrl -notmatch [regex]::Escape($pattern)) {
         throw "dashboard source check failed: overview top bar must keep settings and optional uptime only"
