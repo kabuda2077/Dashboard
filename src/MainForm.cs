@@ -61,6 +61,8 @@ public sealed class MainForm : Form
     private const int SW_MINIMIZE = 6;
     private const int SW_RESTORE = 9;
     private const int TrayHideAnimationDelayMs = 220;
+    private const int WebViewInitializationAttempts = 3;
+    private const int EAbortHResult = unchecked((int)0x80004004);
 
     protected override CreateParams CreateParams
     {
@@ -150,7 +152,6 @@ public sealed class MainForm : Form
             Padding = Padding.Empty
         };
         Controls.Add(_contentPanel);
-        EnsureWebViewCreated();
     }
 
     private void ToggleMaximize()
@@ -362,56 +363,108 @@ public sealed class MainForm : Form
     private async Task<bool> InitializeWebViewAsync()
     {
         var startedAt = Stopwatch.GetTimestamp();
-        EnsureWebViewCreated();
-        var webView = _webView;
-        if (webView is null)
+        for (var attempt = 1; attempt <= WebViewInitializationAttempts; attempt++)
         {
-            return false;
-        }
-
-        try
-        {
-            AppSettings.MigratePortableDataDirectory("EBWebView", WebViewUserDataDirectory);
-            AppSettings.MigrateResourceDataDirectory("runtime", "EBWebView", WebViewUserDataDirectory);
-            Directory.CreateDirectory(WebViewUserDataDirectory);
-            var environment = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: WebViewUserDataDirectory);
-            await webView.EnsureCoreWebView2Async(environment);
-            if (!ReferenceEquals(webView, _webView) || webView.CoreWebView2 is null)
+            EnsureWebViewCreated();
+            var webView = _webView;
+            if (webView is null)
             {
                 return false;
             }
 
-            webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-            webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-            webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
-            await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildDashboardSettingsBootstrapScript());
-
-            webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-            webView.CoreWebView2.NavigationCompleted += (_, _) =>
+            try
             {
-                HostOperationLogger.Info("performance", $"webview:navigationCompleted durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
-                SendStateToDashboard();
-            };
+                AppSettings.MigratePortableDataDirectory("EBWebView", WebViewUserDataDirectory);
+                AppSettings.MigrateResourceDataDirectory("runtime", "EBWebView", WebViewUserDataDirectory);
+                Directory.CreateDirectory(WebViewUserDataDirectory);
+                var environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: WebViewUserDataDirectory);
+                await webView.EnsureCoreWebView2Async(environment);
+                if (!ReferenceEquals(webView, _webView) || webView.CoreWebView2 is null)
+                {
+                    return false;
+                }
 
-            HostOperationLogger.Info("performance", $"webview:initialized durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
-            return true;
+                webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
+                await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildDashboardSettingsBootstrapScript());
+
+                webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                webView.CoreWebView2.NavigationCompleted += (_, _) =>
+                {
+                    HostOperationLogger.Info("performance", $"webview:navigationCompleted durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
+                    SendStateToDashboard();
+                };
+
+                HostOperationLogger.Info("performance", $"webview:initialized durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
+                return true;
+            }
+            catch (Exception ex) when (IsWebViewInitializationAborted(ex))
+            {
+                HostOperationLogger.Info(
+                    "webview",
+                    $"WebView2 initialization was canceled; rebuilding control (attempt {attempt}/{WebViewInitializationAttempts}).");
+                ResetFailedWebView(webView);
+                if (attempt == WebViewInitializationAttempts || IsDisposed || Disposing)
+                {
+                    return false;
+                }
+
+                await Task.Delay(150 * attempt);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                ShowWebViewRuntimeMissingMessage(ex);
+                HostOperationLogger.Error("webview", "WebView2 Runtime was not found.", ex);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    "WebView2 初始化失败，Dashboard 暂时无法显示界面。\n\n"
+                        + $"详细错误：{ex.Message}",
+                    "WebView2 初始化失败",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                HostOperationLogger.Error("webview", "Failed to initialize WebView2.", ex);
+                return false;
+            }
         }
-        catch (Exception ex)
+
+        return false;
+    }
+
+    internal static bool IsWebViewInitializationAborted(Exception exception)
+    {
+        return exception is COMException { HResult: EAbortHResult }
+            || exception.GetBaseException() is COMException { HResult: EAbortHResult };
+    }
+
+    private void ResetFailedWebView(WebView2 webView)
+    {
+        if (ReferenceEquals(webView, _webView))
         {
-            MessageBox.Show(
-                this,
-                "Dashboard 需要 Microsoft Edge WebView2 Runtime 才能显示界面。\n\n"
-                    + "请安装 WebView2 Runtime 后重新打开 Dashboard：\n"
-                    + "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
-                    + $"详细错误：{ex.Message}",
-                "缺少 WebView2 Runtime",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-            HostOperationLogger.Error("webview", "Failed to initialize WebView2.", ex);
-            return false;
+            _contentPanel.Controls.Remove(webView);
+            _webView = null;
         }
+
+        webView.Dispose();
+    }
+
+    private void ShowWebViewRuntimeMissingMessage(Exception exception)
+    {
+        MessageBox.Show(
+            this,
+            "Dashboard 需要 Microsoft Edge WebView2 Runtime 才能显示界面。\n\n"
+                + "请安装 WebView2 Runtime 后重新打开 Dashboard：\n"
+                + "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
+                + $"详细错误：{exception.Message}",
+            "缺少 WebView2 Runtime",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
     }
 
     private void LoadDashboard()

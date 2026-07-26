@@ -9,6 +9,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private readonly Icon _appIcon;
     private readonly Icon _trayIconImage;
     private readonly NotifyIcon _trayIcon;
+    private readonly bool _startMinimized;
     private MainForm? _mainForm;
     private TrayMenuForm? _trayMenu;
     private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
@@ -17,6 +18,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     public DashboardApplicationContext(bool startMinimized, bool startCoreAfterLaunch)
     {
+        _startMinimized = startMinimized;
         _ = _dispatcher.Handle;
         _host = new DashboardHost();
         _host.ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch;
@@ -32,12 +34,14 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _trayIcon = CreateTrayIcon();
         UpdateTrayStatus();
         var shouldStartCore = _host.Settings.StartCoreOnLaunch || startCoreAfterLaunch;
-        if (!ShouldDeferAutostartReconcile(shouldStartCore, DashboardHost.IsRunningAsAdministrator()))
+        var isAdministrator = DashboardHost.IsRunningAsAdministrator();
+        var willRelaunchElevated = ShouldRelaunchBeforeShowingWindow(shouldStartCore, isAdministrator);
+        if (!ShouldDeferAutostartReconcile(shouldStartCore, isAdministrator))
         {
             _ = Task.Run(_host.ReconcileAutostartAsync);
         }
 
-        if (!startMinimized)
+        if (!startMinimized && !willRelaunchElevated)
         {
             ShowMainWindow();
         }
@@ -51,6 +55,11 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
 
     internal static bool ShouldDeferAutostartReconcile(bool shouldStartCore, bool isAdministrator)
+    {
+        return shouldStartCore && !isAdministrator;
+    }
+
+    internal static bool ShouldRelaunchBeforeShowingWindow(bool shouldStartCore, bool isAdministrator)
     {
         return shouldStartCore && !isAdministrator;
     }
@@ -209,9 +218,12 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     private bool ShouldKeepMinimizedForRelaunch()
     {
-        return _mainForm is null
-            || _mainForm.IsDisposed
-            || !_mainForm.Visible
+        if (_mainForm is null || _mainForm.IsDisposed)
+        {
+            return _startMinimized;
+        }
+
+        return !_mainForm.Visible
             || !_mainForm.ShowInTaskbar
             || _mainForm.WindowState == FormWindowState.Minimized;
     }
@@ -245,6 +257,10 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         catch (Exception ex)
         {
             HostOperationLogger.Error("host", "Failed to restart as administrator.", ex);
+            if (!request.StartMinimized)
+            {
+                ShowMainWindow();
+            }
             MessageBox.Show(
                 _mainForm,
                 $"无法以管理员权限重启：{ex.Message}",
