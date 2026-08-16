@@ -4,7 +4,7 @@ import { execSync } from 'child_process'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
-import { version } from './package.json'
+import { version } from './package.json' with { type: 'json' }
 
 const getGitCommitId = (): string => {
   try {

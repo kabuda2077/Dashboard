@@ -134,7 +134,7 @@ Basic logs are stored under `resources\logs` next to the app. Release builds rec
 
 ## Development
 
-Development requires .NET 9 SDK, Node.js 24, and pnpm 10.15.0.
+Development requires .NET 9 SDK, Node.js 24, and pnpm 11.20.0.
 
 ```powershell
 pnpm --dir dashboard-src type-check

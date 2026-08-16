@@ -1,0 +1,1 @@
+import{S as a,b as s}from"./clash-C88VHGUl.js";import{t}from"./config-CiS2Dul3.js";var i=async()=>{t.value=(await s()).data},o=async s=>{await a(s),await i()};export{i as fetchConfigs,o as updateConfigs};

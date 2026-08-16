@@ -133,7 +133,7 @@ Dashboard 需要创建最高权限计划任务。任务创建并验证成功后�
 
 ## 开发
 
-开发环境需要 .NET 9 SDK、Node.js 24 和 pnpm 10.15.0。
+开发环境需要 .NET 9 SDK、Node.js 24 和 pnpm 11.20.0。
 
 ```powershell
 pnpm --dir dashboard-src type-check

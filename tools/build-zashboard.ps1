@@ -259,7 +259,7 @@ if ($SkipBuild) {
 $pnpmCommand = Get-Command pnpm -ErrorAction SilentlyContinue
 $pnpmPath = if ($pnpmCommand) { $pnpmCommand.Source } else { Join-Path $env:APPDATA 'npm\pnpm.cmd' }
 if (-not (Test-Path $pnpmPath)) {
-    throw "pnpm is required for local dashboard builds. Install pnpm 10.15.0, for example: npm install -g pnpm@10.15.0"
+    throw "pnpm is required for local dashboard builds. Install pnpm 11.20.0, for example: npm install -g pnpm@11.20.0"
 }
 
 Push-Location $sourceRoot

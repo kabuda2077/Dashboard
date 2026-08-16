@@ -36,7 +36,7 @@ function Get-PnpmPath {
         return $fallback
     }
 
-    throw 'pnpm is required. Install pnpm 10.15.0, for example: npm install -g pnpm@10.15.0'
+    throw 'pnpm is required. Install pnpm 11.20.0, for example: npm install -g pnpm@11.20.0'
 }
 
 function Invoke-Pnpm {
