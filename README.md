@@ -108,6 +108,10 @@ Dashboard 需要创建最高权限计划任务。任务创建并验证成功后�
 **可以只用 sing-box native API 吗？**  
 不可以。当前桌面版主面板页面使用 sing-box 的 Clash-compatible API。
 
+**日志保存在哪里，怎样临时开启详细诊断？**
+
+基础日志保存在程序目录的 `resources\logs`。Release 版默认只记录关键操作、错误和 WebView 冷恢复摘要；需要排查启动或托盘恢复问题时，可使用 `Dashboard.exe --diagnostic-log` 启动，本次会话会额外记录窗口生命周期、托盘时序、前端首屏和 WebSocket 首包。Debug 构建默认开启详细诊断。单个日志文件超过 2 MB 时自动轮转，并保留最近 3 个归档。
+
 ## 开发
 
 开发环境需要 .NET 9 SDK、Node.js 24 和 pnpm 10.15.0。

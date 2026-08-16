@@ -8,6 +8,9 @@ internal static class Program
     private static void Main(string[] args)
     {
         var startedAt = Stopwatch.GetTimestamp();
+        var diagnosticLogging = args.Any(arg =>
+            string.Equals(arg, "--diagnostic-log", StringComparison.OrdinalIgnoreCase));
+        HostOperationLogger.Configure(diagnosticLogging);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => ReportCrash(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -67,13 +70,17 @@ internal static class Program
                 {
                     applicationContext.ActivateMainWindow();
                 }
-                HostOperationLogger.Info("performance", $"host:applicationContextCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
+                HostOperationLogger.Diagnostic("performance", $"host:applicationContextCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
                 Application.Run(applicationContext);
             }
         }
         catch (Exception exception)
         {
             ReportCrash(exception);
+        }
+        finally
+        {
+            HostOperationLogger.Shutdown(TimeSpan.FromSeconds(2));
         }
     }
 
@@ -84,9 +91,7 @@ internal static class Program
             return;
         }
 
-        var logPath = Path.Combine(AppSettings.LogDirectory, "crash.log");
-        Directory.CreateDirectory(AppSettings.LogDirectory);
-        File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {exception}{Environment.NewLine}{Environment.NewLine}");
+        HostOperationLogger.Critical("crash", "Unhandled application exception.", exception);
     }
 
     private static bool IsShutdownNoise(Exception exception)

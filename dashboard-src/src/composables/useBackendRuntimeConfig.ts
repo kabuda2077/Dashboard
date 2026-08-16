@@ -3,8 +3,10 @@ import {
   configsLoaded,
   configsLoadedBackendUuid,
   fetchConfigs,
+  resetConfigs,
   updateConfigs,
 } from '@/assembly/config'
+import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { activeBackend } from '@/store/setup'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
@@ -51,9 +53,11 @@ export const useBackendRuntimeConfig = () => {
     return isActiveConfigLoaded.value ? 'ready' : 'loading'
   })
 
+  // The desktop bridge exposes sing-box through its Clash-compatible API, so
+  // the injected backend is typed as `clash`. The explicit field is the
+  // reliable marker for a host-provided, read-only TUN state.
   const hostTunEnabled = computed(() =>
-    activeBackend.value?.type === 'singbox'
-    && typeof activeBackend.value?.readOnlyTunEnabled === 'boolean'
+    typeof activeBackend.value?.readOnlyTunEnabled === 'boolean'
       ? activeBackend.value.readOnlyTunEnabled
       : undefined,
   )
@@ -146,6 +150,16 @@ export const useBackendRuntimeConfig = () => {
     }
   }
 
+  // The desktop host replaces the injected backend in place when switching
+  // cores, preserving its UUID. Reset the cached config so the new core is
+  // queried even though activeBackendUuid itself did not change.
+  const handleHostBackendUpdated = () => {
+    clearRetryTimer()
+    clearReadyRefreshTimer()
+    resetConfigs()
+    void ensureConfigLoaded()
+  }
+
   const updateTunEnabled = async (enabled: boolean) => {
     if (!hasWritableApiTun.value) return
     await updateConfigs({ tun: { enable: enabled } })
@@ -177,9 +191,12 @@ export const useBackendRuntimeConfig = () => {
     scheduleConfigRetry()
   })
 
+  window.addEventListener(HOST_BACKEND_UPDATED_EVENT, handleHostBackendUpdated)
+
   onScopeDispose(() => {
     clearRetryTimer()
     clearReadyRefreshTimer()
+    window.removeEventListener(HOST_BACKEND_UPDATED_EVENT, handleHostBackendUpdated)
   })
 
   return {

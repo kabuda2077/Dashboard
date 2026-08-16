@@ -93,6 +93,7 @@ import { PROXY_TAB_TYPE, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
 import { ROUTE_ICON_MAP } from '@/constant/routeIcons'
 import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
+import { scheduleAfterInitialPaint } from '@/router/pageLoaders'
 import { fetchConfigs, resetConfigs } from '@/assembly/config'
 import { initConnections, isPaused as connectionsPaused } from '@/store/connections'
 import { initLogs, isPaused as logsPaused } from '@/store/logs'
@@ -102,7 +103,7 @@ import { fetchRules, rulesTabShow } from '@/assembly/rules'
 import { isSidebarCollapsed } from '@/store/settings'
 import { activeUuid } from '@/store/setup'
 import { useDocumentVisibility, useElementBounding } from '@vueuse/core'
-import { ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -110,6 +111,8 @@ const route = useRoute()
 const { swiperRef } = useSwipeRouter()
 const sidebarLayoutCollapsed = ref(isSidebarCollapsed.value)
 const initializedTasks = new Set<string>()
+let deferredInitializationHandle: number | null = null
+let cancelDeferredInitializationPaint: (() => void) | null = null
 
 const dockRef = ref<HTMLDivElement>()
 const { top: dockRefTop } = useElementBounding(dockRef)
@@ -142,11 +145,40 @@ const ensureTask = (key: string, task: () => void) => {
   task()
 }
 
-const initializeGlobalData = () => {
+const initializePriorityData = () => {
   ensureTask('configs', fetchConfigs)
   ensureTask('connections-full', () => initConnections('full'))
+}
+
+const initializeDeferredData = () => {
   ensureTask('proxies', fetchProxies)
   ensureTask('statistics', initSatistic)
+}
+
+const scheduleDeferredData = () => {
+  if (deferredInitializationHandle !== null) return
+
+  const run = () => {
+    deferredInitializationHandle = null
+    if (document.visibilityState === 'visible') {
+      initializeDeferredData()
+    }
+  }
+
+  if ('requestIdleCallback' in window) {
+    deferredInitializationHandle = window.requestIdleCallback(run, { timeout: 600 })
+  } else {
+    deferredInitializationHandle = globalThis.setTimeout(run, 150)
+  }
+}
+
+const scheduleDeferredDataAfterInitialPaint = () => {
+  if (cancelDeferredInitializationPaint !== null || deferredInitializationHandle !== null) return
+
+  cancelDeferredInitializationPaint = scheduleAfterInitialPaint(() => {
+    cancelDeferredInitializationPaint = null
+    scheduleDeferredData()
+  })
 }
 
 const initializeRouteData = () => {
@@ -158,6 +190,13 @@ const initializeRouteData = () => {
   }
 
   switch (routeName) {
+    case ROUTE_NAME.proxies:
+      ensureTask('proxies', fetchProxies)
+      break
+    case ROUTE_NAME.overview:
+      ensureTask('proxies', fetchProxies)
+      ensureTask('statistics', initSatistic)
+      break
     case ROUTE_NAME.rules:
       ensureTask('rules', fetchRules)
       break
@@ -175,8 +214,11 @@ watch(
     resetConfigs()
     rulesTabShow.value = RULE_TAB_TYPE.RULES
     proxiesTabShow.value = PROXY_TAB_TYPE.PROXIES
-    initializeGlobalData()
+    initializePriorityData()
     initializeRouteData()
+    if (document.visibilityState === 'visible') {
+      scheduleDeferredDataAfterInitialPaint()
+    }
   },
   {
     immediate: true,
@@ -203,5 +245,19 @@ watch(documentVisible, () => {
     fetchProxies()
   }
   initializeRouteData()
+  scheduleDeferredDataAfterInitialPaint()
+})
+
+onUnmounted(() => {
+  cancelDeferredInitializationPaint?.()
+  cancelDeferredInitializationPaint = null
+  if (deferredInitializationHandle !== null) {
+    if ('cancelIdleCallback' in window) {
+      window.cancelIdleCallback(deferredInitializationHandle)
+    } else {
+      globalThis.clearTimeout(deferredInitializationHandle)
+    }
+    deferredInitializationHandle = null
+  }
 })
 </script>

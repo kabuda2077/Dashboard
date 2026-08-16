@@ -69,19 +69,16 @@ public static class SingBoxUpdater
         }
     }
 
-    private static JsonElement FindMatchingRelease(JsonElement releases, string installedVersion)
+    internal static JsonElement FindMatchingRelease(JsonElement releases, string installedVersion)
     {
-        var wantsAlpha = installedVersion.Contains("alpha", StringComparison.OrdinalIgnoreCase);
+        var wantsPrerelease = IsPrereleaseVersion(installedVersion);
         var candidates = releases
             .EnumerateArray()
             .Where(release =>
             {
-                var tag = release.GetProperty("tag_name").GetString() ?? "";
                 var prerelease = release.TryGetProperty("prerelease", out var prereleaseProperty)
                     && prereleaseProperty.ValueKind == JsonValueKind.True;
-                return wantsAlpha
-                    ? prerelease && tag.Contains("alpha", StringComparison.OrdinalIgnoreCase)
-                    : !prerelease;
+                return prerelease == wantsPrerelease;
             })
             .OrderByDescending(release =>
                 release.TryGetProperty("published_at", out var publishedAt)
@@ -92,6 +89,13 @@ public static class SingBoxUpdater
         return candidates.FirstOrDefault().ValueKind == JsonValueKind.Undefined
             ? throw new InvalidOperationException("没有找到匹配当前 sing-box 分支的 reF1nd 发布版本。")
             : candidates[0];
+    }
+
+    private static bool IsPrereleaseVersion(string version)
+    {
+        return version.Contains("alpha", StringComparison.OrdinalIgnoreCase)
+            || version.Contains("beta", StringComparison.OrdinalIgnoreCase)
+            || Regex.IsMatch(version, @"(?:^|[-.])rc(?:[-.\d]|$)", RegexOptions.IgnoreCase);
     }
 
     private static CoreAsset FindWindowsAmd64V3Asset(JsonElement assets)

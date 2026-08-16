@@ -361,6 +361,7 @@ import {
 } from '@/composables/hostBridge'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
+import { preloadSecondaryPages, scheduleAfterInitialPaint } from '@/router/pageLoaders'
 import { isSidebarCollapsed } from '@/store/settings'
 import { ArrowsRightLeftIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
@@ -370,6 +371,7 @@ const { paddingBottom } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
+let cancelSecondaryPagePreload: (() => void) | undefined
 
 const runtime = reactive({
   isRunning: false,
@@ -738,6 +740,7 @@ onMounted(async () => {
     resizeObserver.observe(configPanelRef.value)
   }
   post({ type: 'requestState' })
+  cancelSecondaryPagePreload = scheduleAfterInitialPaint(preloadSecondaryPages)
 })
 
 onUnmounted(() => {
@@ -755,5 +758,7 @@ onUnmounted(() => {
   window.cancelAnimationFrame(sidebarSyncRaf)
   resizeObserver?.disconnect()
   window.cancelAnimationFrame(syncFrame)
+  cancelSecondaryPagePreload?.()
+  cancelSecondaryPagePreload = undefined
 })
 </script>

@@ -155,8 +155,15 @@ export const renderRoutes = computed(() => {
   const routeCapable: Partial<Record<ROUTE_NAME, boolean>> = {
     [ROUTE_NAME.rules]: !activeBackend.value || caps.rules,
   }
-  return Object.values(ROUTE_NAME).filter((r) => {
-    if (r === ROUTE_NAME.setup) return false
+  const routeOrder = [
+    ROUTE_NAME.core,
+    ROUTE_NAME.proxies,
+    ROUTE_NAME.connections,
+    ROUTE_NAME.overview,
+    ROUTE_NAME.logs,
+    ROUTE_NAME.rules,
+  ]
+  return routeOrder.filter((r) => {
     if (!splitOverviewPage.value && r === ROUTE_NAME.overview) return false
     if (r in routeCapable && routeCapable[r] === false) return false
     return true

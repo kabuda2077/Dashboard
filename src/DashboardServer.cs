@@ -183,7 +183,7 @@ public sealed class DashboardServer : IDisposable
             if (!string.IsNullOrWhiteSpace(requestPathForLog)
                 && Interlocked.Exchange(ref _firstRequestLogged, 1) == 0)
             {
-                HostOperationLogger.Info(
+                HostOperationLogger.Diagnostic(
                     "performance",
                     $"dashboard-server:firstRequest path={requestPathForLog} durationMs={Stopwatch.GetElapsedTime(requestStartedAt).TotalMilliseconds:0}");
             }

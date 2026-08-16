@@ -24,6 +24,9 @@ public sealed class MainForm : Form
     private bool _initialized;
     private bool _dashboardInitialized;
     private Task? _dashboardInitializationTask;
+    private long _webViewInitializationSequence;
+    private long _activeWebViewInitializationId;
+    private long _activeWebViewInitializationStartedAt;
     private bool _webViewSuspended;
     private int _dashboardSuspendVersion;
     private readonly System.Windows.Forms.Timer _dashboardDisposeTimer = new() { Interval = DelayedDashboardDisposeMs };
@@ -138,9 +141,9 @@ public sealed class MainForm : Form
         _initialized = true;
         RefreshStatus();
         _host.RefreshIconCache();
-        await EnsureDashboardInitializedAsync();
+        await EnsureDashboardInitializedAsync("window-shown");
 
-        HostOperationLogger.Info("performance", $"host:onShown durationMs={Stopwatch.GetElapsedTime(shownStartedAt).TotalMilliseconds:0}");
+        HostOperationLogger.Diagnostic("performance", $"host:onShown durationMs={Stopwatch.GetElapsedTime(shownStartedAt).TotalMilliseconds:0}");
     }
 
     private void BuildLayout()
@@ -226,7 +229,7 @@ public sealed class MainForm : Form
         MaximizedBounds = screen.WorkingArea;
     }
 
-    private Task EnsureDashboardInitializedAsync()
+    private Task EnsureDashboardInitializedAsync(string trigger)
     {
         if (_dashboardInitialized && HasDashboardWebView())
         {
@@ -238,13 +241,13 @@ public sealed class MainForm : Form
             return _dashboardInitializationTask;
         }
 
-        _dashboardInitializationTask = InitializeDashboardAsync();
+        _dashboardInitializationTask = InitializeDashboardAsync(trigger);
         return _dashboardInitializationTask;
     }
 
-    private async Task InitializeDashboardAsync()
+    private async Task InitializeDashboardAsync(string trigger)
     {
-        if (!await InitializeWebViewAsync())
+        if (!await InitializeWebViewAsync(trigger))
         {
             _dashboardInitializationTask = null;
             return;
@@ -360,12 +363,21 @@ public sealed class MainForm : Form
 
     private static string WebViewUserDataDirectory => AppSettings.WebViewUserDataDirectory;
 
-    private async Task<bool> InitializeWebViewAsync()
+    private async Task<bool> InitializeWebViewAsync(string trigger)
     {
+        var initializationId = Interlocked.Increment(ref _webViewInitializationSequence);
+        HostOperationLogger.Diagnostic(
+            "performance",
+            $"webview:initializationStarted id={initializationId} trigger={trigger}");
         var startedAt = Stopwatch.GetTimestamp();
+        _activeWebViewInitializationId = initializationId;
+        _activeWebViewInitializationStartedAt = startedAt;
         for (var attempt = 1; attempt <= WebViewInitializationAttempts; attempt++)
         {
+            var stage = "control";
+            var stageStartedAt = Stopwatch.GetTimestamp();
             EnsureWebViewCreated();
+            var controlMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
             var webView = _webView;
             if (webView is null)
             {
@@ -374,38 +386,65 @@ public sealed class MainForm : Form
 
             try
             {
+                stage = "profile";
+                stageStartedAt = Stopwatch.GetTimestamp();
                 AppSettings.MigratePortableDataDirectory("EBWebView", WebViewUserDataDirectory);
                 AppSettings.MigrateResourceDataDirectory("runtime", "EBWebView", WebViewUserDataDirectory);
                 Directory.CreateDirectory(WebViewUserDataDirectory);
+                var profileMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+
+                stage = "environment";
+                stageStartedAt = Stopwatch.GetTimestamp();
                 var environment = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null,
                     userDataFolder: WebViewUserDataDirectory);
+                var environmentMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+
+                stage = "controller";
+                stageStartedAt = Stopwatch.GetTimestamp();
                 await webView.EnsureCoreWebView2Async(environment);
+                var controllerMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
                 if (!ReferenceEquals(webView, _webView) || webView.CoreWebView2 is null)
                 {
                     return false;
                 }
 
+                stage = "settings";
+                stageStartedAt = Stopwatch.GetTimestamp();
                 webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
                 webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
+                var settingsMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+
+                stage = "bootstrap";
+                stageStartedAt = Stopwatch.GetTimestamp();
                 await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildDashboardSettingsBootstrapScript());
+                var bootstrapMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
                 webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                webView.CoreWebView2.NavigationCompleted += (_, _) =>
-                {
-                    HostOperationLogger.Info("performance", $"webview:navigationCompleted durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
-                    SendStateToDashboard();
-                };
-
-                HostOperationLogger.Info("performance", $"webview:initialized durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
+                HostOperationLogger.Info(
+                    "performance",
+                    $"webview:initialized id={initializationId} trigger={trigger} attempt={attempt} "
+                        + $"controlMs={controlMs:0.0} profileMs={profileMs:0.0} "
+                        + $"environmentMs={environmentMs:0.0} controllerMs={controllerMs:0.0} "
+                        + $"settingsMs={settingsMs:0.0} bootstrapMs={bootstrapMs:0.0} "
+                        + $"totalMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0.0} "
+                        + $"runtime={environment.BrowserVersionString}");
                 return true;
             }
             catch (Exception ex) when (IsWebViewInitializationAborted(ex))
             {
-                HostOperationLogger.Info(
-                    "webview",
-                    $"WebView2 initialization was canceled; rebuilding control (attempt {attempt}/{WebViewInitializationAttempts}).");
+                var message = $"WebView2 initialization was canceled; id={initializationId} trigger={trigger} "
+                    + $"attempt={attempt}/{WebViewInitializationAttempts} stage={stage} "
+                    + $"totalMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0.0}; rebuilding control.";
+                if (attempt == WebViewInitializationAttempts)
+                {
+                    HostOperationLogger.Error("webview", message, ex);
+                }
+                else
+                {
+                    HostOperationLogger.Diagnostic("webview", message);
+                }
                 ResetFailedWebView(webView);
                 if (attempt == WebViewInitializationAttempts || IsDisposed || Disposing)
                 {
@@ -474,6 +513,19 @@ public sealed class MainForm : Form
         {
             return;
         }
+
+        var initializationId = _activeWebViewInitializationId;
+        var initializationStartedAt = _activeWebViewInitializationStartedAt;
+        var navigationStartedAt = Stopwatch.GetTimestamp();
+        coreWebView.NavigationCompleted += (_, args) =>
+        {
+            HostOperationLogger.Info(
+                "performance",
+                $"webview:navigationCompleted id={initializationId} success={args.IsSuccess} "
+                    + $"status={args.WebErrorStatus} navigationMs={Stopwatch.GetElapsedTime(navigationStartedAt).TotalMilliseconds:0.0} "
+                    + $"totalMs={Stopwatch.GetElapsedTime(initializationStartedAt).TotalMilliseconds:0.0}");
+            SendStateToDashboard();
+        };
 
         var uri = new Uri(_dashboardUri, $"?{BuildDashboardQuery()}#/core");
         coreWebView.Navigate(uri.ToString());
@@ -697,6 +749,9 @@ public sealed class MainForm : Form
         _contentPanel.Controls.Remove(webView);
         _webView = null;
         webView.Dispose();
+        HostOperationLogger.Diagnostic(
+            "performance",
+            $"webview:disposed id={_activeWebViewInitializationId} reason=lightweight-timeout");
     }
 
     private void ScheduleDashboardViewDispose()
@@ -840,13 +895,13 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        HostOperationLogger.Info(
+        HostOperationLogger.Diagnostic(
             "window-lifecycle",
             $"formClosing reason={e.CloseReason} allowClose={_allowClose} minimizeToTray={_settings.MinimizeToTray} visible={Visible} windowState={WindowState}");
         if (!_allowClose && _settings.MinimizeToTray && ShouldHideToTrayOnClose(e.CloseReason))
         {
             e.Cancel = true;
-            HostOperationLogger.Info("window-lifecycle", "formClosing cancelled; hiding to tray.");
+            HostOperationLogger.Diagnostic("window-lifecycle", "formClosing cancelled; hiding to tray.");
             HideToTray();
             return;
         }
@@ -900,6 +955,11 @@ public sealed class MainForm : Form
 
     public void ShowFromTray()
     {
+        var requestedAt = Stopwatch.GetTimestamp();
+        var dashboardReady = HasDashboardWebView();
+        HostOperationLogger.Diagnostic(
+            "performance",
+            $"tray:showRequested dashboardReady={dashboardReady} visible={Visible} windowState={WindowState}");
         CancelDelayedDashboardDispose();
         if (_trayTransitionInProgress)
         {
@@ -911,10 +971,18 @@ public sealed class MainForm : Form
             ResumeDashboard();
             Activate();
             BringToFront();
-            _ = EnsureDashboardInitializedAsync();
+            _ = EnsureDashboardInitializedAsync("tray-visible");
+            HostOperationLogger.Diagnostic(
+                "performance",
+                $"tray:showDispatched dashboardReady={dashboardReady} durationMs={Stopwatch.GetElapsedTime(requestedAt).TotalMilliseconds:0.0}");
             return;
         }
 
+        ShowPreparedDashboardFromTray(requestedAt, dashboardReady);
+    }
+
+    private void ShowPreparedDashboardFromTray(long requestedAt, bool dashboardReady)
+    {
         ResumeDashboard();
         _trayTransitionInProgress = true;
         try
@@ -937,7 +1005,10 @@ public sealed class MainForm : Form
             ResumeDashboard();
             Activate();
             BringToFront();
-            _ = EnsureDashboardInitializedAsync();
+            _ = EnsureDashboardInitializedAsync("tray-restore");
+            HostOperationLogger.Diagnostic(
+                "performance",
+                $"tray:showDispatched dashboardReady={dashboardReady} durationMs={Stopwatch.GetElapsedTime(requestedAt).TotalMilliseconds:0.0}");
         }
         finally
         {
@@ -953,7 +1024,7 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        HostOperationLogger.Info("window-lifecycle", $"formClosed reason={e.CloseReason}");
+        HostOperationLogger.Diagnostic("window-lifecycle", $"formClosed reason={e.CloseReason}");
         base.OnFormClosed(e);
     }
 

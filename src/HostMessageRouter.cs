@@ -42,7 +42,7 @@ internal sealed class HostMessageRouter
             {
                 var name = HostBridgeJson.GetString(root, "name", "unknown");
                 var durationMs = HostBridgeJson.GetDouble(root, "durationMs", 0);
-                HostOperationLogger.Info("performance", $"frontend:{name} durationMs={durationMs:0}");
+                HostOperationLogger.Diagnostic("performance", $"frontend:{name} durationMs={durationMs:0}");
                 return;
             }
             case HostBridgeCommand.RequestState:

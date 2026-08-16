@@ -82,7 +82,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
             form.FormClosed += OnMainFormClosed;
             _mainForm = form;
             form.Show();
-            HostOperationLogger.Info("performance", "host:mainFormCreatedOnDemand");
+            HostOperationLogger.Diagnostic("performance", "host:mainFormCreatedOnDemand");
             return;
         }
 
@@ -153,7 +153,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     private void OnMainFormClosed(object? sender, FormClosedEventArgs e)
     {
-        HostOperationLogger.Info("window-lifecycle", $"context observed formClosed reason={e.CloseReason} exiting={_exiting}");
+        HostOperationLogger.Diagnostic("window-lifecycle", $"context observed formClosed reason={e.CloseReason} exiting={_exiting}");
         if (sender is MainForm form)
         {
             form.FormClosed -= OnMainFormClosed;
@@ -245,6 +245,10 @@ internal sealed class DashboardApplicationContext : ApplicationContext
             {
                 arguments.Add("--elevated-restart");
             }
+            if (HostOperationLogger.IsDiagnosticEnabled)
+            {
+                arguments.Add("--diagnostic-log");
+            }
 
             Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
             {
@@ -304,7 +308,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         }
 
         _exiting = true;
-        HostOperationLogger.Info("window-lifecycle", "context exit requested.");
+        HostOperationLogger.Diagnostic("window-lifecycle", "context exit requested.");
         _trayMenu?.Close();
         if (_mainForm is { IsDisposed: false } form)
         {
@@ -316,7 +320,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
-        HostOperationLogger.Info("window-lifecycle", "context ExitThreadCore.");
+        HostOperationLogger.Diagnostic("window-lifecycle", "context ExitThreadCore.");
         DisposeOwnedResources();
         base.ExitThreadCore();
     }

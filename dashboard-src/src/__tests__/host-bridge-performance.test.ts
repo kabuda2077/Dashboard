@@ -48,12 +48,25 @@ describe('host bridge incremental messages', () => {
 describe('router lazy loading', () => {
   it('keeps secondary pages lazy while core pages stay eager', async () => {
     const { default: router } = await import('@/router')
-    const coreRoute = router.getRoutes().find((route) => route.name === 'core')
-    const logsRoute = router.getRoutes().find((route) => route.name === 'logs')
-    const setupRoute = router.getRoutes().find((route) => route.name === 'setup')
+    const routes = new Map(router.getRoutes().map((route) => [route.name, route]))
+    const homeRoute = router.getRoutes().find((route) => route.path === '/')
 
-    expect(typeof coreRoute?.components?.default).toBe('object')
-    expect(typeof logsRoute?.components?.default).toBe('function')
-    expect(typeof setupRoute?.components?.default).toBe('function')
+    expect(typeof homeRoute?.components?.default, 'homepage').toBe('object')
+
+    expect(typeof routes.get('core')?.components?.default, 'core').toBe('object')
+
+    for (const routeName of ['proxies', 'overview', 'connections', 'logs', 'rules', 'setup']) {
+      expect(typeof routes.get(routeName)?.components?.default, routeName).toBe('function')
+    }
+
+    const { renderRoutes } = await import('@/helper')
+    expect(renderRoutes.value).toEqual([
+      'core',
+      'proxies',
+      'connections',
+      'overview',
+      'logs',
+      'rules',
+    ])
   })
 })

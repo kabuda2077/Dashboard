@@ -30,7 +30,6 @@ internal sealed class CoreLifecycleController
             if (!_core.IsRunning && !_services.IsRunningAsAdministrator())
             {
                 ResetTunRetry();
-                _ = _services.ShowNoticeAsync("启动内核需要管理员权限，正在请求 UAC 提权启动。");
                 _services.RelaunchAsAdministrator(
                     true,
                     _services.ShouldKeepMinimizedForRelaunch(),
@@ -174,6 +173,12 @@ internal sealed class CoreLifecycleController
             return;
         }
 
+        if (!_settings.IsSingBox && !_core.IsRunning)
+        {
+            await _services.ShowNoticeAsync("请先启动 mihomo 内核，再执行升级。");
+            return;
+        }
+
         var wasRunning = _core.IsRunning;
         var stoppedForUpgrade = false;
         IsUpgradeInProgress = true;
@@ -184,9 +189,25 @@ internal sealed class CoreLifecycleController
 
         try
         {
-            var result = _settings.IsSingBox
-                ? await SingBoxUpdater.UpgradeLatestAsync(_settings.SingBoxCorePath, beforeReplace: StopRunningCoreForUpgrade)
-                : await CoreUpdater.UpgradeLatestAsync(_settings.CorePath, beforeReplace: StopRunningCoreForUpgrade);
+            if (!_settings.IsSingBox)
+            {
+                var mihomoResult = await MihomoApiUpdater.UpgradeAsync(_settings.DashboardApiUrl, _settings.Secret);
+                if (mihomoResult.IsAlreadyLatest)
+                {
+                    var versionText = string.IsNullOrWhiteSpace(mihomoResult.Version)
+                        ? ""
+                        : $"（{mihomoResult.Version}）";
+                    await _services.ShowNoticeAsync($"当前已是最新版本{versionText}。");
+                    return;
+                }
+
+                await _services.ShowNoticeAsync("mihomo 内核升级成功。");
+                return;
+            }
+
+            var result = await SingBoxUpdater.UpgradeLatestAsync(
+                _settings.SingBoxCorePath,
+                beforeReplace: StopRunningCoreForUpgrade);
 
             void StopRunningCoreForUpgrade()
             {
@@ -217,10 +238,21 @@ internal sealed class CoreLifecycleController
                 Start();
             }
         }
+        catch (MihomoApiUpgradeException ex)
+        {
+            HostOperationLogger.Error("upgrade", "Failed to upgrade mihomo through its API.", ex);
+            await _services.ShowNoticeAsync(ex.UserMessage);
+        }
         catch (Exception ex)
         {
             HostOperationLogger.Error("upgrade", "Failed to upgrade core.", ex);
-            _services.ShowMessage("升级内核失败", ex.Message, MessageBoxIcon.Error);
+            var message = ex switch
+            {
+                HttpRequestException => "升级失败：无法连接 mihomo API，请确认内核正在运行。",
+                TaskCanceledException => "升级失败：请求超时，请稍后重试。",
+                _ => "升级失败：发生意外错误，详情请查看 upgrade.log。"
+            };
+            await _services.ShowNoticeAsync(message);
             if (stoppedForUpgrade && !_core.IsRunning)
             {
                 Start();
@@ -305,7 +337,6 @@ internal sealed class CoreLifecycleController
 
         ResetTunRetry();
         Stop();
-        _ = _services.ShowNoticeAsync("TUN 启动需要管理员权限，正在请求 UAC 提权启动内核。");
         _services.RelaunchAsAdministrator(
             true,
             _services.ShouldKeepMinimizedForRelaunch(),

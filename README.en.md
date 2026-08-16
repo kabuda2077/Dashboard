@@ -109,6 +109,10 @@ No. The next manual launch detects a stale task path and requests a repair. Lega
 **Can I use only sing-box native API?**  
 No. This desktop build uses sing-box's Clash-compatible API for the main dashboard pages.
 
+**Where are logs stored, and how can I temporarily enable detailed diagnostics?**
+
+Basic logs are stored under `resources\logs` next to the app. Release builds record only key operations, errors, and WebView cold-restore summaries by default. Start the app with `Dashboard.exe --diagnostic-log` to additionally record window lifecycle, tray timing, frontend startup, and first WebSocket messages for that session. Debug builds enable detailed diagnostics by default. Each log rotates after 2 MB, with the latest 3 archives retained.
+
 ## Development
 
 Development requires .NET 9 SDK, Node.js 24, and pnpm 10.15.0.

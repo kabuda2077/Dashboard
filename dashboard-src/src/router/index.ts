@@ -4,14 +4,12 @@ import { renderRoutes } from '@/helper'
 import { i18n } from '@/i18n'
 import { language } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
-import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import CorePage from '@/views/CorePage.vue'
 import HomePage from '@/views/HomePage.vue'
-import OverviewPage from '@/views/OverviewPage.vue'
-import ProxiesPage from '@/views/ProxiesPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { loadConnectionsPage, loadOverviewPage, loadProxiesPage } from './pageLoaders'
 
 const childrenRouter = [
   {
@@ -22,17 +20,17 @@ const childrenRouter = [
   {
     path: 'proxies',
     name: ROUTE_NAME.proxies,
-    component: ProxiesPage,
+    component: loadProxiesPage,
   },
   {
     path: 'overview',
     name: ROUTE_NAME.overview,
-    component: OverviewPage,
+    component: loadOverviewPage,
   },
   {
     path: 'connections',
     name: ROUTE_NAME.connections,
-    component: ConnectionsPage,
+    component: loadConnectionsPage,
   },
   {
     path: 'logs',

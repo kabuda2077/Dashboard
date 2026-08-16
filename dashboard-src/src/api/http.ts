@@ -17,7 +17,20 @@ axios.interceptors.request.use((config) => {
   return config
 })
 
-const ignoreNotificationUrls = ['/delay', '/healthcheck', '/weights', '/storage/zashboard']
+const ignoreNotificationUrls = [
+  '/version',
+  '/delay',
+  '/healthcheck',
+  '/weights',
+  '/storage/zashboard',
+]
+
+export const shouldIgnoreErrorNotification = (
+  url?: string,
+  options?: { isNetworkError?: boolean },
+) =>
+  ignoreNotificationUrls.some((ignoredUrl) => url?.endsWith(ignoredUrl))
+  || (options?.isNetworkError === true && url?.endsWith('/configs'))
 
 axios.interceptors.response.use(
   null,
@@ -36,7 +49,9 @@ axios.interceptors.response.use(
       nextTick(() => {
         showNotification({ content: 'unauthorizedTip' })
       })
-    } else if (!ignoreNotificationUrls.some((url) => error.config?.url?.endsWith(url))) {
+    } else if (!shouldIgnoreErrorNotification(error.config?.url, {
+      isNetworkError: !error.response,
+    })) {
       const errorMessage = error.response?.data?.message || error.message
 
       showNotification({
