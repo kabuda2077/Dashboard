@@ -69,6 +69,13 @@ public sealed class HostBridgeMessagesTests
             MinimizeToTray = true,
             LightweightMode = true,
             Autostart = false,
+            AppVersion = "1.2.0",
+            LatestAppVersion = "1.3.0",
+            IsAppUpdateChecking = false,
+            AppUpdateAvailable = true,
+            LatestCoreVersion = "v1.19.30",
+            IsCoreUpdateChecking = false,
+            CoreUpdateAvailable = true,
             CanUpgradeCore = true,
             IsCoreUpgrading = false,
             IsCoreSwitching = false,
@@ -87,5 +94,11 @@ public sealed class HostBridgeMessagesTests
             .GetProperty("state")
             .GetProperty("dashboardSettings");
         Assert.Equal("\"light\"", dashboardSettings.GetProperty("config/default-theme").GetString());
+        var state = document.RootElement.GetProperty("state");
+        Assert.Equal("1.2.0", state.GetProperty("appVersion").GetString());
+        Assert.Equal("1.3.0", state.GetProperty("latestAppVersion").GetString());
+        Assert.True(state.GetProperty("appUpdateAvailable").GetBoolean());
+        Assert.Equal("v1.19.30", state.GetProperty("latestCoreVersion").GetString());
+        Assert.True(state.GetProperty("coreUpdateAvailable").GetBoolean());
     }
 }

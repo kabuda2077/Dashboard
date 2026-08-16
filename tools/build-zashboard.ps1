@@ -103,9 +103,25 @@ foreach ($pattern in @(':disabled="isAutostartUpdating"', 'state.isAutostartUpda
         throw "dashboard source check failed: CorePage autostart control must follow the authoritative host update state"
     }
 }
-foreach ($pattern in @('BackendUptime', 'startedAt', 'OverviewCardSettingsDialog')) {
+foreach ($pattern in @('OverviewCardSettingsDialog')) {
     if ($overviewCtrl -notmatch [regex]::Escape($pattern)) {
-        throw "dashboard source check failed: overview top bar must keep settings and optional uptime only"
+        throw "dashboard source check failed: overview top bar must keep card settings"
+    }
+}
+
+$packageJson = Get-Content -LiteralPath (Join-Path $sourceRoot 'package.json') -Raw
+foreach ($pattern in @('@bufbuild/protobuf', '@connectrpc/connect', '@connectrpc/connect-web', '@xterm/xterm')) {
+    if ($packageJson -match [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: desktop build must not restore sing-box native API dependencies"
+    }
+}
+foreach ($relativePath in @('src\api\singbox', 'src\gen\daemon', 'src\components\tools', 'src\views\ToolsPage.vue')) {
+    $nativePath = Join-Path $sourceRoot $relativePath
+    $hasNativeSource = (Test-Path -LiteralPath $nativePath -PathType Leaf) -or `
+        ((Test-Path -LiteralPath $nativePath -PathType Container) -and `
+            @(Get-ChildItem -LiteralPath $nativePath -Recurse -File).Count -gt 0)
+    if ($hasNativeSource) {
+        throw "dashboard source check failed: desktop build must not restore sing-box native API or Tools sources"
     }
 }
 

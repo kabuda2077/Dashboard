@@ -1,6 +1,4 @@
-// 组装层 · rules 门面。持有 rules / ruleProviderList 统一状态与渲染派生,
-// 按后端类型路由到 clash / singbox 实现(sing-box native 不支持 rules)。
-import { isSingboxBackend } from '@/assembly/backend'
+// 组装层 · Clash-compatible rules 门面。
 import { RULE_TAB_TYPE } from '@/constant'
 import { toSearchRegex } from '@/helper/search'
 import type { Rule, RuleProvider } from '@/types'
@@ -36,7 +34,7 @@ export const renderRulesProvider = computed(() => {
   })
 })
 
-const load = () => (isSingboxBackend.value ? import('./singbox') : import('./clash'))
+const load = () => import('./clash')
 
 export const fetchRules = async () => (await load()).fetchRules()
 

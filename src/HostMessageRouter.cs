@@ -93,6 +93,12 @@ internal sealed class HostMessageRouter
                 await _handlers.SaveSettingsAsync(root, false);
                 await _handlers.OpenConfigLocationAsync();
                 break;
+            case HostBridgeCommand.CheckAppUpdate:
+                await _handlers.CheckAppUpdateAsync();
+                break;
+            case HostBridgeCommand.OpenAppRelease:
+                _handlers.OpenAppRelease();
+                return;
         }
 
         _handlers.SendState();
@@ -118,6 +124,8 @@ internal sealed class HostMessageHandlers
     public required Action BrowseConfigPath { get; init; }
     public required Func<Task> OpenCoreLocationAsync { get; init; }
     public required Func<Task> OpenConfigLocationAsync { get; init; }
+    public required Func<Task> CheckAppUpdateAsync { get; init; }
+    public required Action OpenAppRelease { get; init; }
     public required Func<string, Task> ShowNoticeAsync { get; init; }
     public required Action SendState { get; init; }
     public required Action SendWindowChromeState { get; init; }

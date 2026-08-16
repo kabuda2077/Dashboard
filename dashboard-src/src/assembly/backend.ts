@@ -1,46 +1,24 @@
-// 组装层 · 后端判定与能力门控。
-// 这里的 isSingboxBackend 基于「用户配置的后端类型」(activeBackend.type),决定
-// 走 sing-box native gRPC 还是 Clash REST/WS —— 是整个 assembly 层做后端选择的依据。
-// 注意与 assembly/version.ts 的 isSingBoxCore 区分:后者基于运行时内核版本字符串,
-// Clash 通道也可能连到 sing-box 兼容核心,两者语义不同,不可互相替代。
+// 组装层 · 桌面后端能力门控。
+// mihomo 与 sing-box 都通过 Clash-compatible REST/WS API 接入桌面面板。
 
 import { probeClashChannel } from '@/api/clash'
-import { probeSingboxChannel } from '@/api/singbox/client'
-import { getSingboxUrlFromBackend } from '@/helper/utils'
 import { activeBackend } from '@/store/setup'
 import type { Backend } from '@/types'
 import { computed } from 'vue'
 
-// 当前后端是否为 sing-box native(gRPC)登录。
-export const isSingboxBackend = computed(() => activeBackend.value?.type === 'singbox')
-
-// Clash 通道:非 sing-box 的常规后端。
-export const hasClashChannel = computed(() => !!activeBackend.value && !isSingboxBackend.value)
-
-// sing-box native 通道:供 Tools / ChartsCard(goroutines)等使用。
-export const hasSingboxChannel = computed(() => isSingboxBackend.value)
-
-// 各页面能力门控。sing-box native 暂不支持 rules/providers/dns/smart/内核升级。
+// 桌面注入的后端始终为 Clash-compatible API；核心升级由 C# 宿主管理。
 export const capabilities = computed(() => ({
   proxies: !!activeBackend.value,
   connections: !!activeBackend.value,
   logs: !!activeBackend.value,
   overview: !!activeBackend.value,
-  rules: hasClashChannel.value,
-  providers: hasClashChannel.value,
-  dns: hasClashChannel.value,
-  smart: hasClashChannel.value,
-  upgrade: hasClashChannel.value,
+  rules: !!activeBackend.value,
+  providers: !!activeBackend.value,
+  dns: !!activeBackend.value,
+  smart: !!activeBackend.value,
+  upgrade: !!activeBackend.value,
   tools: false,
 }))
 
-// 后端连通性探测(供 Setup / EditBackend 测试连接使用)。
-export const isSingboxChannelAvailable = (backend: Backend, timeout: number = 10000) => {
-  if (!getSingboxUrlFromBackend(backend)) return Promise.resolve(false)
-  return probeSingboxChannel(backend, timeout)
-}
-
 export const isBackendAvailable = (backend: Backend, timeout: number = 10000) =>
-  backend.type === 'singbox'
-    ? isSingboxChannelAvailable(backend, timeout)
-    : probeClashChannel(backend, timeout)
+  probeClashChannel(backend, timeout)

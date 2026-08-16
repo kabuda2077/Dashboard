@@ -165,7 +165,7 @@ public static class SingBoxUpdater
         return match.Success ? NormalizeVersion(match.Value) : "";
     }
 
-    private static bool IsSameVersion(string installedVersion, string latestVersion)
+    internal static bool IsSameVersion(string installedVersion, string latestVersion)
     {
         installedVersion = NormalizeVersion(installedVersion);
         latestVersion = NormalizeVersion(latestVersion);

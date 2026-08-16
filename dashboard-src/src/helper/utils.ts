@@ -1,5 +1,5 @@
 import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
-import type { Backend, BackendType } from '@/types'
+import type { Backend } from '@/types'
 import { useMediaQuery } from '@vueuse/core'
 import dayjs from 'dayjs'
 import prettyBytes, { type Options } from 'pretty-bytes'
@@ -85,17 +85,6 @@ export const getUrlFromBackend = (end: {
   return `${end.protocol}://${end.host}:${end.port}${end.secondaryPath || ''}`
 }
 
-// sing-box native 后端复用顶层连接字段作为 gRPC baseUrl(secondaryPath 留空)。
-export const getSingboxUrlFromBackend = (
-  end: Pick<Backend, 'type' | 'protocol' | 'host' | 'port'>,
-) => {
-  if (end.type !== 'singbox' || !end.host) return ''
-  return `${end.protocol}://${end.host}:${end.port}`
-}
-
-export const getSingboxSecret = (end: Pick<Backend, 'type' | 'password'>) =>
-  end.type === 'singbox' ? end.password || '' : ''
-
 export const getLabelFromBackend = (end: Omit<Backend, 'uuid'>) => {
   return end.label || `${end.host}:${end.port}`
 }
@@ -148,7 +137,7 @@ export const getBackendFromUrl = () => {
 
   if (query.has('hostname')) {
     return {
-      type: (query.get('type') === 'singbox' ? 'singbox' : 'clash') as BackendType,
+      type: 'clash' as const,
       protocol: query.get('http')
         ? 'http'
         : query.get('https')

@@ -18,7 +18,16 @@
         type="button"
         @click="settingsExpanded = !settingsExpanded"
       >
-        <span>设置</span>
+        <span class="indicator">
+          <span
+            v-if="hasHostBridge && hostState.appUpdateAvailable"
+            class="indicator-item top-1 -right-1 flex"
+          >
+            <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
+            <span class="bg-secondary h-2 w-2 rounded-full"></span>
+          </span>
+          <span>设置</span>
+        </span>
         <ChevronDownIcon
           class="h-4 w-4 transition-transform"
           :class="settingsExpanded && 'rotate-180'"
@@ -44,7 +53,7 @@
             class="mb-4 rounded-lg p-2 md:mb-6"
           >
             <div
-              v-if="item.key !== SETTINGS_MENU_KEY.general"
+              v-if="item.key !== SETTINGS_MENU_KEY.general && item.key !== ABOUT_DASHBOARD_KEY"
               class="mt-1 mb-3 px-1 text-lg font-semibold"
             >
               {{ $t(item.label) }}
@@ -67,7 +76,7 @@
         class="mb-4 md:mb-6"
       >
         <div
-          v-if="item.key !== SETTINGS_MENU_KEY.general"
+          v-if="item.key !== SETTINGS_MENU_KEY.general && item.key !== ABOUT_DASHBOARD_KEY"
           class="mt-1 mb-3 px-1 text-lg font-semibold"
         >
           {{ $t(item.label) }}
@@ -81,9 +90,11 @@
 <script setup lang="ts">
 import BackendSettings from '@/components/settings/backend/BackendSettings.vue'
 import ConnectionsSettings from '@/components/settings/connections/ConnectionsSettings.vue'
+import AboutDashboardSettings from '@/components/settings/general/AboutDashboardSettings.vue'
 import ZashboardSettings from '@/components/settings/general/ZashboardSettings.vue'
 import OverviewSettings from '@/components/settings/overview/OverviewSettings.vue'
 import ProxiesSettings from '@/components/settings/proxies/ProxiesSettings.vue'
+import { hasHostBridge, hostState } from '@/composables/hostBridge'
 import { SETTINGS_MENU_KEY } from '@/constant'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { useElementSize } from '@vueuse/core'
@@ -91,10 +102,12 @@ import type { Component } from 'vue'
 import { computed, nextTick, ref, watch } from 'vue'
 
 type MenuItem = {
-  key: SETTINGS_MENU_KEY
+  key: string
   label: string
   component: Component
 }
+
+const ABOUT_DASHBOARD_KEY = 'about-dashboard'
 
 const props = withDefaults(
   defineProps<{
@@ -116,6 +129,15 @@ const isTwoColumns = computed(() => twoColumnsAvailable.value)
 
 const menuItems = computed<MenuItem[]>(() => {
   return [
+    ...(hasHostBridge
+      ? [
+          {
+            key: ABOUT_DASHBOARD_KEY,
+            label: '',
+            component: AboutDashboardSettings,
+          },
+        ]
+      : []),
     {
       key: SETTINGS_MENU_KEY.general,
       label: 'zashboardSettings',
@@ -146,8 +168,8 @@ const collapsibleItems = computed<MenuItem[]>(() => {
 const settingsExpanded = ref(false)
 const columnAssignment = ref<number[]>(collapsibleItems.value.map((_, i) => i % 2))
 
-const itemId = (key: SETTINGS_MENU_KEY) => `${props.idPrefix}-${key}`
-const collapsibleItemId = (key: SETTINGS_MENU_KEY) => itemId(key)
+const itemId = (key: string) => `${props.idPrefix}-${key}`
+const collapsibleItemId = (key: string) => itemId(key)
 const shouldExpandForKey = (key: string | null | undefined) => {
   return collapsibleItems.value.some((item) => item.key === key)
 }

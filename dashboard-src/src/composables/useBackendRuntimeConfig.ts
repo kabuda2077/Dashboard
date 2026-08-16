@@ -116,7 +116,7 @@ export const useBackendRuntimeConfig = () => {
 
   const scheduleReadyRefresh = () => {
     const backendUuid = activeBackendUuid.value
-    if (!backendUuid || activeBackend.value?.type === 'singbox') return
+    if (!backendUuid) return
     if (readyRefreshTimer || readyRefreshedBackendUuids.has(backendUuid)) return
 
     readyRefreshedBackendUuids.add(backendUuid)

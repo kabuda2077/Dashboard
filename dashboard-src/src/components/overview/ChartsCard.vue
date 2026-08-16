@@ -67,10 +67,7 @@
             :tooltip-formatter="connTooltipFormatter"
           />
         </div>
-        <div class="text-base-content/50 flex items-center justify-between gap-2 text-xs">
-          <span>{{ $t('memoryUsage') }} {{ memoryStr }}</span>
-          <span v-if="hasSingboxChannel">{{ $t('goroutines') }} {{ goroutines }}</span>
-        </div>
+        <div class="text-base-content/50 text-xs">{{ $t('memoryUsage') }} {{ memoryStr }}</div>
       </div>
     </div>
   </div>
@@ -78,7 +75,6 @@
 
 <script setup lang="ts">
 import MiniSparkline from '@/components/overview/MiniSparkline.vue'
-import { hasSingboxChannel } from '@/assembly/backend'
 import { getToolTipForParams } from '@/helper'
 import { prettyBytesHelper } from '@/helper/utils'
 import { activeConnections, downloadTotal, uploadTotal } from '@/store/connections'
@@ -86,7 +82,6 @@ import {
   connectionsHistory,
   downloadSpeed,
   downloadSpeedHistory,
-  goroutines,
   memory,
   uploadSpeed,
   uploadSpeedHistory,

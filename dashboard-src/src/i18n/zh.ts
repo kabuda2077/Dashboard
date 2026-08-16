@@ -17,8 +17,6 @@ const zh: LANG_MESSAGE = {
   default: '默认',
   backendType: '后端类型',
   clashApi: 'Clash API',
-  singboxApi: 'sing-box API',
-  singboxConnectionFailed: '无法连接 sing-box 原生 API',
   skip: '跳过',
   // 工具页
   networkQuality: '网络质量',
@@ -159,7 +157,6 @@ const zh: LANG_MESSAGE = {
   downloadSpeed: '下载速度',
   uploadSpeed: '上传速度',
   memoryUsage: '内存使用',
-  goroutines: 'Goroutines',
   noData: '暂无数据',
 
   // Backend actions and feedback

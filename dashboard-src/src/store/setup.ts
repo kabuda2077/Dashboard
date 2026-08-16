@@ -5,49 +5,30 @@ import { v4 as uuid } from 'uuid'
 import { computed, ref } from 'vue'
 import { sourceIPLabelList } from './settings'
 
-// 旧版本的后端结构:没有 `type` 字段,且 sing-box 以附属通道 `singboxChannel` 存在。
-type LegacySingboxChannel = {
-  protocol?: string
-  host?: string
-  port?: string
-  secret?: string
+// 清理旧版本留下的 native 后端；桌面版只保留 Clash-compatible API。
+type LegacyBackend = Omit<Partial<Backend>, 'type'> & {
+  type?: string
+  singboxChannel?: unknown
 }
-type LegacyBackend = Partial<Backend> & { singboxChannel?: LegacySingboxChannel }
 
-// 一次性迁移:补全 `type`;把旧的 singboxChannel 拆分为独立的 sing-box 后端。
 const migrateBackendList = (list: LegacyBackend[]): Backend[] => {
-  const migrated: Backend[] = []
-
-  for (const item of list) {
-    const channel = item.singboxChannel
-    const base = omit(item, 'singboxChannel') as Backend
-
-    migrated.push({
-      ...base,
-      type: base.type ?? 'clash',
-    })
-
-    if (channel?.host) {
-      migrated.push({
-        type: 'singbox',
-        protocol: channel.protocol || 'http',
-        host: channel.host,
-        port: channel.port || '9090',
-        secondaryPath: '',
-        password: channel.secret || '',
-        uuid: uuid(),
-        label: base.label ? `${base.label} (sing-box)` : undefined,
-      })
-    }
-  }
-
-  return migrated
+  return list
+    .filter((item) => item.type !== 'singbox')
+    .map((item) => ({
+      ...(omit(item, 'singboxChannel') as Backend),
+      type: 'clash',
+    }))
 }
 
 export const backendList = useStorage<Backend[]>('setup/api-list', [])
+export const activeUuid = useStorage<string>('setup/active-uuid', '')
 
-if (backendList.value.some((item) => !item.type || 'singboxChannel' in item)) {
-  backendList.value = migrateBackendList(backendList.value as LegacyBackend[])
+const storedBackends = backendList.value as LegacyBackend[]
+if (storedBackends.some((item) => item.type !== 'clash' || 'singboxChannel' in item)) {
+  backendList.value = migrateBackendList(storedBackends)
+  if (!backendList.value.some((backend) => backend.uuid === activeUuid.value)) {
+    activeUuid.value = backendList.value[0]?.uuid || ''
+  }
 }
 
 export const showBackendSettingsDialog = ref(false)
@@ -55,7 +36,6 @@ export const showBackendSettingsDialog = ref(false)
 export const toggleBackendSettingsDialog = () => {
   showBackendSettingsDialog.value = !showBackendSettingsDialog.value
 }
-export const activeUuid = useStorage<string>('setup/active-uuid', '')
 export const activeBackend = computed(() =>
   backendList.value.find((backend) => backend.uuid === activeUuid.value),
 )

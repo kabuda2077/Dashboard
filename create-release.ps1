@@ -52,9 +52,12 @@ Size: $zipSize MB
 
 Install:
 1. Close Dashboard.
-2. Extract the archive.
-3. Copy all files to the existing Dashboard folder.
+2. Extract the archive and copy all files to the existing Dashboard folder.
+3. Confirm replacement. Do not delete the existing folder first.
 4. Run Dashboard.exe.
+
+The package does not contain settings.json, mihomo, sing-box, or runtime logs.
+WebView data is cleared automatically when packaged content changes.
 "@ | Out-File -FilePath $releaseNotesPath -Encoding UTF8
 
 Write-Host "Release package created: $zipPath" -ForegroundColor Green

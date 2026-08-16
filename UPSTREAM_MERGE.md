@@ -97,7 +97,7 @@ Preserve these decisions unless the product direction is explicitly changed.
 - The embedded Backend heading is static text; do not restore upstream version links or click-through heading behavior.
 - The sidebar bottom must not show a backend settings button or backend version.
 - Dashboard uses the Clash-compatible API path for both mihomo and sing-box main pages.
-- sing-box native API / Tools is not exposed in the desktop product. See the sing-box version contract for API endpoint and version fallback details.
+- sing-box native API / Tools is intentionally removed from the desktop frontend. See the sing-box version contract for API endpoint and version fallback details.
 
 ### sing-box Version Display Contract
 
@@ -138,7 +138,7 @@ Do not restore these without a product decision:
 - upstream DNS query panel
 - upstream Dashboard self-upgrade controls
 - upstream core upgrade/config update modals that bypass the C# host
-- sing-box native Tools as a separate native API channel
+- sing-box native API adapters, generated protobuf code, dependencies, and Tools UI
 
 ### Keep From Upstream When Compatible
 
@@ -253,7 +253,7 @@ When upstream adds a feature, classify it before exposing UI:
 - General zashboard feature: usually keep.
 - Desktop-host feature: keep only if C# can support it cleanly.
 - Backend API feature: keep API/model changes, then decide whether to expose UI.
-- sing-box native feature: preserve reusable code where helpful, but do not expose a native API workflow without a product decision.
+- sing-box native feature: do not import it into the desktop frontend without a new product decision; users can run an upstream browser dashboard against a separate native API port.
 - Visual polish: keep when it can be expressed with existing style tokens.
 
 ## Verification
@@ -294,7 +294,7 @@ Manual inspection checklist:
 - Sidebar expanded/collapsed: route spacing, bottom panels, no backend settings/version.
 - Window shell: buttons, dragging, resizing, maximize, minimize, close-to-tray, tray reopen.
 - Core behavior: mihomo start/stop/restart/upgrade; sing-box start/stop/restart/upgrade through desktop host.
-- API behavior: mihomo and sing-box pages use Clash-compatible API; sing-box native Tools stay hidden.
+- API behavior: mihomo and sing-box pages use Clash-compatible API; no sing-box native API or Tools code is bundled.
 - Themes/layout: light mode, dark mode, small window, normal window, maximized window, high DPI if possible.
 
 ## Merge Checklist

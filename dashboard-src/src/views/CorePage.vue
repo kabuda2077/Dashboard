@@ -21,10 +21,10 @@
                 : 'bg-warning shadow-warning/30 shadow-[0_0_0_4px]'
             "
           />
-          <div
-            class="core-status-box"
-          >
-            <span class="min-w-0 shrink truncate font-semibold whitespace-nowrap">{{ coreTitle }}</span>
+          <div class="core-status-box">
+            <span class="min-w-0 shrink truncate font-semibold whitespace-nowrap">{{
+              coreTitle
+            }}</span>
             <span class="text-base-content/60 min-w-0 truncate text-xs whitespace-nowrap">
               {{ runtimeStatusText }}
             </span>
@@ -192,10 +192,7 @@
             :style="logPanelHeight ? { height: `${logPanelHeight}px` } : undefined"
           >
             <div class="setting-panel-row h-full min-h-0">
-              <pre
-                class="dashboard-log-block"
-                >{{ runtime.logText || '暂无日志' }}</pre
-              >
+              <pre class="dashboard-log-block">{{ runtime.logText || '暂无日志' }}</pre>
             </div>
           </div>
         </div>
@@ -255,14 +252,22 @@
           <div class="grid grid-cols-2 gap-2">
             <button
               class="btn btn-sm h-10 border-transparent shadow-none"
-              :class="settings.coreType === 'mihomo' ? 'btn-primary' : 'bg-base-200/70 hover:bg-base-200/80'"
+              :class="
+                settings.coreType === 'mihomo'
+                  ? 'btn-primary'
+                  : 'bg-base-200/70 hover:bg-base-200/80'
+              "
               @click="settings.coreType = 'mihomo'"
             >
               mihomo
             </button>
             <button
               class="btn btn-sm h-10 border-transparent shadow-none"
-              :class="settings.coreType === 'sing-box' ? 'btn-primary' : 'bg-base-200/70 hover:bg-base-200/80'"
+              :class="
+                settings.coreType === 'sing-box'
+                  ? 'btn-primary'
+                  : 'bg-base-200/70 hover:bg-base-200/80'
+              "
               @click="settings.coreType = 'sing-box'"
             >
               sing-box
@@ -329,9 +334,7 @@
         </div>
 
         <div class="modal-action items-center">
-          <span
-            class="text-base-content/60 mr-auto text-sm"
-          >
+          <span class="text-base-content/60 mr-auto text-sm">
             启动成功后会自动进入 Dashboard。
           </span>
           <button
@@ -454,9 +457,13 @@ const runtimeStatusText = computed(() => {
 const normalizeCoreType = (coreType: string | undefined) =>
   coreType === 'sing-box' ? 'sing-box' : 'mihomo'
 
-const coreTitle = computed(() => runtime.coreTitle || (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core'))
+const coreTitle = computed(
+  () => runtime.coreTitle || (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core'),
+)
 const nextCoreType = computed(() => (settings.coreType === 'sing-box' ? 'mihomo' : 'sing-box'))
-const nextCoreTitle = computed(() => (nextCoreType.value === 'sing-box' ? 'sing-box' : 'Mihomo Core'))
+const nextCoreTitle = computed(() =>
+  nextCoreType.value === 'sing-box' ? 'sing-box' : 'Mihomo Core',
+)
 const showSetupWizard = computed(() => !setupCompleted.value)
 const setupHint = computed(() =>
   settings.coreType === 'sing-box'
@@ -465,7 +472,8 @@ const setupHint = computed(() =>
 )
 
 const activeCorePath = computed({
-  get: () => (settings.coreType === 'sing-box' ? settings.singBoxCorePath : settings.mihomoCorePath),
+  get: () =>
+    settings.coreType === 'sing-box' ? settings.singBoxCorePath : settings.mihomoCorePath,
   set: (value: string) => {
     if (settings.coreType === 'sing-box') {
       settings.singBoxCorePath = value
@@ -585,15 +593,18 @@ const setState = (state: HostState) => {
   runtime.isRunning = !!state.isRunning
   runtime.processId = state.processId ?? null
   settings.coreType = normalizeCoreType(state.coreType)
-  runtime.coreTitle = state.coreTitle ?? (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core')
+  runtime.coreTitle =
+    state.coreTitle ?? (settings.coreType === 'sing-box' ? 'sing-box' : 'Mihomo Core')
   runtime.canUpgradeCore = state.canUpgradeCore ?? settings.coreType !== 'sing-box'
   runtime.isCoreUpgrading = !!state.isCoreUpgrading
   runtime.isCoreSwitching = !!state.isCoreSwitching
   runtime.logText = state.logText ?? ''
-  settings.mihomoCorePath = state.mihomoCorePath ?? (settings.coreType === 'mihomo' ? state.corePath : '') ?? ''
+  settings.mihomoCorePath =
+    state.mihomoCorePath ?? (settings.coreType === 'mihomo' ? state.corePath : '') ?? ''
   settings.mihomoConfigPath =
     state.mihomoConfigPath ?? (settings.coreType === 'mihomo' ? state.configPath : '') ?? ''
-  settings.mihomoApiUrl = state.mihomoApiUrl ?? (settings.coreType === 'mihomo' ? state.apiUrl : '') ?? ''
+  settings.mihomoApiUrl =
+    state.mihomoApiUrl ?? (settings.coreType === 'mihomo' ? state.apiUrl : '') ?? ''
   settings.mihomoSecret =
     state.mihomoSecret ?? (settings.coreType === 'mihomo' ? state.secret : '') ?? ''
   settings.singBoxCorePath =
@@ -651,7 +662,7 @@ const getNoticeType = (message: string) => {
     return 'alert-error'
   }
 
-  if (message.startsWith('正在')) {
+  if (message.startsWith('正在') || message.includes('新版本')) {
     return 'alert-info'
   }
 
@@ -664,6 +675,10 @@ const getNoticeType = (message: string) => {
 
 const showNotice = (message: string) => {
   if (!message) {
+    return
+  }
+
+  if (message.startsWith('当前已是最新版本') || message.startsWith('发现 Dashboard 新版本')) {
     return
   }
 

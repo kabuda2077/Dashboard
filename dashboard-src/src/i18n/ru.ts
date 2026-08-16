@@ -17,8 +17,6 @@ const ru: LANG_MESSAGE = {
   default: 'По умолчанию',
   backendType: 'Тип бэкенда',
   clashApi: 'Clash API',
-  singboxApi: 'sing-box API',
-  singboxConnectionFailed: 'Не удалось подключиться к нативному API sing-box',
   skip: 'Пропустить',
   // Tools
   networkQuality: 'Качество сети',
@@ -160,7 +158,6 @@ const ru: LANG_MESSAGE = {
   downloadSpeed: 'Скорость загрузки',
   uploadSpeed: 'Скорость отдачи',
   memoryUsage: 'Память',
-  goroutines: 'Goroutines',
   noData: 'Нет данных',
 
   // Backend actions and feedback

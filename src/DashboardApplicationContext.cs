@@ -10,6 +10,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private readonly Icon _trayIconImage;
     private readonly NotifyIcon _trayIcon;
     private readonly bool _startMinimized;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
     private MainForm? _mainForm;
     private TrayMenuForm? _trayMenu;
     private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
@@ -50,6 +51,8 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         {
             _ = Task.Run(() => _host.StartCore());
         }
+
+        _ = RunAutomaticUpdateCheckAsync(_lifetimeCancellation.Token);
     }
 
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
@@ -62,6 +65,24 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     internal static bool ShouldRelaunchBeforeShowingWindow(bool shouldStartCore, bool isAdministrator)
     {
         return shouldStartCore && !isAdministrator;
+    }
+
+    private async Task RunAutomaticUpdateCheckAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.WhenAll(
+                    _host.CheckForAppUpdateAsync(manual: false, cancellationToken),
+                    _host.CheckForCoreUpdateAsync(cancellationToken));
+                await Task.Delay(TimeSpan.FromHours(24), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
     }
 
     internal void ActivateMainWindow()
@@ -343,6 +364,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         }
 
         _disposed = true;
+        _lifetimeCancellation.Cancel();
         _host.StateChanged -= OnHostStateChanged;
         _host.RuntimeStateChanged -= OnHostStateChanged;
         _host.NoticeRequested -= OnNoticeRequested;
@@ -356,6 +378,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _trayIconImage.Dispose();
         _appIcon.Dispose();
         _host.Dispose();
+        _lifetimeCancellation.Dispose();
         _dispatcher.Dispose();
     }
 

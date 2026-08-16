@@ -46,6 +46,18 @@ Default paths are relative to the Dashboard folder:
 .\sing-box\config.json
 ```
 
+## Updating Dashboard
+
+Dashboard checks GitHub Releases automatically after startup. You can also check manually from the Core page. When a new version is available, use the Release button to open its download page.
+
+To update the portable build:
+
+1. Exit Dashboard completely.
+2. Extract the new ZIP, copy all files into the existing Dashboard folder, and confirm replacement.
+3. Start `Dashboard.exe` again.
+
+Do not delete the existing Dashboard folder first. Release packages do not contain `settings.json`, `mihomo\`, `sing-box\`, or runtime logs, so replacing the packaged files preserves settings, cores, and configuration. When the application version or bundled frontend changes, Dashboard automatically clears `resources\EBWebView` before creating WebView2; no manual cache cleanup is required.
+
 ## Core Configuration
 
 For `mihomo`, enable `external-controller` in `config.yaml`:
@@ -56,6 +68,8 @@ secret: ""
 ```
 
 For `sing-box`, enable its Clash-compatible API. Dashboard uses the Clash API path for overview, proxies, rules, connections, logs, config reload, and related pages. sing-box native API / Tools integration is intentionally not included.
+
+The reF1nd [`sing-box-releases`](https://github.com/reF1nd/sing-box-releases) build is recommended. Official sing-box GitHub Release builds that include the Clash API can also be used. Self-compiled or stripped-down third-party builds must be built with the `with_clash_api` tag. Dashboard's built-in sing-box updater only supports reF1nd Windows amd64v3 builds: if you use the official build or another fork, update it manually, because using the in-app updater will replace it with a reF1nd build.
 
 Example `sing-box` config fragment:
 
@@ -78,10 +92,11 @@ Example `sing-box` config fragment:
 - Start, stop, restart, switch, and inspect the active core from the Core page.
 - Show core PID, running state, stdout/stderr logs, and recent active downloads.
 - Upgrade `mihomo` from MetaCubeX releases.
-- Upgrade `sing-box` from the reF1nd `sing-box-releases` Windows amd64v3 build.
+- Built-in sing-box upgrades only support the reF1nd `sing-box-releases` Windows amd64v3 build.
 - Use Clash-compatible API as the main UI channel for both `mihomo` and `sing-box`.
 - Tray menu for showing the window, restarting/stopping the core, and exiting.
 - Minimize-to-tray and lightweight mode for WebView lifecycle control.
+- Check for Dashboard updates automatically after startup or manually from the Core page, then open GitHub Releases.
 - Per-user autostart through the `\Dashboard\Autostart` scheduled task, delayed 5 seconds after logon and run at the highest available privilege.
 - Settings stored next to the portable app in `settings.json`.
 - Secrets protected with Windows DPAPI.
@@ -109,6 +124,10 @@ No. The next manual launch detects a stale task path and requests a repair. Lega
 **Can I use only sing-box native API?**  
 No. This desktop build uses sing-box's Clash-compatible API for the main dashboard pages.
 
+**Must I use the reF1nd sing-box build?**
+
+No. Official GitHub Release builds that include the Clash API can also work, but this project is primarily adapted and tested with reF1nd builds, and the built-in updater only downloads reF1nd Windows amd64v3. Update official builds, other forks, and installations on CPUs without amd64v3 support manually.
+
 **Where are logs stored, and how can I temporarily enable detailed diagnostics?**
 
 Basic logs are stored under `resources\logs` next to the app. Release builds record only key operations, errors, and WebView cold-restore summaries by default. Start the app with `Dashboard.exe --diagnostic-log` to additionally record window lifecycle, tray timing, frontend startup, and first WebSocket messages for that session. Debug builds enable detailed diagnostics by default. Each log rotates after 2 MB, with the latest 3 archives retained.
@@ -122,6 +141,8 @@ pnpm --dir dashboard-src type-check
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Configuration Release -Runtime win-x64
 powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
 ```
+
+Before publishing a new version, update `Version` and `InformationalVersion` in `Dashboard.csproj` and keep them aligned with the GitHub Release tag.
 
 Main directories:
 

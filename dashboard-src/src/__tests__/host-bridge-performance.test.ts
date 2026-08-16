@@ -10,6 +10,9 @@ describe('host bridge incremental messages', () => {
       coreType: 'mihomo',
       apiUrl: 'http://127.0.0.1:9090',
       logText: 'existing',
+      appVersion: '1.2.0',
+      latestAppVersion: '1.3.0',
+      appUpdateAvailable: true,
     })
     applyHostRuntimeState({
       isRunning: true,
@@ -29,6 +32,9 @@ describe('host bridge incremental messages', () => {
       isRunning: true,
       processId: 42,
       coreVersion: 'v1.2.3',
+      appVersion: '1.2.0',
+      latestAppVersion: '1.3.0',
+      appUpdateAvailable: true,
     })
   })
 

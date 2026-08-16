@@ -21,7 +21,6 @@ const makeInitValue = (): HistoryPoint[] => {
 }
 
 export const memory = ref<number>(0)
-export const goroutines = ref<number>(0)
 export const memoryHistory = ref(makeInitValue())
 export const connectionsHistory = ref(makeInitValue())
 
@@ -42,7 +41,6 @@ export const initSatistic = () => {
 
   const { data: memoryWsData, close: memoryWsClose } = fetchMemoryAPI<{
     inuse: number
-    goroutines?: number
   }>()
   const unwatchMemory = watch(
     () => memoryWsData.value,
@@ -55,7 +53,6 @@ export const initSatistic = () => {
       }
 
       memory.value = data.inuse
-      goroutines.value = data.goroutines ?? 0
       memoryHistory.value.push({
         value: [timestamp, data.inuse],
         name: timestamp,

@@ -8,7 +8,7 @@ describe('setup backend migration', () => {
     vi.resetModules()
   })
 
-  it('adds missing clash type and splits legacy singboxChannel into a native backend', async () => {
+  it('adds the clash type and discards the legacy native channel', async () => {
     localStorage.setItem(
       'setup/api-list',
       JSON.stringify([
@@ -32,21 +32,35 @@ describe('setup backend migration', () => {
 
     const { backendList } = await import('@/store/setup')
 
-    expect(backendList.value).toHaveLength(2)
+    expect(backendList.value).toHaveLength(1)
     expect(backendList.value[0]).toMatchObject({
       type: 'clash',
       uuid: 'legacy-clash',
       password: 'clash-secret',
     })
-    expect(backendList.value[1]).toMatchObject({
-      type: 'singbox',
-      protocol: 'https',
-      host: '127.0.0.1',
-      port: '9443',
-      secondaryPath: '',
-      password: 'singbox-secret',
-      label: 'Local (sing-box)',
-    })
+  })
+
+  it('removes stored native backends without treating port 9091 as Clash API', async () => {
+    localStorage.setItem(
+      'setup/api-list',
+      JSON.stringify([
+        {
+          type: 'singbox',
+          protocol: 'http',
+          host: '127.0.0.1',
+          port: '9091',
+          secondaryPath: '',
+          password: '',
+          uuid: 'native',
+        },
+      ]),
+    )
+    localStorage.setItem('setup/active-uuid', 'native')
+
+    const { activeUuid, backendList } = await import('@/store/setup')
+
+    expect(backendList.value).toEqual([])
+    expect(activeUuid.value).toBe('')
   })
 
   it('replaces duplicate endpoints instead of adding another backend', async () => {

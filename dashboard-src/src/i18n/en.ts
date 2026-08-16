@@ -15,8 +15,6 @@ const en = {
   default: 'Default',
   backendType: 'Backend Type',
   clashApi: 'Clash API',
-  singboxApi: 'sing-box API',
-  singboxConnectionFailed: 'Failed to connect to the sing-box native API',
   skip: 'Skip',
   // Tools page
   networkQuality: 'Network Quality',
@@ -158,7 +156,6 @@ const en = {
   downloadSpeed: 'Download speed',
   uploadSpeed: 'Upload speed',
   memoryUsage: 'Memory usage',
-  goroutines: 'Goroutines',
   noData: 'No data',
 
   // Backend actions and feedback

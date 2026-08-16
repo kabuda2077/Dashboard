@@ -121,6 +121,8 @@ public sealed class MainForm : Form
             BrowseConfigPath = BrowseConfigPath,
             OpenCoreLocationAsync = () => OpenPathLocationAsync(_settings.ActiveCorePath, "内核文件"),
             OpenConfigLocationAsync = () => OpenPathLocationAsync(_settings.ActiveConfigPath, "配置文件"),
+            CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
+            OpenAppRelease = _host.OpenAppReleasePage,
             ShowNoticeAsync = ShowDashboardNoticeAsync,
             SendState = SendStateToDashboard,
             SendWindowChromeState = SendWindowChromeState

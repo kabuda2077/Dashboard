@@ -24,6 +24,8 @@ internal static class HostBridgeCommand
     public const string BrowseConfig = "browseConfig";
     public const string OpenCoreLocation = "openCoreLocation";
     public const string OpenConfigLocation = "openConfigLocation";
+    public const string CheckAppUpdate = "checkAppUpdate";
+    public const string OpenAppRelease = "openAppRelease";
     public const string SaveDashboardSettings = "saveDashboardSettings";
 }
 
@@ -160,6 +162,13 @@ internal sealed record DashboardState
     public required bool LightweightMode { get; init; }
     public required bool Autostart { get; init; }
     public bool IsAutostartUpdating { get; init; }
+    public required string AppVersion { get; init; }
+    public required string LatestAppVersion { get; init; }
+    public required bool IsAppUpdateChecking { get; init; }
+    public required bool AppUpdateAvailable { get; init; }
+    public required string LatestCoreVersion { get; init; }
+    public required bool IsCoreUpdateChecking { get; init; }
+    public required bool CoreUpdateAvailable { get; init; }
     public required bool CanUpgradeCore { get; init; }
     public required bool IsCoreUpgrading { get; init; }
     public required bool IsCoreSwitching { get; init; }

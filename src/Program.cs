@@ -64,6 +64,9 @@ internal static class Program
 
             using (singleInstance!)
             {
+                WebViewDataMaintenance.PrepareForCurrentContent(
+                    AppSettings.AppDirectory,
+                    DashboardVersion.Current);
                 using var applicationContext = new DashboardApplicationContext(startMinimized, startCore);
                 context = applicationContext;
                 if (Interlocked.Exchange(ref activationPending, 0) != 0)

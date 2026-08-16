@@ -12,6 +12,8 @@ internal sealed class DashboardHost : IDisposable
     private readonly DashboardServer _dashboardServer;
     private readonly CoreLifecycleController _coreLifecycle;
     private readonly SemaphoreSlim _autostartGate = new(1, 1);
+    private readonly SemaphoreSlim _appUpdateGate = new(1, 1);
+    private readonly SemaphoreSlim _coreUpdateGate = new(1, 1);
     private string _cachedCoreVersionKey = "";
     private string _cachedCoreVersion = "";
     private string _loadingCoreVersionKey = "";
@@ -58,6 +60,12 @@ internal sealed class DashboardHost : IDisposable
     public bool IsUpgradeInProgress => _coreLifecycle.IsUpgradeInProgress;
     public bool IsSwitchInProgress => _coreLifecycle.IsSwitchInProgress;
     public bool IsAutostartUpdating { get; private set; }
+    public bool IsAppUpdateChecking { get; private set; }
+    public bool AppUpdateAvailable { get; private set; }
+    public string LatestAppVersion { get; private set; } = "";
+    public bool IsCoreUpdateChecking { get; private set; }
+    public bool CoreUpdateAvailable { get; private set; }
+    public string LatestCoreVersion { get; private set; } = "";
     public Func<bool>? ShouldKeepMinimizedForRelaunch { get; set; }
 
     public event EventHandler? StateChanged;
@@ -97,6 +105,13 @@ internal sealed class DashboardHost : IDisposable
             LightweightMode = Settings.LightweightMode,
             Autostart = Settings.Autostart,
             IsAutostartUpdating = IsAutostartUpdating,
+            AppVersion = DashboardVersion.Current,
+            LatestAppVersion = LatestAppVersion,
+            IsAppUpdateChecking = IsAppUpdateChecking,
+            AppUpdateAvailable = AppUpdateAvailable,
+            LatestCoreVersion = LatestCoreVersion,
+            IsCoreUpdateChecking = IsCoreUpdateChecking,
+            CoreUpdateAvailable = CoreUpdateAvailable,
             CanUpgradeCore = true,
             IsCoreUpgrading = _coreLifecycle.IsUpgradeInProgress,
             IsCoreSwitching = _coreLifecycle.IsSwitchInProgress,
@@ -142,14 +157,122 @@ internal sealed class DashboardHost : IDisposable
         _coreLifecycle.Restart(showTrayNotification);
     }
 
-    public Task SwitchCoreAsync(string targetCoreType)
+    public async Task SwitchCoreAsync(string targetCoreType)
     {
-        return _coreLifecycle.SwitchAsync(targetCoreType);
+        ResetCoreUpdateState();
+        await _coreLifecycle.SwitchAsync(targetCoreType);
+        await CheckForCoreUpdateAsync();
     }
 
-    public Task UpgradeCoreAsync()
+    public async Task UpgradeCoreAsync()
     {
-        return _coreLifecycle.UpgradeAsync();
+        await _coreLifecycle.UpgradeAsync();
+        await CheckForCoreUpdateAsync();
+    }
+
+    public async Task CheckForCoreUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsUpgradeInProgress || IsSwitchInProgress
+            || !await _coreUpdateGate.WaitAsync(0, cancellationToken))
+        {
+            return;
+        }
+
+        try
+        {
+            IsCoreUpdateChecking = true;
+            PublishStateChanged();
+            var result = await CoreUpdateChecker.CheckAsync(
+                Settings.ActiveCorePath,
+                Settings.IsSingBox,
+                cancellationToken);
+            LatestCoreVersion = result.LatestVersion;
+            CoreUpdateAvailable = result.UpdateAvailable;
+            HostOperationLogger.Info(
+                "update",
+                $"Core update check completed: core={Settings.CoreType}, current={result.CurrentVersion}, latest={result.LatestVersion}, available={result.UpdateAvailable}.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("update", $"{Settings.CoreTitle} update check failed.", ex);
+        }
+        finally
+        {
+            IsCoreUpdateChecking = false;
+            PublishStateChanged();
+            _coreUpdateGate.Release();
+        }
+    }
+
+    public async Task CheckForAppUpdateAsync(bool manual, CancellationToken cancellationToken = default)
+    {
+        if (!await _appUpdateGate.WaitAsync(0, cancellationToken))
+        {
+            if (manual)
+            {
+                await ShowNoticeAsync("正在检查 Dashboard 更新，请稍候。");
+            }
+            return;
+        }
+
+        try
+        {
+            IsAppUpdateChecking = true;
+            PublishStateChanged();
+            var result = await AppUpdateChecker.CheckAsync(
+                DashboardVersion.Current,
+                cancellationToken: cancellationToken);
+            LatestAppVersion = result.LatestVersion;
+            AppUpdateAvailable = result.UpdateAvailable;
+            HostOperationLogger.Info(
+                "update",
+                $"Dashboard update check completed: current={result.CurrentVersion}, latest={result.LatestVersion}, available={result.UpdateAvailable}.");
+
+            if (manual && result.UpdateAvailable)
+            {
+                await ShowNoticeAsync($"发现 Dashboard 新版本 v{result.LatestVersion}，可前往 Release 下载。");
+            }
+            else if (manual)
+            {
+                await ShowNoticeAsync($"当前已是最新版本（v{result.CurrentVersion}）。");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("update", "Dashboard update check failed.", ex);
+            if (manual)
+            {
+                await ShowNoticeAsync("检查 Dashboard 更新失败，请稍后重试。");
+            }
+        }
+        finally
+        {
+            IsAppUpdateChecking = false;
+            PublishStateChanged();
+            _appUpdateGate.Release();
+        }
+    }
+
+    public void OpenAppReleasePage()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(AppUpdateChecker.ReleasesPageUrl)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("update", "Failed to open Dashboard Releases page.", ex);
+            _ = ShowNoticeAsync("无法打开 GitHub Release 页面，请检查系统默认浏览器。");
+        }
     }
 
     public void CompleteSetup()
@@ -160,6 +283,7 @@ internal sealed class DashboardHost : IDisposable
 
     public async Task SaveSettingsAsync(JsonElement root, bool showMessage)
     {
+        var previousCoreIdentity = GetActiveCoreIdentity();
         var previousAutostart = Settings.Autostart;
         var requestedAutostart = root.TryGetProperty("autostart", out var autostart)
             && autostart.ValueKind is JsonValueKind.True or JsonValueKind.False
@@ -186,6 +310,12 @@ internal sealed class DashboardHost : IDisposable
         Settings.Save();
         RefreshIconCache();
         PublishStateChanged();
+
+        if (!string.Equals(previousCoreIdentity, GetActiveCoreIdentity(), StringComparison.OrdinalIgnoreCase))
+        {
+            ResetCoreUpdateState();
+            _ = CheckForCoreUpdateAsync();
+        }
 
         var autostartSucceeded = true;
         if (requestedAutostart != previousAutostart)
@@ -327,6 +457,18 @@ internal sealed class DashboardHost : IDisposable
     private void PublishStateChanged()
     {
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private string GetActiveCoreIdentity()
+    {
+        return $"{Settings.CoreType}|{Settings.ActiveCorePath}";
+    }
+
+    private void ResetCoreUpdateState()
+    {
+        LatestCoreVersion = "";
+        CoreUpdateAvailable = false;
+        PublishStateChanged();
     }
 
     private bool? GetActiveTunConfigured()

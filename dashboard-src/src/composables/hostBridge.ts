@@ -27,6 +27,13 @@ export type HostState = {
   lightweightMode?: boolean
   autostart?: boolean
   isAutostartUpdating?: boolean
+  appVersion?: string
+  latestAppVersion?: string
+  isAppUpdateChecking?: boolean
+  appUpdateAvailable?: boolean
+  latestCoreVersion?: string
+  isCoreUpdateChecking?: boolean
+  coreUpdateAvailable?: boolean
   canUpgradeCore?: boolean
   isCoreUpgrading?: boolean
   isCoreSwitching?: boolean
@@ -49,7 +56,14 @@ export type HostRuntimeState = Pick<
 >
 
 export type HostMessage = {
-  type?: 'state' | 'runtimeState' | 'logAppend' | 'iconCacheUpdated' | 'notice' | 'windowState' | string
+  type?:
+    | 'state'
+    | 'runtimeState'
+    | 'logAppend'
+    | 'iconCacheUpdated'
+    | 'notice'
+    | 'windowState'
+    | string
   state?: HostState
   runtimeState?: HostRuntimeState
   message?: string
@@ -66,6 +80,8 @@ export type HostCommand =
   | { type: 'windowClose' }
   | { type: 'requestWindowState' }
   | { type: 'requestState' }
+  | { type: 'checkAppUpdate' }
+  | { type: 'openAppRelease' }
   | { type: 'performance'; name: string; durationMs?: number }
   | { type: 'saveDashboardSettings'; settings: Record<string, string> }
   | ({ type: string } & Record<string, unknown>)
@@ -138,7 +154,8 @@ export const applyHostRuntimeState = (runtimeState: HostRuntimeState | undefined
     ...hostStateRef.value,
     ...runtimeState,
   }
-  hostWindow.__mihomoHostCoreVersion = runtimeState.coreVersion || hostWindow.__mihomoHostCoreVersion || ''
+  hostWindow.__mihomoHostCoreVersion =
+    runtimeState.coreVersion || hostWindow.__mihomoHostCoreVersion || ''
   if (typeof runtimeState.isWindowMaximized === 'boolean') {
     hostWindowMaximizedRef.value = runtimeState.isWindowMaximized
   }

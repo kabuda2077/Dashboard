@@ -1,17 +1,15 @@
-import type { Connection as SingboxConnectionRawMessage } from '@/gen/daemon/started_service_pb'
 import type { LOG_LEVEL } from '@/constant'
 
-export type BackendType = 'clash' | 'singbox'
+export type BackendType = 'clash'
 
 export type Backend = {
-  // 后端登录类型:'clash' 走 Clash REST/WS API,'singbox' 走 sing-box native gRPC。
-  // 旧记录缺省按 'clash' 迁移。
+  // 桌面版统一通过 Clash-compatible REST/WS API 连接 mihomo 与 sing-box。
   type: BackendType
   protocol: string
   host: string
   port: string
-  secondaryPath: string // 仅 clash
-  password: string // 通用:Clash secret / sing-box gRPC Bearer token
+  secondaryPath: string
+  password: string
   uuid: string
   label?: string
   disableUpgradeCore?: boolean // 仅 clash
@@ -148,7 +146,7 @@ export type ClashConnectionRawMessage = {
   }
 }
 
-export type ConnectionRawMessage = ClashConnectionRawMessage | SingboxConnectionRawMessage
+export type ConnectionRawMessage = ClashConnectionRawMessage
 
 export type Connection = ConnectionRawMessage & {
   downloadSpeed: number

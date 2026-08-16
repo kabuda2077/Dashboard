@@ -14,26 +14,6 @@
     >
       <h1 class="mb-1 text-lg font-medium">{{ $t('setup') }}</h1>
 
-      <div class="flex flex-col gap-1">
-        <label class="text-sm">{{ $t('backendType') }}</label>
-        <div class="join w-full">
-          <button
-            class="btn btn-sm join-item flex-1"
-            :class="form.type === 'clash' ? 'btn-primary' : 'border-base-border border'"
-            @click="form.type = 'clash'"
-          >
-            {{ $t('clashApi') }}
-          </button>
-          <button
-            class="btn btn-sm join-item flex-1"
-            :class="form.type === 'singbox' ? 'btn-primary' : 'border-base-border border'"
-            @click="form.type = 'singbox'"
-          >
-            {{ $t('singboxApi') }}
-          </button>
-        </div>
-      </div>
-
       <div class="flex gap-2">
         <div class="flex w-24 flex-none flex-col gap-1">
           <label class="text-sm">{{ $t('protocol') }}</label>
@@ -64,10 +44,7 @@
       </div>
 
       <div class="flex gap-2">
-        <div
-          v-if="form.type === 'clash'"
-          class="flex min-w-0 flex-1 flex-col gap-1"
-        >
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
           <label class="flex items-center gap-1 text-sm">
             <span class="truncate">{{ $t('secondaryPath') }} ({{ $t('optional') }})</span>
             <span
@@ -163,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable, isSingboxChannelAvailable } from '@/assembly/backend'
+import { isBackendAvailable } from '@/assembly/backend'
 import DashboardSettings from '@/components/common/DashboardSettings.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import EditBackendModal from '@/components/settings/backend/EditBackendModal.vue'
@@ -174,7 +151,7 @@ import { showNotification } from '@/helper/notification'
 import { getBackendFromUrl, getLabelFromBackend } from '@/helper/utils'
 import router from '@/router'
 import { activeUuid, addBackend, backendList, removeBackend } from '@/store/setup'
-import type { Backend, BackendType } from '@/types'
+import type { Backend } from '@/types'
 import {
   ChevronUpDownIcon,
   PencilIcon,
@@ -188,7 +165,7 @@ import Draggable from 'vuedraggable'
 const { t } = useI18n()
 
 const form = reactive({
-  type: 'clash' as BackendType,
+  type: 'clash' as const,
   protocol: 'http',
   host: '127.0.0.1',
   port: '9090',
@@ -256,16 +233,9 @@ const handleSubmit = async (setupForm: SetupForm, quiet = false) => {
   const candidate: Backend = { uuid: '', ...setupForm }
 
   try {
-    if (setupForm.type === 'singbox') {
-      if (!(await isSingboxChannelAvailable(candidate, 10000))) {
-        if (!quiet) alert(t('singboxConnectionFailed'))
-        return
-      }
-    } else {
-      if (!(await isBackendAvailable(candidate, 10000))) {
-        if (!quiet) alert(t('backendConnectionFailed'))
-        return
-      }
+    if (!(await isBackendAvailable(candidate, 10000))) {
+      if (!quiet) alert(t('backendConnectionFailed'))
+      return
     }
 
     addBackend(setupForm)
