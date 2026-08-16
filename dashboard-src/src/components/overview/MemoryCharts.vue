@@ -1,40 +1,32 @@
 <template>
-  <BasicCharts
+  <TimeSeriesChart
     :data="chartsData"
     :label-formatter="labelFormatter"
-    :tool-tip-formatter="tooltipFormatter"
-    :min="100 * 1024 * 1024"
+    :tooltip-formatter="tooltipFormatter"
+    :y-axis-floor="100 * 1024 * 1024"
+    :window-seconds="timeSaved"
   />
 </template>
 
 <script setup lang="ts">
-import { getToolTipForParams } from '@/helper'
+import TimeSeriesChart from '@/components/charts/TimeSeriesChart.vue'
+import { formatHistoryTooltipParam } from '@/components/charts/chartTooltip'
+import type { ChartTooltipParam } from '@/components/charts/chartTypes'
 import { prettyBytesHelper } from '@/helper/utils'
-import { memoryHistory } from '@/store/overview'
+import { memoryHistory, timeSaved } from '@/store/overview'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BasicCharts from './BasicCharts.vue'
 
 const { t } = useI18n()
-const chartsData = computed(() => {
-  return [
-    {
-      name: t('memoryUsage'),
-      data: memoryHistory.value,
-    },
-  ]
-})
+const chartsData = computed(() => [
+  {
+    name: t('memoryUsage'),
+    data: memoryHistory.value,
+  },
+])
 
-const labelFormatter = (value: number) => {
-  return `${prettyBytesHelper(value, {
-    maximumFractionDigits: 0,
-    binary: true,
-  })}`
-}
-const tooltipFormatter = (value: ToolTipParams[]) => {
-  return getToolTipForParams(value[0], {
-    binary: true,
-    suffix: '',
-  })
-}
+const labelFormatter = (value: number) =>
+  prettyBytesHelper(value, { maximumFractionDigits: 0, binary: true })
+const tooltipFormatter = (value: ChartTooltipParam[]) =>
+  value.map((item) => formatHistoryTooltipParam(item, { binary: true })).join('')
 </script>

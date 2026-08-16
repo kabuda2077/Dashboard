@@ -1,47 +1,30 @@
 <template>
-  <BasicCharts
+  <TimeSeriesChart
     :data="chartsData"
     :label-formatter="labelFormatter"
-    :tool-tip-formatter="tooltipFormatter"
-    :min="100"
+    :tooltip-formatter="tooltipFormatter"
+    :y-axis-floor="100"
+    :window-seconds="timeSaved"
   />
 </template>
 
 <script setup lang="ts">
-import { connectionsHistory } from '@/store/overview'
-import dayjs from 'dayjs'
+import TimeSeriesChart from '@/components/charts/TimeSeriesChart.vue'
+import { formatTimeSeriesTooltipParam } from '@/components/charts/chartTooltip'
+import type { ChartTooltipParam } from '@/components/charts/chartTypes'
+import { connectionsHistory, timeSaved } from '@/store/overview'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BasicCharts from './BasicCharts.vue'
 
 const { t } = useI18n()
-const chartsData = computed(() => {
-  return [
-    {
-      name: t('connections'),
-      data: connectionsHistory.value,
-    },
-  ]
-})
+const chartsData = computed(() => [
+  {
+    name: t('connections'),
+    data: connectionsHistory.value,
+  },
+])
 
-const labelFormatter = (value: number) => {
-  return `       ${value}`
-}
-const tooltipFormatter = (value: ToolTipParams[]) => {
-  return value
-    .map((item) => {
-      // fake data
-      if (item.data.init) {
-        return
-      }
-      const itemValue = Array.isArray(item.data.value) ? item.data.value[1] : item.data.value
-      return `
-    <div class="flex items-center my-2 gap-1">
-      <div class="w-4 h-4 rounded-full" style="background-color: ${item.color}"></div>
-      ${item.seriesName}
-      (${dayjs(item.data.name).format('HH:mm:ss')}): ${itemValue}
-    </div>`
-    })
-    .join('\n')
-}
+const labelFormatter = (value: number) => `       ${value}`
+const tooltipFormatter = (value: ChartTooltipParam[]) =>
+  value.map((item) => formatTimeSeriesTooltipParam(item, String)).join('\n')
 </script>

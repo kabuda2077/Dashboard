@@ -15,6 +15,7 @@
           <MiniSparkline
             :data="uploadSpeedHistory"
             :min="60000"
+            :window-seconds="timeSaved"
             color="info"
             :name="t('upload')"
             :label-formatter="speedLabelFormatter"
@@ -37,6 +38,7 @@
           <MiniSparkline
             :data="downloadSpeedHistory"
             :min="60000"
+            :window-seconds="timeSaved"
             :name="t('download')"
             :label-formatter="speedLabelFormatter"
             :tooltip-formatter="speedTooltipFormatter"
@@ -62,6 +64,7 @@
           <MiniSparkline
             :data="connectionsHistory"
             :min="10"
+            :window-seconds="timeSaved"
             :name="t('connections')"
             :label-formatter="connLabelFormatter"
             :tooltip-formatter="connTooltipFormatter"
@@ -74,8 +77,12 @@
 </template>
 
 <script setup lang="ts">
+import {
+  formatHistoryTooltipParam,
+  formatTimeSeriesTooltipParam,
+} from '@/components/charts/chartTooltip'
+import type { ChartTooltipParam } from '@/components/charts/chartTypes'
 import MiniSparkline from '@/components/overview/MiniSparkline.vue'
-import { getToolTipForParams } from '@/helper'
 import { prettyBytesHelper } from '@/helper/utils'
 import { activeConnections, downloadTotal, uploadTotal } from '@/store/connections'
 import {
@@ -83,10 +90,10 @@ import {
   downloadSpeed,
   downloadSpeedHistory,
   memory,
+  timeSaved,
   uploadSpeed,
   uploadSpeedHistory,
 } from '@/store/overview'
-import dayjs from 'dayjs'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -109,27 +116,18 @@ const speedLabelFormatter = (value: number) => {
   return `${prettyBytesHelper(value, { maximumFractionDigits: 0, binary: false })}/s`
 }
 
-const speedTooltipFormatter = (value: ToolTipParams[]) => {
-  return value.map((item) => getToolTipForParams(item, { binary: false, suffix: '/s' })).join('')
+const speedTooltipFormatter = (value: ChartTooltipParam[]) => {
+  return value
+    .map((item) => formatHistoryTooltipParam(item, { binary: false, suffix: '/s' }))
+    .join('')
 }
 
 const connLabelFormatter = (value: number) => {
   return `${value}`
 }
 
-const connTooltipFormatter = (value: ToolTipParams[]) => {
-  return value
-    .map((item) => {
-      if (item.data.init) return
-      const itemValue = Array.isArray(item.data.value) ? item.data.value[1] : item.data.value
-      return `
-    <div class="flex items-center my-2 gap-1">
-      <div class="w-4 h-4 rounded-full" style="background-color: ${item.color}"></div>
-      ${item.seriesName}
-      (${dayjs(item.data.name).format('HH:mm:ss')}): ${itemValue}
-    </div>`
-    })
-    .join('\n')
+const connTooltipFormatter = (value: ChartTooltipParam[]) => {
+  return value.map((item) => formatTimeSeriesTooltipParam(item, String)).join('\n')
 }
 </script>
 

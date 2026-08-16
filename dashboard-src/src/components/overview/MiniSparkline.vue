@@ -4,115 +4,62 @@
       ref="chartRef"
       class="h-full w-full"
     />
-    <span
-      class="border-b-primary/30 border-t-primary/60 border-l-info/30 border-r-info/60 text-base-content/60 bg-base-100/70 hidden"
-      ref="colorRef"
-    />
-    <span
-      class="border-b-low-latency/30 border-t-low-latency/60 border-l-medium-latency/30 border-r-medium-latency/60 text-high-latency/30 bg-high-latency/60 hidden"
-      ref="latencyColorRef"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { isMiddleScreen } from '@/helper/utils'
-import { timeSaved, type HistoryPoint } from '@/store/overview'
-import { font, theme } from '@/store/settings'
-import { useElementSize } from '@vueuse/core'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import * as echarts from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { debounce } from 'lodash'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { ChartPoint, ChartTooltipParam } from '@/components/charts/chartTypes'
+import { getChartPointValue, isTimestampedChartPoint } from '@/components/charts/chartTypes'
+import { echarts, useChartTheme, useEChart, type EChartOption } from '@/composables/useEChart'
+import { timeSaved } from '@/store/overview'
+import { computed, ref } from 'vue'
 
-echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
+type SparklineColor = 'primary' | 'info' | 'lowLatency' | 'mediumLatency' | 'highLatency'
 
 const props = withDefaults(
   defineProps<{
-    data: (HistoryPoint | { name: number; value: number })[]
+    data: ChartPoint[]
     min?: number
-    color?: 'primary' | 'info' | 'lowLatency' | 'mediumLatency' | 'highLatency'
+    color?: SparklineColor
     name?: string
     showSymbols?: boolean
+    windowSeconds?: number
     labelFormatter?: (value: number) => string
-    tooltipFormatter?: (value: ToolTipParams[]) => string
+    tooltipFormatter?: (value: ChartTooltipParam[]) => string
   }>(),
-  { min: 1, color: 'primary' },
+  { min: 1, color: 'primary', windowSeconds: timeSaved },
 )
 
-const chartRef = ref()
-const colorRef = ref()
-const latencyColorRef = ref()
+const chartRef = ref<HTMLElement>()
+const { colors, fontFamily } = useChartTheme(chartRef)
 
-const colorSet = {
-  primary30: '',
-  primary60: '',
-  info30: '',
-  info60: '',
-  lowLatency30: '',
-  lowLatency60: '',
-  mediumLatency30: '',
-  mediumLatency60: '',
-  highLatency30: '',
-  highLatency60: '',
-  baseContent40: '',
-  baseContent: '',
-  base70: '',
+const getSeriesColors = (color: SparklineColor) => {
+  switch (color) {
+    case 'info':
+      return [colors.info60, colors.info30]
+    case 'lowLatency':
+      return [colors.lowLatency60, colors.lowLatency30]
+    case 'mediumLatency':
+      return [colors.mediumLatency60, colors.mediumLatency30]
+    case 'highLatency':
+      return [colors.highLatency60, colors.highLatency30]
+    default:
+      return [colors.primary60, colors.primary30]
+  }
 }
 
-let fontFamily = ''
-
-const updateColorSet = () => {
-  if (!colorRef.value) return
-  const s = getComputedStyle(colorRef.value)
-  colorSet.baseContent = s.getPropertyValue('--color-base-content').trim()
-  colorSet.base70 = s.backgroundColor
-  colorSet.baseContent40 = s.color
-  colorSet.primary30 = s.borderBottomColor
-  colorSet.primary60 = s.borderTopColor
-  colorSet.info30 = s.borderLeftColor
-  colorSet.info60 = s.borderRightColor
-
-  const latencyS = getComputedStyle(latencyColorRef.value)
-  colorSet.lowLatency30 = latencyS.borderBottomColor
-  colorSet.lowLatency60 = latencyS.borderTopColor
-  colorSet.mediumLatency30 = latencyS.borderLeftColor
-  colorSet.mediumLatency60 = latencyS.borderRightColor
-  colorSet.highLatency30 = latencyS.color
-  colorSet.highLatency60 = latencyS.backgroundColor
-}
-
-const updateFontFamily = () => {
-  if (!colorRef.value) return
-  fontFamily = getComputedStyle(colorRef.value).fontFamily
-}
-
-const seriesColor = computed(() => {
-  if (props.color === 'info') return colorSet.info60
-  if (props.color === 'lowLatency') return colorSet.lowLatency60
-  if (props.color === 'mediumLatency') return colorSet.mediumLatency60
-  if (props.color === 'highLatency') return colorSet.highLatency60
-  return colorSet.primary60
-})
-const areaColor = computed(() => {
-  if (props.color === 'info') return colorSet.info30
-  if (props.color === 'lowLatency') return colorSet.lowLatency30
-  if (props.color === 'mediumLatency') return colorSet.mediumLatency30
-  if (props.color === 'highLatency') return colorSet.highLatency30
-  return colorSet.primary30
-})
-
-const isTimeSeries = computed(() => Array.isArray(props.data.at(-1)?.value))
-
-const options = computed(() => {
-  const latest = props.data.at(-1)?.name ?? Date.now()
-  const xAxis = isTimeSeries.value
+const options = computed<EChartOption>(() => {
+  const latestPoint = props.data.at(-1)
+  const isTimeSeries = latestPoint
+    ? Array.isArray(latestPoint) || isTimestampedChartPoint(latestPoint)
+    : false
+  const latest = latestPoint ? getChartPointValue(latestPoint)[0] : Date.now()
+  const [lineColor, areaColor] = getSeriesColors(props.color)
+  const xAxis = isTimeSeries
     ? {
         type: 'time' as const,
         show: false,
-        min: latest - (timeSaved - 1) * 1000,
+        min: latest - (props.windowSeconds - 1) * 1000,
         max: latest - 1000,
       }
     : {
@@ -122,20 +69,20 @@ const options = computed(() => {
       }
 
   return {
-    animationDurationUpdate: isTimeSeries.value ? 1000 : 0,
-    animationEasingUpdate: 'linear' as const,
+    animationDurationUpdate: isTimeSeries ? 1000 : 0,
+    animationEasingUpdate: 'linear',
     grid: { left: 0, top: 0, right: props.labelFormatter ? 30 : 0, bottom: 0 },
     tooltip: props.tooltipFormatter
       ? {
           show: true,
-          trigger: 'axis' as const,
-          backgroundColor: colorSet.base70,
-          borderColor: colorSet.base70,
+          trigger: 'axis',
+          backgroundColor: colors.base70,
+          borderColor: colors.base70,
           confine: true,
           padding: [0, 5],
           textStyle: {
-            color: colorSet.baseContent,
-            fontFamily,
+            color: colors.baseContent,
+            fontFamily: fontFamily.value,
             fontSize: 11,
           },
           formatter: props.tooltipFormatter,
@@ -143,9 +90,9 @@ const options = computed(() => {
       : { show: false },
     xAxis,
     yAxis: {
-      type: 'value' as const,
+      type: 'value',
       show: true,
-      position: 'right' as const,
+      position: 'right',
       splitNumber: 2,
       min: 0,
       max: (value: { max: number }) => Math.max(value.max, props.min),
@@ -157,8 +104,8 @@ const options = computed(() => {
             show: true,
             inside: false,
             fontSize: 9,
-            color: colorSet.baseContent40,
-            fontFamily,
+            color: colors.baseContent60,
+            fontFamily: fontFamily.value,
             margin: 4,
             formatter: (value: number) => (value === 0 ? '' : props.labelFormatter!(value)),
           }
@@ -166,19 +113,19 @@ const options = computed(() => {
     },
     series: [
       {
-        type: 'line' as const,
+        type: 'line',
         name: props.name,
         symbol: props.showSymbols ? 'circle' : 'none',
         symbolSize: 3,
         smooth: true,
         lineStyle: { width: 1.5 },
         data: props.data,
-        color: seriesColor.value,
+        color: lineColor,
         emphasis: { disabled: true },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: seriesColor.value },
-            { offset: 1, color: areaColor.value },
+            { offset: 0, color: lineColor },
+            { offset: 1, color: areaColor },
           ]),
         },
       },
@@ -186,41 +133,5 @@ const options = computed(() => {
   }
 })
 
-let myChart: echarts.ECharts | null = null
-let touchEndHandler: ((e: TouchEvent) => void) | null = null
-
-onMounted(() => {
-  updateColorSet()
-  updateFontFamily()
-  watch(theme, updateColorSet)
-  watch(font, updateFontFamily)
-
-  myChart = echarts.init(chartRef.value)
-  myChart.setOption(options.value)
-
-  watch(options, () => {
-    myChart?.setOption(options.value)
-  })
-
-  const { width } = useElementSize(chartRef)
-  const resize = debounce(() => myChart?.resize(), 100)
-  watch(width, resize)
-
-  if (isMiddleScreen.value && chartRef.value) {
-    touchEndHandler = () => {
-      myChart?.dispatchAction({ type: 'hideTip' })
-    }
-    chartRef.value.addEventListener('touchend', touchEndHandler)
-  }
-})
-
-onUnmounted(() => {
-  if (chartRef.value && touchEndHandler) {
-    chartRef.value.removeEventListener('touchend', touchEndHandler)
-  }
-  if (myChart) {
-    myChart.dispose()
-    myChart = null
-  }
-})
+useEChart(chartRef, options)
 </script>
