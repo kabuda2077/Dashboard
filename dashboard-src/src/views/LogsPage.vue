@@ -1,6 +1,11 @@
 <template>
-  <div class="relative size-full overflow-x-hidden">
+  <div
+    class="relative size-full"
+    :class="isLogTable ? 'flex flex-col overflow-hidden' : 'overflow-x-hidden'"
+    :style="isLogTable ? padding : undefined"
+  >
     <VirtualScroller
+      v-if="!isLogTable"
       :data="renderLogs"
       :size="44"
     >
@@ -14,6 +19,13 @@
         />
       </template>
     </VirtualScroller>
+    <template v-else>
+      <LogsCtrl />
+      <LogsTable
+        :logs="renderLogs"
+        @connection-click="handlerConnectionClick"
+      />
+    </template>
     <DialogWrapper
       v-model="connectionLogsDialogVisible"
       no-padding
@@ -36,6 +48,9 @@ import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import VirtualScroller from '@/components/common/VirtualScroller.vue'
 import LogsCtrl from '@/components/controls/LogsCtrl.tsx'
 import LogsCard from '@/components/logs/LogsCard.vue'
+import LogsTable from '@/components/logs/LogsTable.vue'
+import { usePaddingForViews } from '@/composables/paddingViews'
+import { LIST_DISPLAY_STYLE } from '@/constant'
 import { toSearchRegex } from '@/helper/search'
 import {
   getLogConnectionID,
@@ -45,11 +60,14 @@ import {
   logTypeFilter,
   logs,
 } from '@/store/logs'
+import { logDisplayStyle } from '@/store/settings'
 import type { LogWithSeq } from '@/types'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const isLogTable = computed(() => logDisplayStyle.value === LIST_DISPLAY_STYLE.TABLE)
+const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 
 const renderLogs = computed(() => {
   let renderLogs = logs.value

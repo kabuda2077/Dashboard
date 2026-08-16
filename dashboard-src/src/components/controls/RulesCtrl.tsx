@@ -7,12 +7,13 @@ import {
   updateRuleProviderAPI,
 } from '@/assembly/rules'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { RULE_TAB_TYPE } from '@/constant'
+import { LIST_DISPLAY_STYLE, RULE_TAB_TYPE } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import {
   disconnectOnRuleDisable,
   displayLatencyInRule,
   displayNowNodeInRule,
+  ruleDisplayStyle,
 } from '@/store/settings'
 import { ArrowPathIcon, WrenchScrewdriverIcon } from '@heroicons/vue/24/outline'
 import { computed, defineComponent, ref } from 'vue'
@@ -126,6 +127,20 @@ export default defineComponent({
                     type="checkbox"
                     v-model={displayNowNodeInRule.value}
                   />
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-label">{t('ruleStyle')}</div>
+                  <select
+                    class="select select-sm w-28"
+                    value={ruleDisplayStyle.value}
+                    onChange={(event) =>
+                      (ruleDisplayStyle.value = (event.target as HTMLSelectElement)
+                        .value as LIST_DISPLAY_STYLE)
+                    }
+                  >
+                    <option value={LIST_DISPLAY_STYLE.CARD}>{t('card')}</option>
+                    <option value={LIST_DISPLAY_STYLE.TABLE}>{t('table')}</option>
+                  </select>
                 </div>
                 <div class="setting-item">
                   <div class="setting-item-label">{t('displayLatencyNumber')}</div>

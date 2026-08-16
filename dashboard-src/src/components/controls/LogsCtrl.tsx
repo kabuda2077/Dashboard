@@ -1,6 +1,6 @@
 import { isSingBoxCore } from '@/assembly/version'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { LOG_LEVEL } from '@/constant'
+import { LIST_DISPLAY_STYLE, LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {
   initLogs,
@@ -12,7 +12,7 @@ import {
   logTypeFilter,
   logs,
 } from '@/store/logs'
-import { logRetentionLimit, logSearchHistory } from '@/store/settings'
+import { logDisplayStyle, logRetentionLimit, logSearchHistory } from '@/store/settings'
 import {
   ArrowDownTrayIcon,
   LinkIcon,
@@ -204,6 +204,20 @@ export default defineComponent({
                     max="9999"
                     v-model={logRetentionLimit.value}
                   />
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-label">{t('logStyle')}</div>
+                  <select
+                    class="select select-sm w-28"
+                    value={logDisplayStyle.value}
+                    onChange={(event) =>
+                      (logDisplayStyle.value = (event.target as HTMLSelectElement)
+                        .value as LIST_DISPLAY_STYLE)
+                    }
+                  >
+                    <option value={LIST_DISPLAY_STYLE.CARD}>{t('card')}</option>
+                    <option value={LIST_DISPLAY_STYLE.TABLE}>{t('table')}</option>
+                  </select>
                 </div>
                 <div class="setting-item">
                   <div class="setting-item-label shrink-0!">{t('hideLogRegex')}</div>

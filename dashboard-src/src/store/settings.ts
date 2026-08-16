@@ -13,6 +13,7 @@ import {
   IP_INFO_API,
   IS_APPLE_DEVICE,
   LANG,
+  LIST_DISPLAY_STYLE,
   OVERVIEW_CARD,
   PROXY_CARD_SIZE,
   PROXY_CHAIN_DIRECTION,
@@ -348,9 +349,17 @@ export const sourceIPLabelList = useStorage<SourceIPLabel[]>('config/source-ip-l
 export const displayNowNodeInRule = useStorage('config/display-now-node-in-rule', true)
 export const displayLatencyInRule = useStorage('config/display-latency-in-rule', true)
 export const disconnectOnRuleDisable = useStorage('config/disconnect-on-rule-disable', true)
+export const ruleDisplayStyle = useStorage<LIST_DISPLAY_STYLE>(
+  'config/rule-display-style',
+  LIST_DISPLAY_STYLE.CARD,
+)
 
 // logs
 export const logRetentionLimit = useStorage<number>('config/log-retention-limit', 1000)
+export const logDisplayStyle = useStorage<LIST_DISPLAY_STYLE>(
+  'config/log-display-style',
+  LIST_DISPLAY_STYLE.CARD,
+)
 export const logSearchHistory = useStorage<string[]>('cache/log-search-history', [])
 
 // settings visibility

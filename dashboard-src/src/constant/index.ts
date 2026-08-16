@@ -93,6 +93,11 @@ export enum CONNECTION_DISPLAY_STYLE {
   TABLE = 'table',
 }
 
+export enum LIST_DISPLAY_STYLE {
+  CARD = 'card',
+  TABLE = 'table',
+}
+
 export enum RULE_TAB_TYPE {
   RULES = 'rules',
   PROVIDER = 'ruleProvider',
