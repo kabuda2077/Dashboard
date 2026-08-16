@@ -21,6 +21,12 @@
           >
             {{ updateFeedback }}
           </span>
+          <span
+            v-else-if="latestAppVersion"
+            class="text-base-content/55 truncate text-xs font-normal"
+          >
+            最新版本 {{ latestAppVersion }}
+          </span>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <button
@@ -63,6 +69,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const currentAppVersion = computed(() =>
   hostState.value.appVersion ? `v${hostState.value.appVersion}` : '未知版本',
+)
+const latestAppVersion = computed(() =>
+  hostState.value.latestAppVersion ? `v${hostState.value.latestAppVersion}` : '',
 )
 const updateFeedback = ref('')
 let clearFeedbackTimer: ReturnType<typeof setTimeout> | undefined
