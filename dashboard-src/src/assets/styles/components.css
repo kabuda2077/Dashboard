@@ -40,7 +40,7 @@ div {
     border-bottom: none;
   }
   .setting-item-label {
-    @apply flex-1 text-sm;
+    @apply shrink-0 grow text-sm;
     svg {
       @apply text-base-content/40 inline-block;
     }

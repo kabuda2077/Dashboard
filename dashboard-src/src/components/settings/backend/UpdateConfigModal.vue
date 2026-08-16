@@ -30,7 +30,7 @@
         <label class="label cursor-pointer gap-2">
           <span class="text-sm">{{ $t('forceUpdate') }}</span>
           <input
-            class="toggle toggle-sm"
+            class="toggle"
             type="checkbox"
             v-model="forceUpdate"
           />

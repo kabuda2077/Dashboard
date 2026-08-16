@@ -3,7 +3,6 @@ import { connectionAccessor } from '@/assembly/connections'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { NOT_CONNECTED, PROXY_CHAIN_DIRECTION, PROXY_TYPE, ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
-import { timeSaved } from '@/store/overview'
 import {
   customThemes,
   lowLatency,
@@ -124,14 +123,15 @@ export const getToolTipForParams = (
   const { suffix = '', binary = false } = config
 
   // fake data
-  if (params.data.name < timeSaved + 1) {
+  if (params.data.init) {
     return ``
   }
+  const value = Array.isArray(params.data.value) ? params.data.value[1] : params.data.value
   return `
     <div class="flex items-center my-2 gap-1">
       <div class="w-4 h-4 rounded-full" style="background-color: ${params.color}"></div>
       ${params.seriesName}
-      (${dayjs(params.data.name).format('HH:mm:ss')}): ${prettyBytesHelper(params.data.value, {
+      (${dayjs(params.data.name).format('HH:mm:ss')}): ${prettyBytesHelper(value, {
         binary: binary,
       })}${suffix}
     </div>`
@@ -155,8 +155,15 @@ export const renderRoutes = computed(() => {
   const routeCapable: Partial<Record<ROUTE_NAME, boolean>> = {
     [ROUTE_NAME.rules]: !activeBackend.value || caps.rules,
   }
-  return Object.values(ROUTE_NAME).filter((r) => {
-    if (r === ROUTE_NAME.setup) return false
+  const routeOrder = [
+    ROUTE_NAME.core,
+    ROUTE_NAME.proxies,
+    ROUTE_NAME.connections,
+    ROUTE_NAME.overview,
+    ROUTE_NAME.logs,
+    ROUTE_NAME.rules,
+  ]
+  return routeOrder.filter((r) => {
     if (!splitOverviewPage.value && r === ROUTE_NAME.overview) return false
     if (r in routeCapable && routeCapable[r] === false) return false
     return true

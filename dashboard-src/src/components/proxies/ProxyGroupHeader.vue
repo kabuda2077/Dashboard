@@ -13,20 +13,11 @@
       {{ proxyGroup.type }} · {{ proxiesCount }}
     </span>
     <ProxyGroupFilter :group-name="name" />
-    <button
+    <VisibilityToggle
       v-if="manageHiddenGroup"
-      class="btn btn-circle btn-ghost btn-xs"
-      @click.stop="handlerGroupToggle"
-    >
-      <EyeIcon
-        v-if="!hiddenGroup"
-        class="h-3 w-3"
-      />
-      <EyeSlashIcon
-        v-else
-        class="text-warning h-3 w-3"
-      />
-    </button>
+      :hidden="hiddenGroup"
+      @toggle="handlerGroupToggle"
+    />
     <LatencyTag
       :class="twMerge('bg-base-200/40 hover:bg-base-200/70')"
       :loading="isLatencyTesting"
@@ -53,9 +44,9 @@ import { getConnectionChains } from '@/helper'
 import { activeConnections } from '@/store/connections'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { manageHiddenGroup, proxyGroupIconMargin, proxyGroupIconSize } from '@/store/settings'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed } from 'vue'
+import VisibilityToggle from '../common/VisibilityToggle.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxyGroupFilter from './ProxyGroupFilter.vue'
 import ProxyGroupNow from './ProxyGroupNow.vue'
@@ -80,7 +71,7 @@ const downloadTotal = computed(() => {
 })
 
 const hiddenGroup = computed({
-  get: () => isHiddenGroup(props.name),
+  get: () => Boolean(isHiddenGroup(props.name)),
   set: (value: boolean) => {
     hiddenGroupMap.value[props.name] = value
   },

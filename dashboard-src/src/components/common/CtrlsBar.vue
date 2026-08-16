@@ -10,7 +10,7 @@
     >
       <div
         class="ctrls-bar pointer-events-auto relative min-w-0 overflow-visible!"
-        :class="showWindowControls ? 'w-fit' : 'w-full'"
+        :class="[showWindowControls ? 'w-fit' : 'w-full', solid && 'ctrls-bar-solid']"
         :style="ctrlsBarContentStyle"
       >
         <slot></slot>
@@ -24,28 +24,21 @@
 </template>
 <script lang="ts" setup>
 import WindowControls from '@/components/common/WindowControls.vue'
+import { hasHostBridge } from '@/composables/hostBridge'
 import { ctrlsBottom } from '@/composables/paddingViews'
 import { isMiddleScreen } from '@/helper/utils'
 import { isSidebarCollapsed } from '@/store/settings'
 import { useElementBounding } from '@vueuse/core'
 import { computed, onUnmounted, ref, watch } from 'vue'
 
-type HostWindow = Window & {
-  chrome?: {
-    webview?: {
-      postMessage?: (message: unknown) => void
-    }
-  }
-}
-
 const ctrlsBarRef = ref<HTMLDivElement | null>(null)
 defineProps<{
   rowClass?: string
+  solid?: boolean
 }>()
 const { bottom: ctrlsBarBottom } = useElementBounding(ctrlsBarRef)
-const hasHostWindowControls = Boolean((window as HostWindow).chrome?.webview?.postMessage)
 const showWindowControls = computed(
-  () => !isMiddleScreen.value && (hasHostWindowControls || import.meta.env.DEV),
+  () => !isMiddleScreen.value && (hasHostBridge || import.meta.env.DEV),
 )
 const ctrlsBarStyle = computed(() => ({
   left: isMiddleScreen.value ? '0' : isSidebarCollapsed.value ? '4.5rem' : '16rem',

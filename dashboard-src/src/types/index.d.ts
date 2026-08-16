@@ -1,4 +1,5 @@
 import type { Connection as SingboxConnectionRawMessage } from '@/gen/daemon/started_service_pb'
+import type { LOG_LEVEL } from '@/constant'
 
 export type BackendType = 'clash' | 'singbox'
 
@@ -155,7 +156,7 @@ export type Connection = ConnectionRawMessage & {
 }
 
 export type Log = {
-  type: 'info' | 'warning' | 'error' | 'debug'
+  type: LOG_LEVEL
   payload: string
 }
 

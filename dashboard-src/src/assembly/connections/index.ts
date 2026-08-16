@@ -3,9 +3,11 @@
 import { isSingboxBackend } from '@/assembly/backend'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
 import type { Connection } from '@/types'
-import type { ConnectionDisplayOptions } from './accessor'
+import type { ConnectionDisplayOptions, ConnectionsSnapshot } from './accessor'
 import * as clash from './clash'
 import * as singbox from './singbox'
+
+export type { ConnectionsSnapshot }
 
 const backend = () => (isSingboxBackend.value ? singbox : clash)
 
@@ -13,7 +15,7 @@ export const disconnectByIdAPI = (id: string) => backend().disconnectByIdAPI(id)
 
 export const disconnectAllAPI = () => backend().disconnectAllAPI()
 
-export const fetchConnectionsAPI = <T>() => backend().fetchConnectionsAPI<T>()
+export const fetchConnectionsAPI = () => backend().fetchConnectionsAPI()
 
 // 当前后端的连接字段访问器(直接读取原始数据,不做 clash 形状化)。
 export const connectionAccessor = () => backend().connectionAccessor

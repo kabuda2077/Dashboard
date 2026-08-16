@@ -27,6 +27,10 @@ import { overviewCardOrder } from '@/store/settings'
 import type { Component } from 'vue'
 import { computed } from 'vue'
 
+defineOptions({
+  name: 'OverviewPage',
+})
+
 const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,

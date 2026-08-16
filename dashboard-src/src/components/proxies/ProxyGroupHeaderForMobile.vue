@@ -20,24 +20,22 @@
     </div>
     <div class="flex items-center">
       <div class="flex flex-1 items-center gap-1 truncate">
-        <button
+        <VisibilityToggle
           v-if="manageHiddenGroup"
-          class="btn btn-circle btn-xs z-10"
-          @click.stop="handlerGroupToggle"
-        >
-          <EyeIcon
-            v-if="!hiddenGroup"
-            class="h-3 w-3"
-          />
-          <EyeSlashIcon
-            v-else
-            class="h-3 w-3"
-          />
-        </button>
+          :hidden="hiddenGroup"
+          class="z-10"
+          @toggle="handlerGroupToggle"
+        />
         <ProxyGroupNow
           :name="proxyGroup.name"
           :mobile="true"
         />
+      </div>
+      <div
+        v-if="!twoColumnProxyGroup || displayContent"
+        class="text-base-content/40 mr-2 min-w-12 shrink-0 text-right text-xs tabular-nums"
+      >
+        {{ prettyBytesHelper(downloadTotal) }}/s
       </div>
       <LatencyTag
         :class="twMerge('bg-base-200/40 hover:bg-base-200/70 z-10')"
@@ -59,11 +57,14 @@
 
 <script setup lang="ts">
 import { isHiddenGroup } from '@/helper'
+import { getConnectionChains } from '@/helper'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
-import { manageHiddenGroup } from '@/store/settings'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
+import { prettyBytesHelper } from '@/helper/utils'
+import { activeConnections } from '@/store/connections'
+import { manageHiddenGroup, twoColumnProxyGroup } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
 import { computed } from 'vue'
+import VisibilityToggle from '../common/VisibilityToggle.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxyGroupFilter from './ProxyGroupFilter.vue'
 import ProxyGroupNow from './ProxyGroupNow.vue'
@@ -82,8 +83,14 @@ const emit = defineEmits<{
 
 const proxyGroup = computed(() => proxyMap.value[props.name])
 
+const downloadTotal = computed(() => {
+  return activeConnections.value
+    .filter((conn) => getConnectionChains(conn).includes(props.name))
+    .reduce((total, conn) => total + conn.downloadSpeed, 0)
+})
+
 const hiddenGroup = computed({
-  get: () => isHiddenGroup(props.name),
+  get: () => Boolean(isHiddenGroup(props.name)),
   set: (value: boolean) => {
     hiddenGroupMap.value[props.name] = value
   },

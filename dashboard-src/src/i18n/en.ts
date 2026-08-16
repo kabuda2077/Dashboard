@@ -73,6 +73,9 @@ const en = {
   endpointLabel: 'Endpoint',
   activeLabel: 'Active',
   availableLabel: 'Available',
+  addRow: 'Add row',
+  dragOrClickToAdd: 'Drag or click to add',
+  startTime: 'Start time',
   sshConfiguration: 'SSH Configuration',
   terminalType: 'Terminal type',
   rememberSSHOptions: 'Remember SSH options',
@@ -169,6 +172,7 @@ const en = {
   updateGeoSuccess: 'Geo database updated successfully',
   chains: 'Chains',
   outbound: 'Outbound',
+  proxyGroup: 'Proxy group',
   sortBy: 'Sort by',
   rule: 'Rule',
   sourceIP: 'Source IP',
@@ -185,6 +189,11 @@ const en = {
   sourcePort: 'Source port',
   destination: 'Resolved address',
   destinationType: 'Resolved type',
+  geoip: 'GeoIP',
+  geoipCountryDatabaseURL: 'GeoIP country database URL',
+  geoipASNDatabaseURL: 'GeoIP ASN database URL',
+  geoipDatabaseURLTip:
+    'Used to resolve connection IP country and ASN info locally. The mmdb file is downloaded from this URL and cached in the browser. Leave empty to use the default.',
   inboundUser: 'Inbound user',
   outboundType: 'Outbound type',
   fromOutbound: 'From outbound',
@@ -410,6 +419,10 @@ const en = {
   uploadSettingsIconReflectListRemoved:
     'Custom icon data was too large and has been removed during upload. Please reduce it and try again.',
   syncSettingsSuccess: 'Settings synced successfully',
+  syncSettingsConfirm:
+    'The backend has stored settings that will override the following local settings:\n\n{keys}\n\nDo you want to apply them?',
+  importSettingsConfirm:
+    'The imported settings will override the following local settings:\n\n{keys}\n\nDo you want to apply them?',
   deleteUploadedSettingsSuccess: 'Uploaded settings deleted successfully',
   deleteUploadedSettingsConfirm:
     'Are you sure you want to delete the uploaded settings on the backend? This action cannot be undone.',
@@ -483,6 +496,7 @@ const en = {
   aggregateByDestination: 'By destination',
   aggregateByProcess: 'By process',
   aggregateByOutbound: 'By outbound',
+  aggregateByProxyGroup: 'By proxy group',
   totalTraffic: 'Total traffic',
   total: 'Total',
   clearConnectionHistory: 'Clear connection history',

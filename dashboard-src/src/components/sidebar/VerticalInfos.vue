@@ -36,7 +36,7 @@
 
 <script setup lang="ts">
 import { prettyBytesHelper } from '@/helper/utils'
-import { activeConnections, downloadTotal, uploadTotal } from '@/store/connections'
+import { activeConnectionCount, downloadTotal, uploadTotal } from '@/store/connections'
 import { downloadSpeed, memory, uploadSpeed } from '@/store/overview'
 import {
   ArrowDownCircleIcon,
@@ -51,7 +51,7 @@ const statItems = computed(() => {
     {
       key: 'connections',
       icon: ArrowsRightLeftIcon,
-      value: activeConnections.value.length,
+      value: activeConnectionCount.value,
     },
     {
       key: 'download',

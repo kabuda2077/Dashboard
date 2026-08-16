@@ -1,4 +1,5 @@
 import { getUrlFromBackend } from '@/helper/utils'
+import { postHostMessage } from '@/composables/hostBridge'
 import { activeBackend } from '@/store/setup'
 import type {
   Backend,
@@ -35,6 +36,26 @@ export const fetchProxyLatencyAPI = (proxyName: string, url: string, timeout: nu
       timeout,
     },
   })
+}
+
+// Provider nodes can be absent from the global /proxies map, or collide with
+// same-name nodes from other providers. When we know the provider, use the
+// provider-scoped healthcheck endpoint for a single node.
+export const fetchProxyProviderLatencyAPI = (
+  providerName: string,
+  proxyName: string,
+  url: string,
+  timeout: number,
+) => {
+  return axios.get<{ delay: number }>(
+    `/providers/proxies/${encodeURIComponent(providerName)}/${encodeURIComponent(proxyName)}/healthcheck`,
+    {
+      params: {
+        url,
+        timeout,
+      },
+    },
+  )
 }
 
 export const fetchProxyGroupLatencyAPI = (proxyName: string, url: string, timeout: number) => {
@@ -175,6 +196,8 @@ export const deleteStorageAPI = () => {
 }
 
 export const createClashWebSocket = <T>(url: string, searchParams?: Record<string, string>) => {
+  const startedAt = performance.now()
+  let firstMessage = true
   const backend = activeBackend.value!
   const resurl = new URL(`${getUrlFromBackend(backend).replace('http', 'ws')}/${url}`)
 
@@ -194,6 +217,14 @@ export const createClashWebSocket = <T>(url: string, searchParams?: Record<strin
   }
 
   const messageHandler = ({ data: message }: { data: string }) => {
+    if (firstMessage) {
+      firstMessage = false
+      postHostMessage({
+        type: 'performance',
+        name: `ws:${url}:firstMessage`,
+        durationMs: Math.round(performance.now() - startedAt),
+      })
+    }
     data.value = JSON.parse(message)
   }
 

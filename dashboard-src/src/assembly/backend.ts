@@ -5,6 +5,7 @@
 // Clash 通道也可能连到 sing-box 兼容核心,两者语义不同,不可互相替代。
 
 import { probeClashChannel } from '@/api/clash'
+import { probeSingboxChannel } from '@/api/singbox/client'
 import { getSingboxUrlFromBackend } from '@/helper/utils'
 import { activeBackend } from '@/store/setup'
 import type { Backend } from '@/types'
@@ -36,7 +37,7 @@ export const capabilities = computed(() => ({
 // 后端连通性探测(供 Setup / EditBackend 测试连接使用)。
 export const isSingboxChannelAvailable = (backend: Backend, timeout: number = 10000) => {
   if (!getSingboxUrlFromBackend(backend)) return Promise.resolve(false)
-  return import('@/api/singbox/client').then((m) => m.probeSingboxChannel(backend, timeout))
+  return probeSingboxChannel(backend, timeout)
 }
 
 export const isBackendAvailable = (backend: Backend, timeout: number = 10000) =>

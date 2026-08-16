@@ -25,5 +25,5 @@ export const updateConfigs = async (cfg: Record<string, string | boolean | objec
     const client = getSingboxClient()?.client
     if (client) await client.setClashMode({ mode: cfg.mode })
   }
-  fetchConfigs()
+  await fetchConfigs()
 }

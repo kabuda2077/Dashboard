@@ -4,17 +4,12 @@ import { renderRoutes } from '@/helper'
 import { i18n } from '@/i18n'
 import { language } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
-import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import CorePage from '@/views/CorePage.vue'
 import HomePage from '@/views/HomePage.vue'
-import LogsPage from '@/views/LogsPage.vue'
-import OverviewPage from '@/views/OverviewPage.vue'
-import ProxiesPage from '@/views/ProxiesPage.vue'
-import RulesPage from '@/views/RulesPage.vue'
-import SetupPage from '@/views/SetupPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { loadConnectionsPage, loadOverviewPage, loadProxiesPage } from './pageLoaders'
 
 const childrenRouter = [
   {
@@ -25,27 +20,27 @@ const childrenRouter = [
   {
     path: 'proxies',
     name: ROUTE_NAME.proxies,
-    component: ProxiesPage,
+    component: loadProxiesPage,
   },
   {
     path: 'overview',
     name: ROUTE_NAME.overview,
-    component: OverviewPage,
+    component: loadOverviewPage,
   },
   {
     path: 'connections',
     name: ROUTE_NAME.connections,
-    component: ConnectionsPage,
+    component: loadConnectionsPage,
   },
   {
     path: 'logs',
     name: ROUTE_NAME.logs,
-    component: LogsPage,
+    component: () => import('@/views/LogsPage.vue'),
   },
   {
     path: 'rules',
     name: ROUTE_NAME.rules,
-    component: RulesPage,
+    component: () => import('@/views/RulesPage.vue'),
   },
 ]
 
@@ -65,7 +60,7 @@ const router = createRouter({
     {
       path: '/setup',
       name: ROUTE_NAME.setup,
-      component: SetupPage,
+      component: () => import('@/views/SetupPage.vue'),
     },
     {
       path: '/:catchAll(.*)',

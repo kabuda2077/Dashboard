@@ -22,6 +22,7 @@
 
 <script setup lang="ts">
 import { isMiddleScreen } from '@/helper/utils'
+import { timeSaved, type HistoryPoint } from '@/store/overview'
 import { font, theme } from '@/store/settings'
 import { PauseCircleIcon, PlayCircleIcon } from '@heroicons/vue/24/outline'
 import { useElementSize } from '@vueuse/core'
@@ -35,7 +36,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 echarts.use([LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps<{
-  data: { name: string; color?: number; data: { name: number; value: number }[] }[]
+  data: { name: string; color?: number; data: HistoryPoint[] }[]
   labelFormatter: (value: number) => string
   toolTipFormatter: (value: ToolTipParams[]) => string
   min: number
@@ -74,7 +75,11 @@ const updateFontFamily = () => {
 }
 
 const options = computed(() => {
+  const latest = props.data[0]?.data.at(-1)?.name ?? Date.now()
+
   return {
+    animationDurationUpdate: 1000,
+    animationEasingUpdate: 'linear' as const,
     legend: {
       bottom: 0,
       data: props.data.map((item) => item.name),
@@ -106,7 +111,9 @@ const options = computed(() => {
       formatter: props.toolTipFormatter,
     },
     xAxis: {
-      type: 'category',
+      type: 'time',
+      min: latest - (timeSaved - 1) * 1000,
+      max: latest - 1000,
       axisLine: { show: false },
       axisLabel: { show: false },
       splitLine: { show: false },

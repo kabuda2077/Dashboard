@@ -4,6 +4,7 @@
 import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { getUrlFromBackend } from '@/helper/utils'
+import router from '@/router'
 import { activeBackend, activeUuid } from '@/store/setup'
 import axios, { AxiosError } from 'axios'
 import { nextTick } from 'vue'
@@ -16,7 +17,20 @@ axios.interceptors.request.use((config) => {
   return config
 })
 
-const ignoreNotificationUrls = ['/delay', '/weights', '/storage/zashboard']
+const ignoreNotificationUrls = [
+  '/version',
+  '/delay',
+  '/healthcheck',
+  '/weights',
+  '/storage/zashboard',
+]
+
+export const shouldIgnoreErrorNotification = (
+  url?: string,
+  options?: { isNetworkError?: boolean },
+) =>
+  ignoreNotificationUrls.some((ignoredUrl) => url?.endsWith(ignoredUrl))
+  || (options?.isNetworkError === true && url?.endsWith('/configs'))
 
 axios.interceptors.response.use(
   null,
@@ -26,7 +40,6 @@ axios.interceptors.response.use(
     }>,
   ) => {
     if (error.status === 401 && activeUuid.value) {
-      const { default: router } = await import('@/router')
       const currentBackendUuid = activeUuid.value
       activeUuid.value = null
       router.push({
@@ -36,7 +49,9 @@ axios.interceptors.response.use(
       nextTick(() => {
         showNotification({ content: 'unauthorizedTip' })
       })
-    } else if (!ignoreNotificationUrls.some((url) => error.config?.url?.endsWith(url))) {
+    } else if (!shouldIgnoreErrorNotification(error.config?.url, {
+      isNetworkError: !error.response,
+    })) {
       const errorMessage = error.response?.data?.message || error.message
 
       showNotification({

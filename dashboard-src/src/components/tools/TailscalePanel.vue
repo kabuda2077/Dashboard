@@ -187,7 +187,7 @@
 </template>
 
 <script setup lang="ts">
-import { getSingboxClient, runStream, type StreamHandle } from '@/assembly/tools'
+import { getSingboxClient, runStream, serverStream, type StreamHandle } from '@/assembly/tools'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import QRCodeView from '@/components/tools/QRCodeView.vue'
 import TailscaleExitNodeDialog from '@/components/tools/TailscaleExitNodeDialog.vue'
@@ -201,10 +201,11 @@ import {
   sshPrefs,
   type SSHSessionOptions,
 } from '@/composables/tailscaleSSH'
-import type {
-  TailscaleEndpointStatus,
-  TailscalePeer,
-  TailscaleUserGroup,
+import {
+  StartedService,
+  type TailscaleEndpointStatus,
+  type TailscalePeer,
+  type TailscaleUserGroup,
 } from '@/gen/daemon/started_service_pb'
 import {
   ArrowRightOnRectangleIcon,
@@ -328,10 +329,9 @@ const onSSHPromptConnect = (username: string, terminalType: string, remember: bo
 }
 
 onMounted(() => {
-  const c = getSingboxClient()
-  if (!c) return
+  if (!getSingboxClient()) return
   statusHandle = runStream(
-    (signal) => c.client.subscribeTailscaleStatus({}, { signal }),
+    (signal) => serverStream(StartedService.method.subscribeTailscaleStatus, {}, signal),
     (msg) => (endpoints.value = msg.endpoints),
   )
 })

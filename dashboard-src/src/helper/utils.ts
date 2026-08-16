@@ -1,5 +1,5 @@
 import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
-import type { Backend } from '@/types'
+import type { Backend, BackendType } from '@/types'
 import { useMediaQuery } from '@vueuse/core'
 import dayjs from 'dayjs'
 import prettyBytes, { type Options } from 'pretty-bytes'
@@ -21,12 +21,20 @@ export const fromNow = (timestamp: string | number) => {
   return dayjs(timestamp).fromNow()
 }
 
+export const isDashboardSettingKey = (key: string | null | undefined): key is string => {
+  return !!key && key.startsWith('config/')
+}
+
 export const getDashboardSettingsFromStorage = () => {
   const settings: Record<string, string> = {}
 
-  for (const key in localStorage) {
-    if (key.startsWith('config/')) {
-      settings[key] = localStorage.getItem(key) as string
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (isDashboardSettingKey(key)) {
+      const value = localStorage.getItem(key)
+      if (typeof value === 'string') {
+        settings[key] = value
+      }
     }
   }
 
@@ -35,10 +43,21 @@ export const getDashboardSettingsFromStorage = () => {
 
 export const applyDashboardSettingsToStorage = (settings: Record<string, unknown>) => {
   for (const key in settings) {
-    if (key.startsWith('config/')) {
-      localStorage.setItem(key, settings[key] as string)
+    if (isDashboardSettingKey(key) && typeof settings[key] === 'string') {
+      localStorage.setItem(key, settings[key])
     }
   }
+}
+
+export const clearDashboardSettingsFromStorage = () => {
+  const keysToReset: string[] = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (isDashboardSettingKey(key)) {
+      keysToReset.push(key)
+    }
+  }
+  keysToReset.forEach((key) => localStorage.removeItem(key))
 }
 
 export const exportSettings = () => {
@@ -53,11 +72,7 @@ export const exportSettings = () => {
 }
 
 export const resetSettings = () => {
-  const keysToReset = Object.keys(localStorage).filter((key) => {
-    return key.startsWith('config/')
-  })
-
-  keysToReset.forEach((key) => localStorage.removeItem(key))
+  clearDashboardSettingsFromStorage()
   window.location.reload()
 }
 
@@ -126,31 +141,6 @@ export const findScrollableParent = (el: HTMLElement | null): HTMLElement | null
   return parent ? findScrollableParent(parent) : null
 }
 
-export const PROXIES_PAGE = 'proxies-scrollable-page'
-
-export const scrollToGroup = (groupName: string) => {
-  const el = document.querySelector(`[data-group-name="${groupName}"]`) as HTMLElement | null
-
-  if (!el) return
-  el.classList.remove('highlight-flash')
-  el.classList.add('highlight-flash')
-  el.addEventListener('animationend', () => el.classList.remove('highlight-flash'), { once: true })
-
-  const scrollableParent = document.getElementById(PROXIES_PAGE)
-
-  if (!scrollableParent) return
-
-  const parentRect = scrollableParent.getBoundingClientRect()
-  const elRect = el.getBoundingClientRect()
-  const offset = elRect.top - parentRect.top + scrollableParent.scrollTop
-  const centerOffset = offset - scrollableParent.clientHeight / 2 + el.clientHeight / 2
-
-  scrollableParent.scrollTo({
-    top: centerOffset,
-    behavior: 'smooth',
-  })
-}
-
 export const getBackendFromUrl = () => {
   const query = new URLSearchParams(
     window.location.search || location.hash.match(/\?.*$/)?.[0]?.replace('?', ''),
@@ -158,6 +148,7 @@ export const getBackendFromUrl = () => {
 
   if (query.has('hostname')) {
     return {
+      type: (query.get('type') === 'singbox' ? 'singbox' : 'clash') as BackendType,
       protocol: query.get('http')
         ? 'http'
         : query.get('https')

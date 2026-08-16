@@ -10,8 +10,9 @@ declare interface Navigator {
 
 type ToolTipParams = {
   data: {
-    value: number
+    value: number | [number, number]
     name: number
+    init?: boolean
   }
   seriesName: string
   color: string

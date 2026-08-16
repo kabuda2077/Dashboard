@@ -65,7 +65,7 @@
           <input
             v-if="rule.uuid || rule.extra"
             type="checkbox"
-            class="toggle toggle-sm"
+            class="toggle"
             :checked="!isDisabled"
             @change="toggleRuleDisabledHandler"
             @click.stop

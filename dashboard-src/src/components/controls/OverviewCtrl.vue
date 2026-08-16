@@ -1,6 +1,7 @@
 <template>
   <CtrlsBar>
     <div class="flex h-9 flex-row items-center gap-2 text-sm">
+      <BackendUptime v-if="startedAt" />
       <button
         class="btn btn-circle btn-sm"
         @click="showCardSettingsDialog = true"
@@ -13,6 +14,8 @@
 </template>
 
 <script setup lang="ts">
+import { startedAt } from '@/assembly/version'
+import BackendUptime from '@/components/common/BackendUptime.vue'
 import OverviewCardSettingsDialog from '@/components/overview/OverviewCardSettingsDialog.vue'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'

@@ -28,6 +28,7 @@ const allHistoryTypes = [
   ConnectionHistoryType.Destination,
   ConnectionHistoryType.Process,
   ConnectionHistoryType.Outbound,
+  ConnectionHistoryType.ProxyGroup,
 ]
 
 export const aggregatedDataMap = ref<Record<ConnectionHistoryType, ConnectionHistoryData[]>>({
@@ -35,6 +36,7 @@ export const aggregatedDataMap = ref<Record<ConnectionHistoryType, ConnectionHis
   [ConnectionHistoryType.Destination]: [],
   [ConnectionHistoryType.Process]: [],
   [ConnectionHistoryType.Outbound]: [],
+  [ConnectionHistoryType.ProxyGroup]: [],
 })
 
 export const initAggregatedDataMap = () => {
@@ -43,6 +45,7 @@ export const initAggregatedDataMap = () => {
     [ConnectionHistoryType.Destination]: [],
     [ConnectionHistoryType.Process]: [],
     [ConnectionHistoryType.Outbound]: [],
+    [ConnectionHistoryType.ProxyGroup]: [],
   }
   isInitializedPromise.value = new Promise(async (resolve) => {
     for (const type of allHistoryTypes) {
@@ -82,6 +85,9 @@ export const aggregateConnections = (
       key = getProcessFromConnection(connection)
     } else if (type === ConnectionHistoryType.Outbound) {
       key = getConnectionChains(connection)[0] || '-'
+    } else if (type === ConnectionHistoryType.ProxyGroup) {
+      const chains = getConnectionChains(connection)
+      key = chains[chains.length - 1] || '-'
     }
 
     if (map.has(key)) {

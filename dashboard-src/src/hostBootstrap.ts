@@ -1,36 +1,16 @@
 import { getBackendFromUrl } from '@/helper/utils'
 import { addBackend } from '@/store/setup'
 import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
+import {
+  applyHostIconCache,
+  applyHostRuntimeState,
+  applyHostState as applyBridgeHostState,
+  hostWindow,
+  postHostMessage,
+  type HostMessage,
+  type HostState,
+} from '@/composables/hostBridge'
 import type { Backend } from '@/types'
-
-type HostState = {
-  coreType?: string
-  coreVersion?: string
-  apiUrl?: string
-  secret?: string
-  readOnlyTunEnabled?: boolean
-  iconCacheMap?: Record<string, string>
-}
-
-type HostMessage = {
-  type?: string
-  state?: HostState
-}
-
-type HostWindow = Window & {
-  chrome?: {
-    webview?: {
-      postMessage?: (message: unknown) => void
-      addEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
-    }
-  }
-  __mihomoApplyBackend?: (state: HostState) => void
-  __mihomoHostCoreVersion?: string
-  __mihomoIconCache?: Record<string, string>
-}
 
 const RESIZE_BORDER_SIZE = 8
 const RESIZE_HANDLE_Z_INDEX = '2147483647'
@@ -60,7 +40,9 @@ const backendFromApiUrl = (
       password: secret || '',
       label: coreType === 'sing-box' ? '本机 sing-box' : '本机内核',
       disableUpgradeCore: true,
-      readOnlyTunEnabled: coreType === 'sing-box' ? !!readOnlyTunEnabled : undefined,
+      readOnlyTunEnabled: coreType === 'sing-box' && typeof readOnlyTunEnabled === 'boolean'
+        ? readOnlyTunEnabled
+        : undefined,
     } satisfies Omit<Backend, 'uuid'>
   } catch {
     return null
@@ -85,8 +67,7 @@ const applyBackendFromState = (state: HostState | undefined, replaceExisting = f
 
 let backendSignature = ''
 const applyHostState = (state: HostState | undefined) => {
-  applyIconCache(state)
-  ;(window as HostWindow).__mihomoHostCoreVersion = state?.coreVersion || ''
+  applyBridgeHostState(state)
   const backend = applyBackendFromState(state, true)
   const nextSignature = backend
     ? `${backend.protocol}://${backend.host}:${backend.port}${backend.secondaryPath}|${backend.password}|${state?.coreType ?? ''}|${state?.coreVersion ?? ''}`
@@ -96,15 +77,6 @@ const applyHostState = (state: HostState | undefined) => {
     backendSignature = nextSignature
     window.dispatchEvent(new CustomEvent(HOST_BACKEND_UPDATED_EVENT))
   }
-}
-
-const applyIconCache = (state: HostState | undefined) => {
-  ;(window as HostWindow).__mihomoIconCache = state?.iconCacheMap || {}
-  window.dispatchEvent(new CustomEvent('__mihomoIconCacheUpdated'))
-}
-
-const postHostMessage = (message: unknown) => {
-  ;(window as HostWindow).chrome?.webview?.postMessage?.(message)
 }
 
 const getResizeEdge = (event: MouseEvent) => {
@@ -216,7 +188,7 @@ const isInteractiveElement = (target: EventTarget | null) => {
 }
 
 const installWindowChromeBridge = () => {
-  if (!(window as HostWindow).chrome?.webview?.postMessage) return
+  if (!hostWindow.chrome?.webview?.postMessage) return
 
   const startResize = (edge: string, event: MouseEvent) => {
     event.preventDefault()
@@ -298,17 +270,21 @@ const installWindowChromeBridge = () => {
   )
 }
 
-if (!(window as HostWindow).chrome?.webview) {
+if (!hostWindow.chrome?.webview) {
   const backend = getBackendFromUrl()
-  applyBackend(backend ? { type: 'clash', ...backend } : null)
+  applyBackend(backend)
 }
 
 installWindowChromeBridge()
-;(window as HostWindow).__mihomoApplyBackend = (state) => {
+hostWindow.__mihomoApplyBackend = (state) => {
   applyHostState(state)
 }
-;(window as HostWindow).chrome?.webview?.addEventListener?.('message', (event) => {
+hostWindow.chrome?.webview?.addEventListener?.('message', (event: MessageEvent<HostMessage>) => {
   if (event.data?.type === 'state') {
     applyHostState(event.data.state)
+  } else if (event.data?.type === 'runtimeState') {
+    applyHostRuntimeState(event.data.runtimeState)
+  } else if (event.data?.type === 'iconCacheUpdated') {
+    applyHostIconCache(event.data.iconCacheMap)
   }
 })

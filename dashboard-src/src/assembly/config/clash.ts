@@ -8,5 +8,5 @@ export const fetchConfigs = async () => {
 
 export const updateConfigs = async (cfg: Record<string, string | boolean | object | number>) => {
   await patchConfigsAPI(cfg)
-  fetchConfigs()
+  await fetchConfigs()
 }

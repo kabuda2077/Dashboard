@@ -64,7 +64,7 @@
 
 <script setup lang="ts">
 import CommonSidebar from '@/components/sidebar/CommonCtrl.vue'
-import { ROUTE_ICON_MAP } from '@/constant'
+import { ROUTE_ICON_MAP } from '@/constant/routeIcons'
 import { renderRoutes } from '@/helper'
 import { useTooltip } from '@/helper/tooltip'
 import router from '@/router'

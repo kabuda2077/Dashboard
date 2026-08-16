@@ -1,12 +1,3 @@
-import {
-  ArrowsRightLeftIcon,
-  CpuChipIcon,
-  CubeTransparentIcon,
-  DocumentTextIcon,
-  GlobeAltIcon,
-  SwatchIcon,
-} from '@heroicons/vue/24/outline'
-
 export const IS_APPLE_DEVICE = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 
 export const GLOBAL = 'GLOBAL'
@@ -51,6 +42,7 @@ export enum CONNECTIONS_TABLE_ACCESSOR_KEY {
   SniffHost = 'sniffHost',
   Destination = 'destination',
   DestinationType = 'destinationType',
+  GeoIP = 'geoip',
   RemoteAddress = 'remoteAddress',
   InboundUser = 'inboundUser',
   Protocol = 'protocol',
@@ -154,16 +146,6 @@ export enum ROUTE_NAME {
   logs = 'logs',
   rules = 'rules',
   setup = 'setup',
-}
-
-export const ROUTE_ICON_MAP = {
-  [ROUTE_NAME.core]: CpuChipIcon,
-  [ROUTE_NAME.overview]: CubeTransparentIcon,
-  [ROUTE_NAME.proxies]: GlobeAltIcon,
-  [ROUTE_NAME.connections]: ArrowsRightLeftIcon,
-  [ROUTE_NAME.rules]: SwatchIcon,
-  [ROUTE_NAME.logs]: DocumentTextIcon,
-  [ROUTE_NAME.setup]: CubeTransparentIcon,
 }
 
 export enum TABLE_SIZE {
@@ -288,6 +270,11 @@ export enum IP_INFO_API {
   IPWHOIS = 'ipwho.is',
   IPAPI = 'ipapi.is',
 }
+
+export const GEOIP_COUNTRY_DATABASE_URL =
+  'https://testingcf.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-Country.mmdb'
+export const GEOIP_ASN_DATABASE_URL =
+  'https://testingcf.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-ASN.mmdb'
 
 export enum SETTINGS_MENU_KEY {
   general = 'generalSettings',

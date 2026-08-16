@@ -2,7 +2,7 @@ import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import { execSync } from 'child_process'
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
 import { version } from './package.json'
 
@@ -22,6 +22,7 @@ const getGitCommitId = (): string => {
 }
 
 const font = process.env.FONT || 'all'
+const desktopBuild = process.env.DESKTOP_BUILD === '1'
 
 const fixMiSansVariableFontWeight = () => ({
   name: 'fix-misans-variable-font-weight',
@@ -57,49 +58,57 @@ export default defineConfig({
     fixMiSansVariableFontWeight(),
     vue(),
     vueJsx(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'favicon-dark.svg'],
-      workbox: {
-        maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
-      },
-      manifest: {
-        name: 'zashboard',
-        short_name: 'zashboard',
-        description: 'a dashboard using clash api',
-        theme_color: '#000000',
-        icons: [
-          {
-            src: './pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: './pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: './pwa-maskable-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-          {
-            src: './pwa-maskable-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
-    }),
+    ...(
+      desktopBuild
+        ? []
+        : [
+            VitePWA({
+              registerType: 'autoUpdate',
+              includeAssets: ['favicon.svg', 'favicon-dark.svg'],
+              workbox: {
+                maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
+              },
+              manifest: {
+                name: 'zashboard',
+                short_name: 'zashboard',
+                description: 'a dashboard using clash api',
+                theme_color: '#000000',
+                icons: [
+                  {
+                    src: './pwa-192x192.png',
+                    sizes: '192x192',
+                    type: 'image/png',
+                    purpose: 'any',
+                  },
+                  {
+                    src: './pwa-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'any',
+                  },
+                  {
+                    src: './pwa-maskable-192x192.png',
+                    sizes: '192x192',
+                    type: 'image/png',
+                    purpose: 'maskable',
+                  },
+                  {
+                    src: './pwa-maskable-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'maskable',
+                  },
+                ],
+              },
+            }),
+          ]
+    ),
   ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      net: fileURLToPath(new URL('./src/shims/net.ts', import.meta.url)),
+      'node:net': fileURLToPath(new URL('./src/shims/net.ts', import.meta.url)),
     },
   },
   build: {
@@ -116,14 +125,32 @@ export default defineConfig({
       },
     },
     rollupOptions: {
+      onwarn(warning, warn) {
+        const id = warning.id?.replace(/\\/g, '/') || ''
+        if (
+          warning.code === 'INVALID_ANNOTATION' &&
+          id.includes('/@vueuse/core/') &&
+          warning.message.includes('#__PURE__')
+        ) {
+          return
+        }
+
+        warn(warning)
+      },
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('vue') || id.includes('vue-router') || id.includes('vue-i18n')) {
               return 'vue-vendor'
             }
-            if (id.includes('echarts') || id.includes('@heroicons') || id.includes('tippy')) {
-              return 'ui-vendor'
+            if (id.includes('echarts')) {
+              return 'charts-vendor'
+            }
+            if (id.includes('@heroicons')) {
+              return 'icons-vendor'
+            }
+            if (id.includes('tippy')) {
+              return 'tooltip-vendor'
             }
             if (id.includes('axios') || id.includes('dayjs') || id.includes('lodash') || id.includes('dompurify')) {
               return 'utils-vendor'
@@ -144,5 +171,12 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['vue', 'vue-router', 'vue-i18n', 'echarts', 'axios', 'dayjs'],
+  },
+  test: {
+    environment: 'happy-dom',
+    globals: true,
+    include: ['src/**/__tests__/**/*.test.ts'],
+    setupFiles: ['./src/__tests__/setup.ts'],
+    restoreMocks: true,
   },
 })

@@ -75,6 +75,9 @@ const ru: LANG_MESSAGE = {
   endpointLabel: 'Конечная точка',
   activeLabel: 'Активен',
   availableLabel: 'Доступен',
+  addRow: 'Добавить строку',
+  dragOrClickToAdd: 'Перетащите или нажмите, чтобы добавить',
+  startTime: 'Время запуска',
   sshConfiguration: 'Настройка SSH',
   terminalType: 'Тип терминала',
   rememberSSHOptions: 'Запомнить параметры SSH',
@@ -171,6 +174,7 @@ const ru: LANG_MESSAGE = {
   updateGeoSuccess: 'Geo база данных успешно обновлена',
   chains: 'Цепочки',
   outbound: 'Исходящий',
+  proxyGroup: 'Группа прокси',
   sortBy: 'Сортировать по',
   rule: 'Правило',
   sourceIP: 'Исходный IP',
@@ -187,6 +191,11 @@ const ru: LANG_MESSAGE = {
   sourcePort: 'Исходный порт',
   destination: 'Разрешенный адрес',
   destinationType: 'Тип разрешения',
+  geoip: 'GeoIP',
+  geoipCountryDatabaseURL: 'URL базы стран GeoIP',
+  geoipASNDatabaseURL: 'URL базы ASN GeoIP',
+  geoipDatabaseURLTip:
+    'Используется для локального определения страны и ASN IP-адресов соединений. Файл mmdb загружается по этому URL и кэшируется в браузере. Оставьте пустым для значения по умолчанию.',
   inboundUser: 'Входящий пользователь',
   outboundType: 'Тип исходящего',
   fromOutbound: 'Из исходящего',
@@ -412,6 +421,10 @@ const ru: LANG_MESSAGE = {
   uploadSettingsIconReflectListRemoved:
     'Данные пользовательских иконок слишком велики и были удалены при загрузке. Уменьшите их размер и попробуйте снова.',
   syncSettingsSuccess: 'Настройки успешно синхронизированы',
+  syncSettingsConfirm:
+    'В бэкенде сохранены настройки, которые перезапишут следующие локальные настройки:\n\n{keys}\n\nПрименить их?',
+  importSettingsConfirm:
+    'Импортированные настройки перезапишут следующие локальные настройки:\n\n{keys}\n\nПрименить их?',
   deleteUploadedSettingsSuccess: 'Загруженные настройки успешно удалены',
   deleteUploadedSettingsConfirm:
     'Вы уверены, что хотите удалить загруженные на бэкенд настройки? Это действие нельзя отменить.',
@@ -485,6 +498,7 @@ const ru: LANG_MESSAGE = {
   aggregateByDestination: 'По назначению',
   aggregateByProcess: 'По процессу',
   aggregateByOutbound: 'По исходящему',
+  aggregateByProxyGroup: 'По группе прокси',
   totalTraffic: 'Общий трафик',
   total: 'Итого',
   clearConnectionHistory: 'Очистить историю соединений',

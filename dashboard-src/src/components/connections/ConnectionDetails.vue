@@ -32,7 +32,7 @@
 
       <!-- 概览:美化后的分组展示 -->
       <div
-        v-show="activeTab === 'overview'"
+        v-if="activeTab === 'overview'"
         class="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
       >
         <template
@@ -87,7 +87,7 @@
 
       <!-- 原始 JSON -->
       <div
-        v-show="activeTab === 'raw'"
+        v-if="activeTab === 'raw'"
         class="flex-1 overflow-y-auto p-4"
       >
         <VueJsonPretty :data="infoConn">
@@ -116,11 +116,11 @@
 
       <!-- 切换代理组 -->
       <div
-        v-if="proxyChainStart"
-        v-show="activeTab === 'proxies'"
+        v-if="proxyChainStart && activeTab === 'proxies'"
         class="flex flex-1 flex-col overflow-y-auto"
+        :class="PROXIES_PARENT_CLASS"
       >
-        <div class="shrink-0 p-3">
+        <div class="shrink-0 p-3 pb-0">
           <ProxyChainPath
             :proxy="proxyChainStart"
             :selected="selectedProxy"
@@ -129,11 +129,7 @@
             @update:selected="selectedProxy = $event"
           />
         </div>
-        <ProxyGroup
-          :name="selectedProxy || proxyChainStart"
-          :force-open="true"
-          class="transparent-collapse rounded-none!"
-        />
+        <ProxyGroupPanel :name="selectedProxy || proxyChainStart" />
       </div>
     </div>
   </DialogWrapper>
@@ -151,11 +147,12 @@ import { getConnectionDisplayValue } from '@/assembly/connections'
 import { proxyMap } from '@/assembly/proxies'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import ProxyChainPath from '@/components/common/ProxyChainPath.vue'
-import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
+import ProxyGroupPanel from '@/components/proxies/ProxyGroupPanel.vue'
 import SourceIPLabels from '@/components/settings/connections/SourceIPLabels.vue'
 import { useConnections } from '@/composables/connections'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
 import { getConnectionChains, getConnectionSourceIP, getDestinationFromConnection } from '@/helper'
+import { PROXIES_PARENT_CLASS } from '@/helper/utils'
 import { proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import {
   ArrowRightCircleIcon,

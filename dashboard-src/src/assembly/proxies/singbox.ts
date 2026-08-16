@@ -3,12 +3,13 @@
 // 每次推送直接重建门面 index.ts 的共享状态,因此选择/测速后无需手动刷新,
 // 结果会随流自动回填到 UI。
 import { getSingboxClient } from '@/api/singbox/client'
-import { runStream, type StreamHandle } from '@/api/singbox/streams'
+import type { StreamHandle } from '@/api/singbox/streams'
+import { subscribeStream } from '@/api/singbox/subscriptions'
 import { disconnectByIdAPI } from '@/assembly/connections'
-import type { Group, GroupItem } from '@/gen/daemon/started_service_pb'
+import type { Group, GroupItem, Groups, OutboundList } from '@/gen/daemon/started_service_pb'
 import { getConnectionChains } from '@/helper'
 import { activeConnections } from '@/store/connections'
-import { automaticDisconnection } from '@/store/settings'
+import { automaticDisconnection, iconReflectList } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import type { Proxy } from '@/types'
 import { proxyGroupList, proxyMap, proxyProviederList } from './index'
@@ -66,6 +67,10 @@ const rebuild = () => {
       }
     }
   }
+  for (const iconReflect of iconReflectList.value) {
+    const node = proxies[iconReflect.name]
+    if (node) node.icon = iconReflect.icon
+  }
 
   proxyMap.value = proxies
   proxyGroupList.value = Array.from(groups.values())
@@ -104,26 +109,20 @@ const ensureSession = () => {
   ready = new Promise<void>((r) => (resolveReady = r))
 
   handles = [
-    runStream(
-      (signal) => client.subscribeGroups({}, { signal }),
-      (msg) => {
-        groups = new Map()
-        for (const g of msg.group) groups.set(g.tag, g)
-        rebuild()
-        if (!resolved) {
-          resolved = true
-          resolveReady()
-        }
-      },
-    ),
-    runStream(
-      (signal) => client.subscribeOutbounds({}, { signal }),
-      (msg) => {
-        outbounds = new Map()
-        for (const o of msg.outbounds) outbounds.set(o.tag, o)
-        rebuild()
-      },
-    ),
+    subscribeStream<Groups>('groups', (msg) => {
+      groups = new Map()
+      for (const g of msg.group) groups.set(g.tag, g)
+      rebuild()
+      if (!resolved) {
+        resolved = true
+        resolveReady()
+      }
+    }),
+    subscribeStream<OutboundList>('outbounds', (msg) => {
+      outbounds = new Map()
+      for (const o of msg.outbounds) outbounds.set(o.tag, o)
+      rebuild()
+    }),
   ]
 }
 

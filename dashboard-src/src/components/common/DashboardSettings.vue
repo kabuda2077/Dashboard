@@ -3,7 +3,11 @@
     class="btn btn-sm"
     @click="dashboardSettingsDialogShow = true"
   >
-    {{ $t('dashboardSettings') }}
+    <Cog6ToothIcon
+      v-if="iconOnly"
+      class="h-4 w-4"
+    />
+    <template v-else>{{ $t('dashboardSettings') }}</template>
   </button>
   <DialogWrapper
     v-model="dashboardSettingsDialogShow"
@@ -31,7 +35,7 @@
             :disabled="isStorageSubmitting"
             @click="handlerClickUploadSettings"
           >
-            {{ $t('uploadSettings') }}
+            <ArrowUpTrayIcon class="h-4 w-4" />
           </button>
         </div>
         <div class="setting-item">
@@ -43,7 +47,7 @@
             :disabled="isStorageSubmitting"
             @click="handlerClickSyncSettings"
           >
-            {{ $t('syncSettings') }}
+            <ArrowPathIcon class="h-4 w-4" />
           </button>
         </div>
         <div class="setting-item">
@@ -57,7 +61,7 @@
             :disabled="isStorageSubmitting"
             @click="handlerClickDeleteUploadedSettings"
           >
-            {{ $t('delete') }}
+            <TrashIcon class="h-4 w-4" />
           </button>
         </div>
         <div class="setting-item">
@@ -85,7 +89,6 @@
           class="btn btn-sm"
           @click="exportSettings"
         >
-          {{ $t('exportSettings') }}
           <ArrowDownCircleIcon class="h-4 w-4" />
         </button>
       </div>
@@ -97,7 +100,6 @@
           class="btn btn-sm"
           @click="importSettingsFromFile"
         >
-          {{ $t('importFromFile') }}
           <ArrowUpCircleIcon class="h-4 w-4" />
         </button>
       </div>
@@ -174,6 +176,7 @@
 <script setup lang="ts">
 import { deleteStorageAPI, setStorageAPI } from '@/assembly/storage'
 import { isSingBoxCore } from '@/assembly/version'
+import { hasHostBridge } from '@/composables/hostBridge'
 import {
   autoImportSettings,
   autoSyncSettings,
@@ -182,21 +185,26 @@ import {
   importSettingsUrl,
   syncSettingsFromCore,
 } from '@/helper/autoImportSettings'
+import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { LOCAL_IMAGE } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
 import { useTooltip } from '@/helper/tooltip'
 import {
   applyDashboardSettingsToStorage,
+  clearDashboardSettingsFromStorage,
   exportSettings,
   getDashboardSettingsFromStorage,
-  resetSettings,
 } from '@/helper/utils'
 import { customBackgroundURL, displayAllFeatures } from '@/store/settings'
 import {
   ArrowDownCircleIcon,
   ArrowDownTrayIcon,
+  ArrowPathIcon,
   ArrowUpCircleIcon,
+  ArrowUpTrayIcon,
+  Cog6ToothIcon,
   QuestionMarkCircleIcon,
+  TrashIcon,
 } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref, watch } from 'vue'
@@ -204,18 +212,29 @@ import { useI18n } from 'vue-i18n'
 import DialogWrapper from './DialogWrapper.vue'
 import TextInput from './TextInput.vue'
 
+withDefaults(
+  defineProps<{
+    iconOnly?: boolean
+  }>(),
+  { iconOnly: false },
+)
+
 const inputRef = ref<HTMLInputElement>()
 const dashboardSettingsDialogShow = ref(false)
 const isStorageSubmitting = ref(false)
-const showSyncSettings = computed(() => !isSingBoxCore.value || displayAllFeatures.value)
+const showSyncSettings = computed(
+  () => !hasHostBridge && (!isSingBoxCore.value || displayAllFeatures.value),
+)
 
 const { showTip } = useTooltip()
 const { t } = useI18n()
 
-const handlerClickResetSettings = () => {
+const handlerClickResetSettings = async () => {
   if (!window.confirm(t('resetSettingsConfirm'))) return
   dashboardSettingsDialogShow.value = false
-  resetSettings()
+  clearDashboardSettingsFromStorage()
+  await saveDashboardSettingsToHost({ beforeReload: true })
+  window.location.reload()
 }
 
 const handlerJsonUpload = () => {
@@ -228,6 +247,7 @@ const handlerJsonUpload = () => {
   reader.onload = async () => {
     const settings = JSON.parse(reader.result as string)
     applyDashboardSettingsToStorage(settings)
+    await saveDashboardSettingsToHost({ beforeReload: true })
     location.reload()
   }
   reader.readAsText(file)
@@ -238,7 +258,7 @@ const importSettingsFromFile = () => {
 }
 const importSettingsFromUrlHandler = async () => {
   dashboardSettingsDialogShow.value = false
-  await importSettingsFromUrl(true)
+  await importSettingsFromUrl({ force: true })
 }
 
 const handlerClickUploadSettings = async () => {

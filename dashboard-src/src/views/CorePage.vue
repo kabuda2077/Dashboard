@@ -177,6 +177,7 @@
                 v-model="settings.autostart"
                 class="toggle"
                 type="checkbox"
+                :disabled="isAutostartUpdating"
                 @change="saveSettings"
               />
             </div>
@@ -350,70 +351,27 @@
 import CtrlsBar from '@/components/common/CtrlsBar.vue'
 import SettingsContent from '@/components/settings/SettingsContent.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
+import {
+  addHostMessageListener,
+  hostWindow,
+  postHostMessage,
+  type HostMessage,
+  type HostRuntimeState,
+  type HostState,
+} from '@/composables/hostBridge'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
+import { preloadSecondaryPages, scheduleAfterInitialPaint } from '@/router/pageLoaders'
 import { isSidebarCollapsed } from '@/store/settings'
 import { ArrowsRightLeftIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-type CoreState = {
-  isRunning?: boolean
-  processId?: number | null
-  coreType?: string
-  coreTitle?: string
-  corePath?: string
-  configPath?: string
-  apiUrl?: string
-  secret?: string
-  mihomoCorePath?: string
-  mihomoConfigPath?: string
-  mihomoApiUrl?: string
-  mihomoSecret?: string
-  singBoxCorePath?: string
-  singBoxConfigPath?: string
-  singBoxApiUrl?: string
-  singBoxSecret?: string
-  startCoreOnLaunch?: boolean
-  minimizeToTray?: boolean
-  lightweightMode?: boolean
-  autostart?: boolean
-  canUpgradeCore?: boolean
-  isCoreUpgrading?: boolean
-  isCoreSwitching?: boolean
-  setupCompleted?: boolean
-  logText?: string
-  iconCacheMap?: Record<string, string>
-}
-
-type HostMessage = {
-  type?: string
-  state?: CoreState
-  message?: string
-}
-
-type WebViewWindow = Window & {
-  chrome?: {
-    webview?: {
-      postMessage: (message: unknown) => void
-      addEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
-      removeEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
-    }
-  }
-  __mihomoControlSetState?: (state: CoreState) => void
-  __mihomoControlNotice?: (message: string) => void
-}
-
 const { paddingBottom } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
+let cancelSecondaryPagePreload: (() => void) | undefined
 
 const runtime = reactive({
   isRunning: false,
@@ -457,13 +415,14 @@ const chromeRightPadding = 12
 const showSwitchConfirm = ref(false)
 const switchPending = ref(false)
 const setupCompleted = ref(true)
+const isAutostartUpdating = ref(false)
 let resizeObserver: ResizeObserver | undefined
 let syncFrame = 0
 let sidebarSyncRaf = 0
 let stopSidebarWatch: (() => void) | undefined
+let removeHostMessageListener: (() => void) | undefined
 
-const webviewWindow = window as WebViewWindow
-const post = (message: unknown) => webviewWindow.chrome?.webview?.postMessage(message)
+const post = postHostMessage
 const route = useRoute()
 const settingsScrollTo = computed(() =>
   typeof route.query.scrollTo === 'string' ? route.query.scrollTo : null,
@@ -622,7 +581,7 @@ provide(coreHostActionsKey, {
   upgradeCore,
 })
 
-const setState = (state: CoreState) => {
+const setState = (state: HostState) => {
   runtime.isRunning = !!state.isRunning
   runtime.processId = state.processId ?? null
   settings.coreType = normalizeCoreType(state.coreType)
@@ -649,6 +608,7 @@ const setState = (state: CoreState) => {
   settings.minimizeToTray = !!state.minimizeToTray
   settings.lightweightMode = state.lightweightMode ?? true
   settings.autostart = !!state.autostart
+  isAutostartUpdating.value = !!state.isAutostartUpdating
   setupCompleted.value = state.setupCompleted ?? true
   if (!setupCompleted.value && runtime.isRunning) {
     completeSetup()
@@ -657,6 +617,33 @@ const setState = (state: CoreState) => {
     switchPending.value = false
     showSwitchConfirm.value = false
   }
+}
+
+const setRuntimeState = (state: HostRuntimeState | undefined) => {
+  if (!state) return
+  if (typeof state.isRunning === 'boolean') {
+    runtime.isRunning = state.isRunning
+  }
+  if ('processId' in state) {
+    runtime.processId = state.processId ?? null
+  }
+  if (state.coreTitle) {
+    runtime.coreTitle = state.coreTitle
+  }
+  if (typeof state.canUpgradeCore === 'boolean') {
+    runtime.canUpgradeCore = state.canUpgradeCore
+  }
+  runtime.isCoreUpgrading = !!state.isCoreUpgrading
+  runtime.isCoreSwitching = !!state.isCoreSwitching
+  if (!runtime.isCoreSwitching) {
+    switchPending.value = false
+    showSwitchConfirm.value = false
+  }
+}
+
+const appendLogText = (value: string | undefined) => {
+  if (!value) return
+  runtime.logText = `${runtime.logText || ''}${value}`.slice(-8000)
 }
 
 const getNoticeType = (message: string) => {
@@ -731,15 +718,19 @@ const syncAroundSidebarTransition = () => {
 const handleHostMessage = (event: MessageEvent<HostMessage>) => {
   if (event.data?.type === 'state') {
     setState(event.data.state ?? {})
+  } else if (event.data?.type === 'runtimeState') {
+    setRuntimeState(event.data.runtimeState)
+  } else if (event.data?.type === 'logAppend') {
+    appendLogText(event.data.logText)
   } else if (event.data?.type === 'notice') {
     showNotice(event.data.message ?? '')
   }
 }
 
 onMounted(async () => {
-  webviewWindow.chrome?.webview?.addEventListener?.('message', handleHostMessage)
-  webviewWindow.__mihomoControlSetState = setState
-  webviewWindow.__mihomoControlNotice = showNotice
+  removeHostMessageListener = addHostMessageListener(handleHostMessage)
+  hostWindow.__mihomoControlSetState = setState
+  hostWindow.__mihomoControlNotice = showNotice
   await nextTick()
   syncLogHeight()
   window.addEventListener('resize', syncLogHeight)
@@ -749,15 +740,17 @@ onMounted(async () => {
     resizeObserver.observe(configPanelRef.value)
   }
   post({ type: 'requestState' })
+  cancelSecondaryPagePreload = scheduleAfterInitialPaint(preloadSecondaryPages)
 })
 
 onUnmounted(() => {
-  webviewWindow.chrome?.webview?.removeEventListener?.('message', handleHostMessage)
-  if (webviewWindow.__mihomoControlSetState === setState) {
-    delete webviewWindow.__mihomoControlSetState
+  removeHostMessageListener?.()
+  removeHostMessageListener = undefined
+  if (hostWindow.__mihomoControlSetState === setState) {
+    delete hostWindow.__mihomoControlSetState
   }
-  if (webviewWindow.__mihomoControlNotice === showNotice) {
-    delete webviewWindow.__mihomoControlNotice
+  if (hostWindow.__mihomoControlNotice === showNotice) {
+    delete hostWindow.__mihomoControlNotice
   }
   window.removeEventListener('resize', syncLogHeight)
   stopSidebarWatch?.()
@@ -765,5 +758,7 @@ onUnmounted(() => {
   window.cancelAnimationFrame(sidebarSyncRaf)
   resizeObserver?.disconnect()
   window.cancelAnimationFrame(syncFrame)
+  cancelSecondaryPagePreload?.()
+  cancelSecondaryPagePreload = undefined
 })
 </script>
