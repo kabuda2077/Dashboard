@@ -101,25 +101,17 @@
 </template>
 
 <script setup lang="ts">
-import { disconnectByIdAPI } from '@/assembly/connections'
-import { useBounceOnVisible } from '@/composables/bouncein'
-import { getConnectionRulePayload } from '@/helper'
-import { useTooltip } from '@/helper/tooltip'
-import { activeConnections } from '@/store/connections'
 import { proxyGroupList } from '@/assembly/proxies'
+import { fetchRules, rulesFilter, updateRuleProviderAPI } from '@/assembly/rules'
+import { useBounceOnVisible } from '@/composables/bouncein'
 import {
-  fetchRules,
-  ruleProviderList,
-  rulesFilter,
-  toggleRuleDisabledAPI,
-  toggleRuleDisabledSingBoxAPI,
-  updateRuleProviderAPI,
-} from '@/assembly/rules'
-import {
-  disconnectOnRuleDisable,
-  displayLatencyInRule,
-  displayNowNodeInRule,
-} from '@/store/settings'
+  getRuleSize,
+  isRuleDisabled,
+  isUpdateableRuleSet as checkUpdateableRuleSet,
+  toggleRuleDisabledWithSideEffects,
+} from '@/composables/rules'
+import { useTooltip } from '@/helper/tooltip'
+import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
 import type { Rule } from '@/types'
 import {
   ArrowPathIcon,
@@ -143,60 +135,29 @@ const props = defineProps<{
 const expandedRule = inject<Ref<string | null>>('expandedRule', ref(null))
 const ruleKey = computed(() => `${props.index}-${props.rule.payload}`)
 const isCollapsed = computed(() => expandedRule.value !== ruleKey.value)
-const isSelectable = computed(() => proxyGroupList.value.includes(props.rule.proxy))
 const selected = ref('')
-
-const isExpanded = computed(() => isSelectable.value && !isCollapsed.value)
-const showExpandedContent = ref(isExpanded.value)
-
-watch(isExpanded, (value) => {
-  if (value) {
-    showExpandedContent.value = true
-  }
-})
-
-const handlerExpandTransitionEnd = () => {
-  if (!isExpanded.value) {
-    showExpandedContent.value = false
-  }
-}
 
 const { t } = useI18n()
 const { showTip } = useTooltip()
 
-const size = computed(() => {
-  if (props.rule.type === 'RuleSet') {
-    return ruleProviderList.value.find((provider) => provider.name === props.rule.payload)
-      ?.ruleCount
-  }
-
-  return props.rule.size
-})
-
+const size = computed(() => getRuleSize(props.rule))
 const isUpdating = ref(false)
 const isTogglingDisabled = ref(false)
-const isDisabled = computed(() => {
-  const rule = props.rule
+const isDisabled = computed(() => isRuleDisabled(props.rule))
+const isSelectable = computed(
+  () => proxyGroupList.value.includes(props.rule.proxy) && !isDisabled.value,
+)
+const isExpanded = computed(() => isSelectable.value && !isCollapsed.value)
+const showExpandedContent = ref(isExpanded.value)
+const isUpdateableRuleSet = computed(() => checkUpdateableRuleSet(props.rule))
 
-  if (rule.extra) {
-    return rule.extra.disabled
-  }
-
-  return rule.disabled
+watch(isExpanded, (value) => {
+  if (value) showExpandedContent.value = true
 })
 
-const isUpdateableRuleSet = computed(() => {
-  if (props.rule.type !== 'RuleSet') {
-    return false
-  }
-
-  const provider = ruleProviderList.value.find((provider) => provider.name === props.rule.payload)
-
-  if (!provider) {
-    return false
-  }
-  return provider.vehicleType !== 'Inline'
-})
+const handlerExpandTransitionEnd = () => {
+  if (!isExpanded.value) showExpandedContent.value = false
+}
 
 const updateRuleProviderClickHandler = async () => {
   if (isUpdating.value) return
@@ -212,28 +173,7 @@ const toggleRuleDisabledHandler = async () => {
 
   try {
     isTogglingDisabled.value = true
-    const willBeDisabled = !isDisabled.value
-
-    if (props.rule.uuid) {
-      await toggleRuleDisabledSingBoxAPI(props.rule.uuid)
-    } else {
-      await toggleRuleDisabledAPI({ [props.rule.index]: willBeDisabled })
-    }
-
-    if (willBeDisabled && disconnectOnRuleDisable.value) {
-      const matchingConnections = activeConnections.value.filter((conn) => {
-        const ruleTypeMatches = conn.rule === props.rule.type
-        const rulePayloadMatches = getConnectionRulePayload(conn) === (props.rule.payload || '')
-
-        return ruleTypeMatches && rulePayloadMatches
-      })
-
-      if (matchingConnections.length > 0) {
-        matchingConnections.forEach((conn) => disconnectByIdAPI(conn.id))
-      }
-    }
-
-    await fetchRules()
+    await toggleRuleDisabledWithSideEffects(props.rule)
   } finally {
     isTogglingDisabled.value = false
   }
@@ -282,7 +222,7 @@ const showRuleHitInfoTip = (e: Event) => {
 }
 
 const clickHandler = () => {
-  if (isSelectable.value && !props.rule.disabled) {
+  if (isSelectable.value) {
     expandedRule.value = isCollapsed.value ? ruleKey.value : null
     selected.value = props.rule.proxy
   }

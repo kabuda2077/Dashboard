@@ -1,0 +1,1 @@
+import{m as a,p as s}from"./clash-Ycsqo5kO.js";import{a as r,i as t}from"./rules-CqqMbm2i.js";var e=async()=>{const{data:e}=await a(),{data:o}=await s();r.value=e.rules.map(a=>{const s=a.proxy,r=s.startsWith("route(")?s.substring(6,s.length-1):s;return{...a,proxy:r}}),t.value=Object.values(o.providers)};export{e as fetchRules};

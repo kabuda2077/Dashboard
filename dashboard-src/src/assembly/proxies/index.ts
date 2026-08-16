@@ -57,7 +57,9 @@ export const getHistoryByName = (proxyName: string, groupName?: string) => {
     }
 
     if (!proxyNode?.extra) {
-      proxyNode.extra = {}
+      const nowNode = proxyMap.value[getNowProxyNodeName(proxyName)]
+
+      return nowNode?.history
     }
 
     if (!proxyNode.extra?.[url]) {

@@ -43,18 +43,14 @@
 </template>
 
 <script setup lang="ts">
-import { disconnectByIdAPI } from '@/assembly/connections'
 import { proxyGroupList } from '@/assembly/proxies'
 import {
   fetchRules,
   renderRules,
   renderRulesProvider,
-  ruleProviderList,
   rules,
   rulesFilter,
   rulesTabShow,
-  toggleRuleDisabledAPI,
-  toggleRuleDisabledSingBoxAPI,
   updateRuleProviderAPI,
 } from '@/assembly/rules'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
@@ -62,15 +58,15 @@ import HighlightText from '@/components/common/HighlightText.vue'
 import ProxyChainPath from '@/components/common/ProxyChainPath.vue'
 import VirtualTable from '@/components/common/VirtualTable.vue'
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
-import { RULE_TAB_TYPE } from '@/constant'
-import { getConnectionRulePayload } from '@/helper'
-import { fromNow } from '@/helper/utils'
-import { activeConnections } from '@/store/connections'
 import {
-  displayLatencyInRule,
-  displayNowNodeInRule,
-  disconnectOnRuleDisable,
-} from '@/store/settings'
+  getRuleSize,
+  isRuleDisabled,
+  isUpdateableRuleSet,
+  toggleRuleDisabledWithSideEffects,
+} from '@/composables/rules'
+import { RULE_TAB_TYPE } from '@/constant'
+import { fromNow } from '@/helper/utils'
+import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
 import type { Rule, RuleProvider } from '@/types'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import type { ColumnDef } from '@tanstack/vue-table'
@@ -96,7 +92,6 @@ const groupDialogTitle = computed(() => {
   return rule ? (rule.payload ? `${rule.type}: ${rule.payload}` : rule.type) : ''
 })
 
-const isRuleDisabled = (rule: Rule) => Boolean(rule.extra?.disabled || rule.disabled)
 const isRuleSelectable = (rule: Rule) =>
   proxyGroupList.value.includes(rule.proxy) && !isRuleDisabled(rule)
 const ruleRowClass = (rule: Rule) => {
@@ -134,29 +129,10 @@ const toggleRuleHandler = async (rule: Rule) => {
   if (togglingRules.value.includes(key)) return
   togglingRules.value.push(key)
   try {
-    const willBeDisabled = !isRuleDisabled(rule)
-    if (rule.uuid) await toggleRuleDisabledSingBoxAPI(rule.uuid)
-    else await toggleRuleDisabledAPI({ [rule.index]: willBeDisabled })
-
-    if (willBeDisabled && disconnectOnRuleDisable.value) {
-      activeConnections.value
-        .filter(
-          (connection) =>
-            connection.rule === rule.type &&
-            getConnectionRulePayload(connection) === (rule.payload || ''),
-        )
-        .forEach((connection) => disconnectByIdAPI(connection.id))
-    }
-    await fetchRules()
+    await toggleRuleDisabledWithSideEffects(rule)
   } finally {
     togglingRules.value = togglingRules.value.filter((item) => item !== key)
   }
-}
-
-const isUpdateableRuleSet = (rule: Rule) => {
-  const provider = ruleProviderList.value.find((item) => item.name === rule.payload)
-
-  return Boolean(provider && rule.type === 'RuleSet' && provider.vehicleType !== 'Inline')
 }
 
 const updateButton = (name: string, onClick: () => void) =>
@@ -218,7 +194,11 @@ const ruleColumns: ColumnDef<Rule>[] = [
   {
     header: () => t('ruleCount'),
     id: 'size',
-    accessorFn: (rule) => (rule.size >= 0 ? rule.size : ''),
+    accessorFn: (rule) => {
+      const size = getRuleSize(rule)
+
+      return typeof size === 'number' && size !== -1 ? size : ''
+    },
     cell: ({ getValue }) => h('span', { class: 'tabular-nums' }, String(getValue() ?? '')),
     meta: { cellClass: 'w-24' },
   },

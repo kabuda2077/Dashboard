@@ -323,6 +323,10 @@ const ru: LANG_MESSAGE = {
   customBackgroundURL: 'URL фона',
   splitOverviewPage: 'Разделить страницу с обзором',
   manageHiddenGroup: 'Управление скрытыми группами',
+  showProxyGroup: 'Показать группу прокси',
+  hideProxyGroup: 'Скрыть группу прокси',
+  manageHiddenGroupShortcutTip:
+    'Нажмите {shortcut}, чтобы переключить управление скрытыми группами',
   transparent: 'Прозрачность',
   proxyGroupIconSize: 'Размер иконки группы прокси',
   proxyGroupIconMargin: 'Отступ иконки группы прокси',

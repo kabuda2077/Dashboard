@@ -191,6 +191,11 @@ $runtimeFollowups = @{
     'src\assembly\connections\clash.ts' = @('shallowRef<ConnectionsSnapshot>()', 'metadata.processPath?.replace')
     'src\components\proxies\ProxyNodeGrid.vue' = @('<TransitionGroup name="proxy-node">')
     'src\components\proxies\LatencyTag.vue' = @('<Transition name="latency-state">', 'shownLatency')
+    'src\components\proxies\ProxyGroupHeader.vue' = @('showVisibilityTip', 'manageHiddenGroupShortcutTip')
+    'src\components\rules\RuleCard.vue' = @('toggleRuleDisabledWithSideEffects', 'getRuleSize')
+    'src\components\rules\RulesTable.vue' = @('toggleRuleDisabledWithSideEffects', 'getRuleSize')
+    'src\composables\rules.ts' = @('isRuleDisabled', 'getRuleSize', 'toggleRuleDisabledWithSideEffects')
+    'src\assembly\proxies\index.ts' = @('return nowNode?.history')
     'src\assets\styles\motion.css' = @('.proxy-node-move', '.latency-highlight::after')
 }
 

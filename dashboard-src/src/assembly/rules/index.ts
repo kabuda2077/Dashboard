@@ -1,4 +1,5 @@
 // 组装层 · Clash-compatible rules 门面。
+import { toggleRuleDisabledAPI, toggleRuleDisabledSingBoxAPI } from '@/api/clash'
 import { RULE_TAB_TYPE } from '@/constant'
 import { toSearchRegex } from '@/helper/search'
 import type { Rule, RuleProvider } from '@/types'
@@ -37,6 +38,11 @@ export const renderRulesProvider = computed(() => {
 const load = () => import('./clash')
 
 export const fetchRules = async () => (await load()).fetchRules()
+
+export const toggleRuleDisabled = (rule: Rule, disabled: boolean) =>
+  rule.uuid
+    ? toggleRuleDisabledSingBoxAPI(rule.uuid)
+    : toggleRuleDisabledAPI({ [rule.index]: disabled })
 
 // 规则启用 / 规则集更新动作(Clash 专属),经 rules 域门面暴露给 view。
 export {
