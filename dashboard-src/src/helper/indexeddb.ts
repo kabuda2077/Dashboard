@@ -132,7 +132,8 @@ export const backgroundImage = computed(() => {
   if (customBackgroundURL.value.includes(LOCAL_IMAGE)) {
     return `background-image: url('${backgroundInDB.value}');`
   }
-  return `background-image: url('${customBackgroundURL.value}?v=${date}');`
+  const querySeparator = customBackgroundURL.value.includes('?') ? '&' : '?'
+  return `background-image: url('${customBackgroundURL.value}${querySeparator}v=${date}');`
 })
 
 export interface ConnectionHistoryData {

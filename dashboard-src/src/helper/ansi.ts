@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'vue'
+import type { ThemeColorScheme } from './theme'
 
 export type AnsiTextSegment = {
   text: string
@@ -14,31 +15,92 @@ type AnsiState = {
   opacity?: CSSProperties['opacity']
 }
 
+type Rgb = readonly [number, number, number]
+
 const ANSI_PATTERN = /\x1b\[([0-9;]*)m/g
-
-const NORMAL_COLORS = [
-  '#000000',
-  '#cd3131',
-  '#0dbc79',
-  '#e5e510',
-  '#2472c8',
-  '#bc3fbc',
-  '#11a8cd',
-  '#e5e5e5',
+const NORMAL_COLORS: Rgb[] = [
+  [0, 0, 0],
+  [205, 49, 49],
+  [13, 188, 121],
+  [229, 229, 16],
+  [36, 114, 200],
+  [188, 63, 188],
+  [17, 168, 205],
+  [229, 229, 229],
 ]
-
-const BRIGHT_COLORS = [
-  '#666666',
-  '#f14c4c',
-  '#23d18b',
-  '#f5f543',
-  '#3b8eea',
-  '#d670d6',
-  '#29b8db',
-  '#ffffff',
+const BRIGHT_COLORS: Rgb[] = [
+  [102, 102, 102],
+  [241, 76, 76],
+  [35, 209, 139],
+  [245, 245, 67],
+  [59, 142, 234],
+  [214, 112, 214],
+  [41, 184, 219],
+  [255, 255, 255],
 ]
+const BLACK: Rgb = [0, 0, 0]
+const WHITE: Rgb = [255, 255, 255]
+const MIN_CONTRAST_RATIO = 4.5
 
-const colorFrom256 = (value: number) => {
+const mixRgb = (color: Rgb, target: Rgb, amount: number): Rgb =>
+  color.map((channel, index) =>
+    Math.round(channel + (target[index] - channel) * amount),
+  ) as unknown as Rgb
+
+const relativeLuminance = (color: Rgb) => {
+  const [red, green, blue] = color.map((channel) => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722
+}
+
+const contrastRatio = (foreground: Rgb, background: Rgb) => {
+  const foregroundLuminance = relativeLuminance(foreground)
+  const backgroundLuminance = relativeLuminance(background)
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance)
+  const darker = Math.min(foregroundLuminance, backgroundLuminance)
+
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+const ensureContrast = (color: Rgb, background: Rgb, target: Rgb): Rgb => {
+  if (contrastRatio(color, background) >= MIN_CONTRAST_RATIO) return color
+
+  let low = 0
+  let high = 1
+  for (let i = 0; i < 12; i++) {
+    const middle = (low + high) / 2
+    if (contrastRatio(mixRgb(color, target, middle), background) >= MIN_CONTRAST_RATIO) {
+      high = middle
+    } else {
+      low = middle
+    }
+  }
+
+  return mixRgb(color, target, high)
+}
+
+const rgbString = ([red, green, blue]: Rgb) => `rgb(${red}, ${green}, ${blue})`
+
+const foregroundColor = (color: Rgb, colorScheme: ThemeColorScheme) =>
+  rgbString(
+    ensureContrast(
+      color,
+      colorScheme === 'dark' ? BLACK : WHITE,
+      colorScheme === 'dark' ? WHITE : BLACK,
+    ),
+  )
+
+const backgroundColor = (color: Rgb, colorScheme: ThemeColorScheme) => {
+  const foreground = colorScheme === 'dark' ? WHITE : BLACK
+  const target = colorScheme === 'dark' ? BLACK : WHITE
+
+  return rgbString(ensureContrast(color, foreground, target))
+}
+
+const colorFrom256 = (value: number): Rgb | undefined => {
   if (value < 0 || value > 255) return undefined
   if (value < 8) return NORMAL_COLORS[value]
   if (value < 16) return BRIGHT_COLORS[value - 8]
@@ -50,12 +112,12 @@ const colorFrom256 = (value: number) => {
     const blue = index % 6
     const toChannel = (channel: number) => (channel === 0 ? 0 : channel * 40 + 55)
 
-    return `rgb(${toChannel(red)}, ${toChannel(green)}, ${toChannel(blue)})`
+    return [toChannel(red), toChannel(green), toChannel(blue)]
   }
 
   const gray = (value - 232) * 10 + 8
 
-  return `rgb(${gray}, ${gray}, ${gray})`
+  return [gray, gray, gray]
 }
 
 const stateToStyle = (state: AnsiState): CSSProperties | undefined => {
@@ -71,7 +133,7 @@ const stateToStyle = (state: AnsiState): CSSProperties | undefined => {
   return Object.keys(style).length ? style : undefined
 }
 
-const applyAnsiCodes = (state: AnsiState, codes: number[]) => {
+const applyAnsiCodes = (state: AnsiState, codes: number[], colorScheme: ThemeColorScheme) => {
   for (let i = 0; i < codes.length; i++) {
     const code = codes[i]
 
@@ -98,27 +160,30 @@ const applyAnsiCodes = (state: AnsiState, codes: number[]) => {
     } else if (code === 24) {
       state.textDecoration = undefined
     } else if (code >= 30 && code <= 37) {
-      state.color = NORMAL_COLORS[code - 30]
+      state.color = foregroundColor(NORMAL_COLORS[code - 30], colorScheme)
     } else if (code === 39) {
       state.color = undefined
     } else if (code >= 40 && code <= 47) {
-      state.backgroundColor = NORMAL_COLORS[code - 40]
+      state.backgroundColor = backgroundColor(NORMAL_COLORS[code - 40], colorScheme)
     } else if (code === 49) {
       state.backgroundColor = undefined
     } else if (code >= 90 && code <= 97) {
-      state.color = BRIGHT_COLORS[code - 90]
+      state.color = foregroundColor(BRIGHT_COLORS[code - 90], colorScheme)
     } else if (code >= 100 && code <= 107) {
-      state.backgroundColor = BRIGHT_COLORS[code - 100]
+      state.backgroundColor = backgroundColor(BRIGHT_COLORS[code - 100], colorScheme)
     } else if ((code === 38 || code === 48) && codes[i + 1] === 5) {
       const color = colorFrom256(codes[i + 2])
-      if (color && code === 38) state.color = color
-      if (color && code === 48) state.backgroundColor = color
+      if (color && code === 38) state.color = foregroundColor(color, colorScheme)
+      if (color && code === 48) state.backgroundColor = backgroundColor(color, colorScheme)
       i += 2
     } else if ((code === 38 || code === 48) && codes[i + 1] === 2) {
-      const [red, green, blue] = codes.slice(i + 2, i + 5)
-      const color = `rgb(${red}, ${green}, ${blue})`
-      if (code === 38) state.color = color
-      if (code === 48) state.backgroundColor = color
+      const channels = codes.slice(i + 2, i + 5)
+      const color =
+        channels.length === 3 && channels.every((channel) => channel >= 0 && channel <= 255)
+          ? (channels as unknown as Rgb)
+          : undefined
+      if (color && code === 38) state.color = foregroundColor(color, colorScheme)
+      if (color && code === 48) state.backgroundColor = backgroundColor(color, colorScheme)
       i += 4
     }
   }
@@ -126,7 +191,7 @@ const applyAnsiCodes = (state: AnsiState, codes: number[]) => {
 
 export const stripAnsi = (value: string) => value.replace(ANSI_PATTERN, '')
 
-export const parseAnsiText = (value: string): AnsiTextSegment[] => {
+export const parseAnsiText = (value: string, colorScheme: ThemeColorScheme): AnsiTextSegment[] => {
   const segments: AnsiTextSegment[] = []
   const state: AnsiState = {}
   let cursor = 0
@@ -138,7 +203,7 @@ export const parseAnsiText = (value: string): AnsiTextSegment[] => {
     }
 
     const codes = match[1] ? match[1].split(';').map((code) => Number(code || 0)) : [0]
-    applyAnsiCodes(state, codes)
+    applyAnsiCodes(state, codes, colorScheme)
     cursor = match.index + match[0].length
   }
 

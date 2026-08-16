@@ -216,6 +216,13 @@ const setHistory = (proxyName: string, delay: number) => {
 
 const TIP_KEY = 'testLatencyOneByOneWithTip'
 const limiter = pLimit(5)
+const untestableProxyTypes = new Set([PROXY_TYPE.Reject, PROXY_TYPE.RejectDrop, PROXY_TYPE.Block])
+const isLatencyTestable = (name: string) => {
+  const type = proxyMap.value[name]?.type?.toLowerCase() as PROXY_TYPE | undefined
+
+  return !type || !untestableProxyTypes.has(type)
+}
+
 const testLatencyOneByOneWithTip = async (
   proxyGroupName: string,
   nodes: string[],
@@ -267,7 +274,7 @@ const testLatencyOneByOneWithTip = async (
 
 export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
   const proxyNode = proxyMap.value[proxyGroupName]
-  const all = proxyNode.all ?? []
+  const all = (proxyNode.all ?? []).filter(isLatencyTestable)
   const url = getTestUrl(proxyGroupName)
 
   if (

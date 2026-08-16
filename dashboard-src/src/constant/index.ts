@@ -172,6 +172,7 @@ export enum PROXY_TYPE {
   Direct = 'direct',
   Reject = 'reject',
   RejectDrop = 'rejectdrop',
+  Block = 'block',
   Compatible = 'compatible',
   Pass = 'pass',
   Dns = 'dns',

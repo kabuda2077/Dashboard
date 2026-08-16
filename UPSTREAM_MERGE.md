@@ -56,8 +56,11 @@ git diff --no-index --stat .tmp\zashboard-vX.Y.Z\src dashboard-src\src
 Current embedded zashboard baseline:
 
 ```text
-dashboard-src/package.json: 3.11.0
+dashboard-src/package.json: 3.15.0
 ```
+
+Selected compatible fixes from zashboard 3.19.0 are applied on top of this baseline. Keep the
+package version at 3.15.0 until the full upstream 3.19.0 source set has been reviewed and merged.
 
 The desktop app is not pure zashboard. It consists of:
 

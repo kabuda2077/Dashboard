@@ -1,0 +1,1 @@
+import{aC as t,cs as a,ct as o}from"./index-C_KtsYyx.js";import"./vue-vendor-CKoJxOre.js";import"./utils-vendor-BMTKWwNZ.js";import"./table-vendor-BzsNQRDo.js";import"./tooltip-vendor-BBoaU1_F.js";import"./charts-vendor-wL-gnMhl.js";const s=async()=>{t.value=(await a()).data},r=async t=>{await o(t),await s()};export{s as fetchConfigs,r as updateConfigs};

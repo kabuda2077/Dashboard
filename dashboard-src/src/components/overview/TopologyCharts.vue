@@ -4,6 +4,18 @@
       <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
         {{ $t('connectionTopology') }}
       </div>
+      <label
+        class="text-base-content/60 flex cursor-pointer items-center gap-2 text-xs"
+        :title="t('applyConnectionFilter')"
+      >
+        <span class="hidden sm:inline">{{ t('applyConnectionFilter') }}</span>
+        <input
+          v-model="topologyApplyConnectionFilter"
+          type="checkbox"
+          class="toggle"
+          :aria-label="t('applyConnectionFilter')"
+        />
+      </label>
     </div>
     <div
       :class="twMerge('bg-base-200/30 relative mt-4 h-96 w-full overflow-hidden rounded-xl')"
@@ -89,8 +101,14 @@ import { backgroundImage } from '@/helper/indexeddb'
 import { getConnectionChains, getConnectionRule, getConnectionSourceIP } from '@/helper'
 import { getIPLabelFromMap } from '@/helper/sourceip'
 import { isMiddleScreen } from '@/helper/utils'
-import { activeConnections } from '@/store/connections'
-import { blurIntensity, dashboardTransparent, font, theme } from '@/store/settings'
+import { activeConnections, filteredActiveConnections } from '@/store/connections'
+import {
+  blurIntensity,
+  dashboardTransparent,
+  font,
+  theme,
+  topologyApplyConnectionFilter,
+} from '@/store/settings'
 import {
   ArrowsPointingInIcon,
   ArrowsPointingOutIcon,
@@ -155,7 +173,9 @@ const updateFontFamily = () => {
 }
 
 const sankeyData = computed(() => {
-  const connections = activeConnections.value
+  const connections = topologyApplyConnectionFilter.value
+    ? filteredActiveConnections.value
+    : activeConnections.value
   if (!connections || connections.length === 0) {
     return { nodes: [], links: [] }
   }

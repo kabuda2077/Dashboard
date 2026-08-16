@@ -221,6 +221,11 @@ if (missingCards.length > 0) {
   overviewCardOrder.value = [...overviewCardOrder.value, ...newCards]
 }
 
+export const topologyApplyConnectionFilter = useStorage(
+  'config/topology-apply-connection-filter',
+  true,
+)
+
 // proxies
 export const collapseGroupMap = useStorage<Record<string, boolean>>('cache/collapse-group-map', {})
 export const proxyGroupFilterMap = useStorage<Record<string, string>>(

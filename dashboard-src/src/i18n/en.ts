@@ -442,6 +442,7 @@ const en = {
     "When enabled, opening zashboard will close UDP connections that have been idle longer than the configured time. This can help with UDP connections that don't disconnect automatically.",
   customGlobalNode: 'Custom global node',
   connectionTopology: 'Connection topology',
+  applyConnectionFilter: 'Apply connection filter',
   editBackend: 'Edit backend',
   editBackendTitle: 'Edit backend configuration',
   selectBackend: 'Select backend',

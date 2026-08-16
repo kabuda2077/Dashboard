@@ -166,7 +166,7 @@ export const connections = computed(() => {
     : closedConnections.value
 })
 
-export const renderConnections = computed(() => {
+const filterConnections = (items: readonly Connection[]) => {
   const searchRegex = toSearchRegex(connectionFilter.value)
   const hideRegex = quickFilterEnabled.value ? toSearchRegex(quickFilterRegex.value) : null
   const displayOptions = {
@@ -178,7 +178,7 @@ export const renderConnections = computed(() => {
     ? connectionCardLines.value.flat()
     : connectionTableColumns.value
 
-  return connections.value
+  return items
     .filter((conn) => {
       const visibleValues = getConnectionVisibleSearchValues(conn, visibleKeys, displayOptions)
 
@@ -203,6 +203,12 @@ export const renderConnections = computed(() => {
 
       return true
     })
+}
+
+export const filteredActiveConnections = computed(() => filterConnections(activeConnections.value))
+
+export const renderConnections = computed(() => {
+  return filterConnections(connections.value)
     .sort((a, b) => {
       if (isConnectionCard.value && isDesc.value) {
         ;[a, b] = [b, a]

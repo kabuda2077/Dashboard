@@ -433,6 +433,7 @@ const zhTW: LANG_MESSAGE = {
     '啟用後，開啟zashboard時將關閉持續時間超過配置分鐘數的UDP連接，這可能對某些無法正常自動斷開的UDP連接帶來幫助。(這是作者自己的私貨，你大概率不需要開啟它)',
   customGlobalNode: '自訂全域節點',
   connectionTopology: '連接拓撲',
+  applyConnectionFilter: '套用連線篩選',
   editBackend: '編輯後端',
   editBackendTitle: '修改後端配置',
   selectBackend: '選擇後端',

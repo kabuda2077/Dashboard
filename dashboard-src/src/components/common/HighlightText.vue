@@ -23,6 +23,7 @@
 <script setup lang="ts">
 import { parseAnsiText } from '@/helper/ansi'
 import { getSearchTextParts } from '@/helper/search'
+import { themeColorScheme } from '@/helper/theme'
 import type { CSSProperties } from 'vue'
 import { computed } from 'vue'
 
@@ -46,7 +47,7 @@ const props = withDefaults(
 const parts = computed<HighlightTextPart[]>(() => {
   if (!props.ansi) return getSearchTextParts(props.text, props.filter)
 
-  return parseAnsiText(props.text).flatMap<HighlightTextPart>((segment) =>
+  return parseAnsiText(props.text, themeColorScheme.value).flatMap<HighlightTextPart>((segment) =>
     getSearchTextParts(segment.text, props.filter).map((part) => ({
       ...part,
       style: segment.style,
