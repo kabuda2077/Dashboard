@@ -22,10 +22,10 @@
             {{ updateFeedback }}
           </span>
           <span
-            v-else-if="latestAppVersion"
+            v-else-if="hostState.appUpdateAvailable && latestAppVersion"
             class="text-base-content/55 truncate text-xs font-normal"
           >
-            最新版本 {{ latestAppVersion }}
+            发现 {{ latestAppVersion }}
           </span>
         </div>
         <div class="flex shrink-0 items-center gap-2">
