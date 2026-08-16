@@ -8,11 +8,11 @@ describe('confirm dialog queue', () => {
 
     expect(confirmDialogState.value?.message).toBe('first')
     resolveConfirmDialog(true)
-    await expect(first).resolves.toBe(true)
+    await expect(first).resolves.toEqual({ confirmed: true, checked: false })
 
     expect(confirmDialogState.value?.message).toBe('second')
-    resolveConfirmDialog(false)
-    await expect(second).resolves.toBe(false)
+    resolveConfirmDialog(false, true)
+    await expect(second).resolves.toEqual({ confirmed: false, checked: true })
     expect(confirmDialogState.value).toBeUndefined()
   })
 })

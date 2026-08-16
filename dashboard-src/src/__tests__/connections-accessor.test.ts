@@ -1,8 +1,10 @@
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
 import {
   createGetConnectionDisplayValue,
+  createGetConnectionVisibleSearchValues,
   type ConnectionAccessor,
 } from '@/assembly/connections/accessor'
+import { connectionAccessor as clashConnectionAccessor } from '@/assembly/connections/clash'
 import { connectionTableColumns } from '@/store/settings'
 import type { Connection } from '@/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -77,5 +79,33 @@ describe('connection field accessors', () => {
 
   it('keeps GeoIP out of the default connection table columns', () => {
     expect(connectionTableColumns.value).not.toContain(CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP)
+  })
+
+  it('handles a missing process path', () => {
+    const connectionWithoutProcess = {
+      metadata: { process: '', processPath: undefined },
+    } as unknown as Connection
+
+    expect(clashConnectionAccessor.process(connectionWithoutProcess)).toBe('-')
+  })
+
+  it('excludes close actions from visible search values', () => {
+    const getSearchValues = createGetConnectionVisibleSearchValues(accessor)
+    const options = {
+      mode: 'table' as const,
+      showFullProxyChain: true,
+      proxyChainDirection: PROXY_CHAIN_DIRECTION.NORMAL,
+    }
+
+    expect(
+      getSearchValues(
+        connection,
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Host, CONNECTIONS_TABLE_ACCESSOR_KEY.Close],
+        options,
+      ),
+    ).toEqual(['example.test:443'])
+    expect(
+      getSearchValues(connection, [CONNECTIONS_TABLE_ACCESSOR_KEY.Process], options),
+    ).toEqual(['browser.exe'])
   })
 })

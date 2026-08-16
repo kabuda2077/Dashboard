@@ -3,7 +3,7 @@
     ref="cardRef"
     :class="
       twMerge(
-        'bg-base-200 flex cursor-pointer flex-col items-start rounded-md hover:shadow-sm',
+        'bg-base-200 relative flex cursor-pointer flex-col items-start rounded-md hover:shadow-sm',
         active ? 'bg-primary sm:hover:bg-primary/95' : 'sm:hover:bg-base-300/50',
         isSmallCard ? 'gap-1 p-1' : 'gap-2 p-2',
         latencyTipAnimationClass,
@@ -59,7 +59,7 @@ import { getIPv6ByName, getTestUrl, proxyMap } from '@/assembly/proxies'
 import { IPv6test, proxyCardSize, proxySortType, truncateProxyName } from '@/store/settings'
 import { smartWeightsMap } from '@/store/smart'
 import { twMerge } from 'tailwind-merge'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LatencyTag from './LatencyTag.vue'
 import ProxyIcon from './ProxyIcon.vue'
@@ -109,10 +109,9 @@ const handlerLatencyTest = async () => {
     [PROXY_SORT_TYPE.LATENCY_ASC, PROXY_SORT_TYPE.LATENCY_DESC].includes(proxySortType.value) &&
     cardRef.value
   ) {
-    const classList = ['bg-info/20!', 'transition-colors', 'duration-1500']
-
+    await nextTick()
     scrollIntoCenter(cardRef.value)
-    latencyTipAnimationClass.value = classList
+    latencyTipAnimationClass.value = ['latency-highlight']
     setTimeout(() => {
       latencyTipAnimationClass.value = []
     }, 1500)

@@ -177,6 +177,7 @@ const ru: LANG_MESSAGE = {
   sourceIP: 'Исходный IP',
   activeConnections: 'Активные',
   closedConnections: 'Закрытые',
+  allConnections: 'Все',
   logLevel: 'Уровень журнала',
   logType: 'Тип журнала',
 
@@ -424,6 +425,8 @@ const ru: LANG_MESSAGE = {
     'В бэкенде сохранены настройки, которые перезапишут следующие локальные настройки:\n\n{keys}\n\nПрименить их?',
   importSettingsConfirm:
     'Импортированные настройки перезапишут следующие локальные настройки:\n\n{keys}\n\nПрименить их?',
+  dontAskAgainAlwaysApply: 'Больше не спрашивать, применять автоматически',
+  confirmBeforeOverride: 'Подтверждать перезапись локальных настроек',
   deleteUploadedSettingsSuccess: 'Загруженные настройки успешно удалены',
   deleteUploadedSettingsConfirm:
     'Вы уверены, что хотите удалить загруженные на бэкенд настройки? Это действие нельзя отменить.',

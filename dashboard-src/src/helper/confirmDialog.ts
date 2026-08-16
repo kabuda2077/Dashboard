@@ -6,10 +6,16 @@ export type ConfirmDialogOptions = {
   confirmText?: string
   cancelText?: string
   confirmButtonClass?: string
+  checkboxText?: string
+}
+
+export type ConfirmDialogResult = {
+  confirmed: boolean
+  checked: boolean
 }
 
 type ConfirmDialogRequest = ConfirmDialogOptions & {
-  resolve: (value: boolean) => void
+  resolve: (value: ConfirmDialogResult) => void
 }
 
 const activeConfirmDialog = ref<ConfirmDialogRequest>()
@@ -23,16 +29,16 @@ const showNextConfirmDialog = () => {
 export const confirmDialogState = readonly(activeConfirmDialog)
 
 export const showConfirmDialog = (options: ConfirmDialogOptions) =>
-  new Promise<boolean>((resolve) => {
+  new Promise<ConfirmDialogResult>((resolve) => {
     confirmDialogQueue.push({ ...options, resolve })
     showNextConfirmDialog()
   })
 
-export const resolveConfirmDialog = (value: boolean) => {
+export const resolveConfirmDialog = (confirmed: boolean, checked = false) => {
   const current = activeConfirmDialog.value
   if (!current) return
 
   activeConfirmDialog.value = undefined
-  current.resolve(value)
+  current.resolve({ confirmed, checked })
   showNextConfirmDialog()
 }

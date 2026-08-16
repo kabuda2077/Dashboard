@@ -133,6 +133,10 @@
             :class="[
               virtualRow.index % 2 === 0 ? 'bg-base-150' : 'bg-base-100',
               !isDragging ? 'cursor-pointer' : 'cursor-grabbing',
+              connectionTabShow === CONNECTION_TAB_TYPE.ALL &&
+              isClosedConnection(rows[virtualRow.index].original)
+                ? 'opacity-60'
+                : '',
             ]"
             @click="handlerClickRow(rows[virtualRow.index])"
           >
@@ -226,7 +230,12 @@ import {
 } from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
-import { connectionFilter, connectionTabShow, renderConnections } from '@/store/connections'
+import {
+  connectionFilter,
+  connectionTabShow,
+  isClosedConnection,
+  renderConnections,
+} from '@/store/connections'
 import {
   connectionTableColumns,
   proxyChainDirection,
@@ -316,6 +325,8 @@ const columns: ColumnDef<Connection>[] = [
     enableSorting: false,
     id: CONNECTIONS_TABLE_ACCESSOR_KEY.Close,
     cell: ({ row }) => {
+      if (isClosedConnection(row.original)) return null
+
       const closeButton = h(
         'button',
         {

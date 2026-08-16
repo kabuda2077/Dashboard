@@ -7,6 +7,7 @@ import {
   getProcessFromConnection,
 } from '@/helper'
 import {
+  clearConnectionHistoryFromIndexedDB,
   ConnectionHistoryType,
   getConnectionHistoryFromIndexedDB,
   saveConnectionHistoryToIndexedDB,
@@ -14,16 +15,11 @@ import {
 } from '@/helper/indexeddb'
 import type { Connection } from '@/types'
 import ipaddr from 'ipaddr.js'
-import { ref } from 'vue'
+import { shallowRef } from 'vue'
 import { activeBackend } from './setup'
 
-const isInitializedPromise = ref(
-  new Promise((resolve) => {
-    resolve(false)
-  }),
-)
 const uuid = () => activeBackend.value?.uuid || ''
-const allHistoryTypes = [
+const allHistoryTypes: ConnectionHistoryType[] = [
   ConnectionHistoryType.SourceIP,
   ConnectionHistoryType.Destination,
   ConnectionHistoryType.Process,
@@ -31,7 +27,17 @@ const allHistoryTypes = [
   ConnectionHistoryType.ProxyGroup,
 ]
 
-export const aggregatedDataMap = ref<Record<ConnectionHistoryType, ConnectionHistoryData[]>>({
+type AggregationMaps = Record<ConnectionHistoryType, Map<string, ConnectionHistoryData>>
+
+const createAggregationMaps = (): AggregationMaps => ({
+  [ConnectionHistoryType.SourceIP]: new Map<string, ConnectionHistoryData>(),
+  [ConnectionHistoryType.Destination]: new Map<string, ConnectionHistoryData>(),
+  [ConnectionHistoryType.Process]: new Map<string, ConnectionHistoryData>(),
+  [ConnectionHistoryType.Outbound]: new Map<string, ConnectionHistoryData>(),
+  [ConnectionHistoryType.ProxyGroup]: new Map<string, ConnectionHistoryData>(),
+})
+
+const emptyView = (): Record<ConnectionHistoryType, ConnectionHistoryData[]> => ({
   [ConnectionHistoryType.SourceIP]: [],
   [ConnectionHistoryType.Destination]: [],
   [ConnectionHistoryType.Process]: [],
@@ -39,27 +45,116 @@ export const aggregatedDataMap = ref<Record<ConnectionHistoryType, ConnectionHis
   [ConnectionHistoryType.ProxyGroup]: [],
 })
 
-export const initAggregatedDataMap = () => {
-  aggregatedDataMap.value = {
-    [ConnectionHistoryType.SourceIP]: [],
-    [ConnectionHistoryType.Destination]: [],
-    [ConnectionHistoryType.Process]: [],
-    [ConnectionHistoryType.Outbound]: [],
-    [ConnectionHistoryType.ProxyGroup]: [],
+let aggregationMaps = createAggregationMaps()
+export const aggregatedDataMap = shallowRef(emptyView())
+
+const VIEW_REFRESH_MS = 5_000
+const FLUSH_EVERY_TICKS = 6
+const TRIM_THRESHOLD = 2000
+const TRIM_KEEP = 1500
+
+let ready = false
+let sessionUuid = ''
+let sessionGeneration = 0
+let initEpoch = 0
+let lastClearEpoch = 0
+let dirty = false
+let viewTick = 0
+const dirtyTypes = new Set<ConnectionHistoryType>()
+
+interface InitContext {
+  epoch: number
+  uuid: string
+  pending: Connection[]
+}
+
+let currentContext: InitContext | undefined
+let persistenceQueue: Promise<void> = Promise.resolve()
+
+const enqueuePersistence = <T>(operation: () => Promise<T>) => {
+  const result = persistenceQueue.then(operation)
+
+  persistenceQueue = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
+}
+
+const markAllTypesDirty = () => {
+  dirtyTypes.clear()
+  for (const type of allHistoryTypes) {
+    dirtyTypes.add(type)
   }
-  isInitializedPromise.value = new Promise(async (resolve) => {
-    for (const type of allHistoryTypes) {
-      const historicalData = await getConnectionHistoryFromIndexedDB(uuid(), type)
+}
 
-      let finalData = historicalData
-      if (historicalData.length > 2000) {
-        finalData = historicalData.sort((a, b) => b.download - a.download).slice(0, 1500)
-        await saveConnectionHistoryToIndexedDB(uuid(), type, finalData)
-      }
+const refreshView = () => {
+  if (!dirtyTypes.size) return
 
-      aggregatedDataMap.value[type] = finalData
+  const next = { ...aggregatedDataMap.value }
+  for (const type of dirtyTypes) {
+    next[type] = Array.from(aggregationMaps[type].values())
+  }
+  dirtyTypes.clear()
+  aggregatedDataMap.value = next
+}
+
+const trimMap = (maps: AggregationMaps, type: ConnectionHistoryType) => {
+  const map = maps[type]
+  if (map.size <= TRIM_THRESHOLD) return false
+
+  const kept = Array.from(map.values())
+    .sort((a, b) => b.download - a.download)
+    .slice(0, TRIM_KEEP)
+
+  map.clear()
+  for (const item of kept) {
+    map.set(item.key, item)
+  }
+  return true
+}
+
+const snapshotMaps = (
+  maps: AggregationMaps,
+): Record<ConnectionHistoryType, ConnectionHistoryData[]> =>
+  Object.fromEntries(
+    allHistoryTypes.map((type) => [type, Array.from(maps[type].values(), (item) => ({ ...item }))]),
+  ) as Record<ConnectionHistoryType, ConnectionHistoryData[]>
+
+const saveSnapshot = async (
+  targetUuid: string,
+  snapshot: Record<ConnectionHistoryType, ConnectionHistoryData[]>,
+) => {
+  let success = true
+
+  for (const type of allHistoryTypes) {
+    try {
+      await saveConnectionHistoryToIndexedDB(targetUuid, type, snapshot[type])
+    } catch (error) {
+      success = false
+      console.error(`Failed to save connection history for ${type}:`, error)
     }
-    resolve(true)
+  }
+  return success
+}
+
+const flushCurrentSession = () => {
+  if (!sessionUuid || !dirty) return Promise.resolve()
+
+  for (const type of allHistoryTypes) {
+    if (trimMap(aggregationMaps, type)) dirtyTypes.add(type)
+  }
+
+  const targetUuid = sessionUuid
+  const targetGeneration = sessionGeneration
+  const snapshot = snapshotMaps(aggregationMaps)
+
+  dirty = false
+  return enqueuePersistence(async () => {
+    const success = await saveSnapshot(targetUuid, snapshot)
+    if (!success && sessionUuid === targetUuid && sessionGeneration === targetGeneration) {
+      dirty = true
+    }
   })
 }
 
@@ -70,17 +165,16 @@ export const aggregateConnections = (
   const map = new Map<string, ConnectionHistoryData>()
 
   connections.forEach((connection) => {
-    let key: string = ''
+    let key = ''
 
     if (type === ConnectionHistoryType.SourceIP) {
       key = getConnectionSourceIP(connection)
     } else if (type === ConnectionHistoryType.Destination) {
-      const hostkey = getConnectionHostname(connection)
-      if (ipaddr.IPv4.isValid(hostkey) || ipaddr.IPv6.isValid(hostkey)) {
-        key = hostkey
-      } else {
-        key = hostkey.split('.').slice(-2).join('.')
-      }
+      const host = getConnectionHostname(connection)
+      key =
+        ipaddr.IPv4.isValid(host) || ipaddr.IPv6.isValid(host)
+          ? host
+          : host.split('.').slice(-2).join('.')
     } else if (type === ConnectionHistoryType.Process) {
       key = getProcessFromConnection(connection)
     } else if (type === ConnectionHistoryType.Outbound) {
@@ -90,8 +184,8 @@ export const aggregateConnections = (
       key = chains[chains.length - 1] || '-'
     }
 
-    if (map.has(key)) {
-      const existing = map.get(key)!
+    const existing = map.get(key)
+    if (existing) {
       existing.download += getConnectionDownload(connection)
       existing.upload += getConnectionUpload(connection)
       existing.count += 1
@@ -108,47 +202,167 @@ export const aggregateConnections = (
   return Array.from(map.values())
 }
 
+const accumulateInto = (maps: AggregationMaps, connections: Connection[]) => {
+  for (const type of allHistoryTypes) {
+    const map = maps[type]
+    for (const item of aggregateConnections(connections, type)) {
+      const existing = map.get(item.key)
+      if (existing) {
+        existing.download += item.download
+        existing.upload += item.upload
+        existing.count += item.count
+      } else {
+        map.set(item.key, item)
+      }
+    }
+  }
+}
+
+const accumulateCurrent = (connections: Connection[]) => {
+  accumulateInto(aggregationMaps, connections)
+  markAllTypesDirty()
+  dirty = true
+}
+
+const loadHistoryMaps = async (targetUuid: string) => {
+  const maps = createAggregationMaps()
+
+  for (const type of allHistoryTypes) {
+    let data = await getConnectionHistoryFromIndexedDB(targetUuid, type)
+    if (data.length > TRIM_THRESHOLD) {
+      data = data.sort((a, b) => b.download - a.download).slice(0, TRIM_KEEP)
+      await saveConnectionHistoryToIndexedDB(targetUuid, type, data)
+    }
+    for (const item of data) maps[type].set(item.key, item)
+  }
+  return maps
+}
+
+const resetCurrentSession = (targetUuid: string) => {
+  ready = false
+  sessionUuid = targetUuid
+  sessionGeneration++
+  aggregationMaps = createAggregationMaps()
+  dirty = false
+  viewTick = 0
+  markAllTypesDirty()
+  aggregatedDataMap.value = emptyView()
+}
+
+const settleStaleContext = async (context: InitContext, maps: AggregationMaps) => {
+  if (!context.pending.length || context.epoch < lastClearEpoch) return
+
+  const pending = context.pending.splice(0)
+  if (currentContext && currentContext !== context && currentContext.uuid === context.uuid) {
+    currentContext.pending.push(...pending)
+    return
+  }
+
+  accumulateInto(maps, pending)
+  const snapshot = snapshotMaps(maps)
+  await enqueuePersistence(() => saveSnapshot(context.uuid, snapshot).then(() => undefined))
+}
+
+setInterval(() => {
+  if (!ready || document.hidden) return
+
+  refreshView()
+  if (++viewTick >= FLUSH_EVERY_TICKS) {
+    viewTick = 0
+    flushCurrentSession()
+  }
+}, VIEW_REFRESH_MS)
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && ready) flushCurrentSession()
+})
+
+window.addEventListener('pagehide', () => {
+  if (ready) flushCurrentSession()
+})
+
+export const initAggregatedDataMap = async () => {
+  flushCurrentSession()
+
+  const context: InitContext = {
+    epoch: ++initEpoch,
+    uuid: uuid(),
+    pending: [],
+  }
+  currentContext = context
+  resetCurrentSession(context.uuid)
+  const loadedMaps = await enqueuePersistence(() => loadHistoryMaps(context.uuid))
+
+  if (context.epoch !== initEpoch) {
+    await settleStaleContext(context, loadedMaps)
+    return
+  }
+
+  aggregationMaps = loadedMaps
+  ready = true
+  if (context.pending.length) accumulateCurrent(context.pending.splice(0))
+  if (currentContext === context) currentContext = undefined
+  markAllTypesDirty()
+  refreshView()
+}
+
+export const clearConnectionHistory = async () => {
+  const context: InitContext = {
+    epoch: ++initEpoch,
+    uuid: uuid(),
+    pending: [],
+  }
+  lastClearEpoch = context.epoch
+  currentContext = context
+  resetCurrentSession(context.uuid)
+  await enqueuePersistence(() => clearConnectionHistoryFromIndexedDB())
+
+  if (context.epoch !== initEpoch) {
+    await settleStaleContext(context, createAggregationMaps())
+    return
+  }
+
+  ready = true
+  if (context.pending.length) accumulateCurrent(context.pending.splice(0))
+  if (currentContext === context) currentContext = undefined
+  refreshView()
+}
+
 export const mergeAggregatedData = (
   historical: ConnectionHistoryData[],
   newData: ConnectionHistoryData[],
 ): ConnectionHistoryData[] => {
   const map = new Map<string, ConnectionHistoryData>()
 
-  historical.forEach((item) => {
-    map.set(item.key, { ...item })
-  })
-
-  newData.forEach((item) => {
-    if (map.has(item.key)) {
-      const existing = map.get(item.key)!
-      existing.download += item.download
-      existing.upload += item.upload
-      existing.count += item.count
-    } else {
-      map.set(item.key, { ...item })
-    }
-  })
+  for (const item of historical) map.set(item.key, item)
+  for (const item of newData) {
+    const existing = map.get(item.key)
+    map.set(
+      item.key,
+      existing
+        ? {
+            key: existing.key,
+            download: existing.download + item.download,
+            upload: existing.upload + item.upload,
+            count: existing.count + item.count,
+          }
+        : { ...item },
+    )
+  }
 
   return Array.from(map.values())
 }
 
-export const saveConnectionHistory = async (newClosedConnections: Connection[]) => {
-  if (newClosedConnections.length === 0) {
+export const saveConnectionHistory = (newClosedConnections: Connection[]) => {
+  if (!newClosedConnections.length) return
+
+  const targetUuid = uuid()
+  if (!ready || targetUuid !== sessionUuid) {
+    if (currentContext?.uuid === targetUuid) {
+      currentContext.pending.push(...newClosedConnections)
+    }
     return
   }
 
-  await isInitializedPromise.value
-
-  for (const type of allHistoryTypes) {
-    try {
-      const newAggregatedData = aggregateConnections(newClosedConnections, type)
-      const historicalData = aggregatedDataMap.value[type]
-      const mergedData = mergeAggregatedData(historicalData, newAggregatedData)
-
-      aggregatedDataMap.value[type] = mergedData
-      await saveConnectionHistoryToIndexedDB(uuid(), type, mergedData)
-    } catch (error) {
-      console.error(`Failed to save connection history for ${type}:`, error)
-    }
-  }
+  accumulateCurrent(newClosedConnections)
 }

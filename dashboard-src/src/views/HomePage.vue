@@ -95,9 +95,13 @@ import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
 import { scheduleAfterInitialPaint } from '@/router/pageLoaders'
 import { fetchConfigs, resetConfigs } from '@/assembly/config'
-import { initConnections, isPaused as connectionsPaused } from '@/store/connections'
-import { initLogs, isPaused as logsPaused } from '@/store/logs'
-import { initSatistic } from '@/store/overview'
+import {
+  initConnections,
+  isPaused as connectionsPaused,
+  stopConnections,
+} from '@/store/connections'
+import { initLogs, isPaused as logsPaused, stopLogs } from '@/store/logs'
+import { initSatistic, stopSatistic } from '@/store/overview'
 import { fetchProxies, proxiesTabShow } from '@/assembly/proxies'
 import { fetchRules, rulesTabShow } from '@/assembly/rules'
 import { isSidebarCollapsed } from '@/store/settings'
@@ -151,6 +155,8 @@ const initializePriorityData = () => {
 }
 
 const initializeDeferredData = () => {
+  if (!activeUuid.value) return
+
   ensureTask('proxies', fetchProxies)
   ensureTask('statistics', initSatistic)
 }
@@ -181,6 +187,20 @@ const scheduleDeferredDataAfterInitialPaint = () => {
   })
 }
 
+const cancelDeferredDataSchedule = () => {
+  cancelDeferredInitializationPaint?.()
+  cancelDeferredInitializationPaint = null
+
+  if (deferredInitializationHandle === null) return
+
+  if ('cancelIdleCallback' in window) {
+    window.cancelIdleCallback(deferredInitializationHandle)
+  } else {
+    globalThis.clearTimeout(deferredInitializationHandle)
+  }
+  deferredInitializationHandle = null
+}
+
 const initializeRouteData = () => {
   if (!activeUuid.value) return
 
@@ -209,9 +229,17 @@ const initializeRouteData = () => {
 watch(
   activeUuid,
   () => {
-    if (!activeUuid.value) return
+    cancelDeferredDataSchedule()
     initializedTasks.clear()
     resetConfigs()
+
+    if (!activeUuid.value) {
+      stopConnections()
+      stopLogs()
+      stopSatistic()
+      return
+    }
+
     rulesTabShow.value = RULE_TAB_TYPE.RULES
     proxiesTabShow.value = PROXY_TAB_TYPE.PROXIES
     initializePriorityData()
@@ -239,7 +267,7 @@ watch(documentVisible, () => {
   const visible = documentVisible.value === 'visible'
   connectionsPaused.value = !visible
   logsPaused.value = !visible
-  if (!visible) return
+  if (!visible || !activeUuid.value) return
 
   if (initializedTasks.has('proxies')) {
     fetchProxies()
@@ -249,15 +277,9 @@ watch(documentVisible, () => {
 })
 
 onUnmounted(() => {
-  cancelDeferredInitializationPaint?.()
-  cancelDeferredInitializationPaint = null
-  if (deferredInitializationHandle !== null) {
-    if ('cancelIdleCallback' in window) {
-      window.cancelIdleCallback(deferredInitializationHandle)
-    } else {
-      globalThis.clearTimeout(deferredInitializationHandle)
-    }
-    deferredInitializationHandle = null
-  }
+  cancelDeferredDataSchedule()
+  stopConnections()
+  stopLogs()
+  stopSatistic()
 })
 </script>

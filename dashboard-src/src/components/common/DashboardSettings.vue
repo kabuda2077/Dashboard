@@ -74,6 +74,21 @@
             class="toggle"
           />
         </div>
+        <div
+          v-if="autoSyncSettings || skipSyncSettingsConfirm"
+          class="setting-item"
+        >
+          <div class="setting-item-label">
+            {{ $t('confirmBeforeOverride') }}
+          </div>
+          <input
+            v-model="skipSyncSettingsConfirm"
+            type="checkbox"
+            class="toggle"
+            :true-value="false"
+            :false-value="true"
+          />
+        </div>
       </div>
     </template>
 
@@ -162,6 +177,21 @@
           class="toggle"
         />
       </div>
+      <div
+        v-if="autoImportSettings || skipImportSettingsConfirm"
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('confirmBeforeOverride') }}
+        </div>
+        <input
+          v-model="skipImportSettingsConfirm"
+          type="checkbox"
+          class="toggle"
+          :true-value="false"
+          :false-value="true"
+        />
+      </div>
     </div>
     <input
       ref="inputRef"
@@ -183,6 +213,8 @@ import {
   DEFAULT_SETTINGS_URL,
   importSettingsFromUrl,
   importSettingsUrl,
+  skipImportSettingsConfirm,
+  skipSyncSettingsConfirm,
   syncSettingsFromCore,
 } from '@/helper/autoImportSettings'
 import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'

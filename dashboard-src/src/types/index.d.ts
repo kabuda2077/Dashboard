@@ -131,7 +131,7 @@ export type ClashConnectionRawMessage = {
     inboundUser: string
     network: string
     process: string
-    processPath: string
+    processPath?: string
     remoteDestination: string
     sniffHost: string
     sourceGeoIP: string

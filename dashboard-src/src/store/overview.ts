@@ -29,7 +29,7 @@ export const uploadSpeed = ref<number>(0)
 export const downloadSpeedHistory = ref(makeInitValue())
 export const uploadSpeedHistory = ref(makeInitValue())
 
-let cancel: () => void
+let cancel: (() => void) | undefined
 
 export const initSatistic = () => {
   cancel?.()
@@ -107,4 +107,9 @@ export const initSatistic = () => {
     unwatchMemory()
     unwatchTraffic()
   }
+}
+
+export const stopSatistic = () => {
+  cancel?.()
+  cancel = undefined
 }

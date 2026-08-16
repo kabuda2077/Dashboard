@@ -20,8 +20,9 @@ import { toSearchRegex } from '@/helper/search'
 import type { Connection } from '@/types'
 import { useStorage, watchOnce } from '@vueuse/core'
 import dayjs from 'dayjs'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { initAggregatedDataMap, saveConnectionHistory } from './connHistory'
+import { activeUuid } from './setup'
 import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
@@ -47,8 +48,8 @@ export const quickFilterEnabled = useStorage<boolean>('config/quick-filter-enabl
 export const connectionFilter = ref('')
 export const sourceIPFilter = ref<string[] | null>(null)
 
-export const activeConnections = ref<Connection[]>([])
-export const closedConnections = ref<Connection[]>([])
+export const activeConnections = shallowRef<Connection[]>([])
+export const closedConnections = shallowRef<Connection[]>([])
 export const activeConnectionCount = ref(0)
 export const isPaused = ref(false)
 
@@ -58,14 +59,18 @@ export const uploadTotal = ref(0)
 let cancel: (() => void) | undefined
 type ConnectionsMode = 'summary' | 'full'
 let connectionMode: ConnectionsMode | null = null
+let connectionBackendUuid: string | null = null
 
 export const initConnections = (mode: ConnectionsMode = 'full') => {
-  if (cancel && connectionMode === mode) {
+  const backendUuid = activeUuid.value
+
+  if (cancel && connectionMode === mode && connectionBackendUuid === backendUuid) {
     return
   }
 
   cancel?.()
   connectionMode = mode
+  connectionBackendUuid = backendUuid
   activeConnections.value = []
   closedConnections.value = []
   activeConnectionCount.value = 0
@@ -120,55 +125,60 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
   }
 }
 
+export const stopConnections = () => {
+  cancel?.()
+  cancel = undefined
+  connectionMode = null
+  connectionBackendUuid = null
+}
+
 const isDesc = computed(() => {
   return connectionSortDirection.value === SORT_DIRECTION.DESC
 })
 
-const sortFunctionMap: Record<SORT_TYPE, (a: Connection, b: Connection) => number> = {
-  [SORT_TYPE.HOST]: (a: Connection, b: Connection) => {
-    return getHostFromConnection(a).localeCompare(getHostFromConnection(b))
+const sortKeyFunctionMap: Record<SORT_TYPE, (connection: Connection) => string | number> = {
+  [SORT_TYPE.HOST]: getHostFromConnection,
+  [SORT_TYPE.RULE]: getConnectionRule,
+  [SORT_TYPE.CHAINS]: getChainsStringFromConnection,
+  [SORT_TYPE.DOWNLOAD]: getConnectionDownload,
+  [SORT_TYPE.DOWNLOAD_SPEED]: (connection) => connection.downloadSpeed,
+  [SORT_TYPE.UPLOAD]: getConnectionUpload,
+  [SORT_TYPE.UPLOAD_SPEED]: (connection) => connection.uploadSpeed,
+  [SORT_TYPE.SOURCE_IP]: getConnectionSourceIP,
+  [SORT_TYPE.TYPE]: getNetworkTypeFromConnection,
+  [SORT_TYPE.CONNECT_TIME]: (connection) => {
+    const start = getConnectionStart(connection)
+    if (typeof start === 'number') return start
+
+    const parsed = Date.parse(start)
+    return Number.isNaN(parsed) ? 0 : parsed
   },
-  [SORT_TYPE.RULE]: (a: Connection, b: Connection) => {
-    return getConnectionRule(a).localeCompare(getConnectionRule(b))
-  },
-  [SORT_TYPE.CHAINS]: (a: Connection, b: Connection) => {
-    return getChainsStringFromConnection(a).localeCompare(getChainsStringFromConnection(b))
-  },
-  [SORT_TYPE.DOWNLOAD]: (a: Connection, b: Connection) => {
-    return getConnectionDownload(a) - getConnectionDownload(b)
-  },
-  [SORT_TYPE.DOWNLOAD_SPEED]: (a: Connection, b: Connection) => {
-    return a.downloadSpeed - b.downloadSpeed
-  },
-  [SORT_TYPE.UPLOAD]: (a: Connection, b: Connection) => {
-    return getConnectionUpload(a) - getConnectionUpload(b)
-  },
-  [SORT_TYPE.UPLOAD_SPEED]: (a: Connection, b: Connection) => {
-    return a.uploadSpeed - b.uploadSpeed
-  },
-  [SORT_TYPE.SOURCE_IP]: (a: Connection, b: Connection) => {
-    return getConnectionSourceIP(a).localeCompare(getConnectionSourceIP(b))
-  },
-  [SORT_TYPE.TYPE]: (a: Connection, b: Connection) => {
-    return getNetworkTypeFromConnection(a).localeCompare(getNetworkTypeFromConnection(b))
-  },
-  [SORT_TYPE.CONNECT_TIME]: (a: Connection, b: Connection) => {
-    return dayjs(getConnectionStart(a)).valueOf() - dayjs(getConnectionStart(b)).valueOf()
-  },
-  [SORT_TYPE.INBOUND_USER]: (a: Connection, b: Connection) => {
-    return getInboundUserFromConnection(a).localeCompare(getInboundUserFromConnection(b))
-  },
+  [SORT_TYPE.INBOUND_USER]: getInboundUserFromConnection,
 }
 
 export const connections = computed(() => {
-  return connectionTabShow.value === CONNECTION_TAB_TYPE.ACTIVE
-    ? activeConnections.value
-    : closedConnections.value
+  switch (connectionTabShow.value) {
+    case CONNECTION_TAB_TYPE.ACTIVE:
+      return activeConnections.value
+    case CONNECTION_TAB_TYPE.CLOSED:
+      return closedConnections.value
+    case CONNECTION_TAB_TYPE.ALL:
+      return closedConnections.value.concat(activeConnections.value)
+    default:
+      return activeConnections.value
+  }
 })
+
+const closedConnectionIds = computed(() => new Set(closedConnections.value.map(({ id }) => id)))
+
+export const isClosedConnection = (connection: Connection) =>
+  closedConnectionIds.value.has(connection.id)
 
 const filterConnections = (items: readonly Connection[]) => {
   const searchRegex = toSearchRegex(connectionFilter.value)
   const hideRegex = quickFilterEnabled.value ? toSearchRegex(quickFilterRegex.value) : null
+  const sourceIPs = sourceIPFilter.value
+  const needSearchValues = Boolean(searchRegex || hideRegex)
   const displayOptions = {
     mode: isConnectionCard.value ? ('card' as const) : ('table' as const),
     proxyChainDirection: proxyChainDirection.value,
@@ -178,49 +188,43 @@ const filterConnections = (items: readonly Connection[]) => {
     ? connectionCardLines.value.flat()
     : connectionTableColumns.value
 
-  return items
-    .filter((conn) => {
-      const visibleValues = getConnectionVisibleSearchValues(conn, visibleKeys, displayOptions)
+  return items.filter((conn) => {
+    if (sourceIPs !== null && sourceIPs.every((i) => i !== getConnectionSourceIP(conn))) {
+      return false
+    }
+    if (!needSearchValues) return true
 
-      if (
-        sourceIPFilter.value !== null &&
-        sourceIPFilter.value.every((i) => i !== getConnectionSourceIP(conn))
-      ) {
-        return false
-      }
-
-      if (hideRegex) {
-        const quickFilterMatch = hideRegex.testAny(visibleValues)
-
-        if (quickFilterMatch) {
-          return false
-        }
-      }
-
-      if (searchRegex) {
-        return searchRegex.testAny(visibleValues)
-      }
-
-      return true
-    })
+    const visibleValues = getConnectionVisibleSearchValues(conn, visibleKeys, displayOptions)
+    if (hideRegex?.testAny(visibleValues)) return false
+    return searchRegex ? searchRegex.testAny(visibleValues) : true
+  })
 }
 
 export const filteredActiveConnections = computed(() => filterConnections(activeConnections.value))
 
 export const renderConnections = computed(() => {
-  return filterConnections(connections.value)
-    .sort((a, b) => {
-      if (isConnectionCard.value && isDesc.value) {
-        ;[a, b] = [b, a]
-      }
-      const sortResult = isConnectionCard.value
-        ? sortFunctionMap[connectionSortType.value](a, b)
-        : sortFunctionMap[SORT_TYPE.HOST](a, b)
+  const filtered = filterConnections(connections.value)
+  const sortType = isConnectionCard.value ? connectionSortType.value : SORT_TYPE.HOST
+  const getSortKey = sortKeyFunctionMap[sortType]
+  const descending = isConnectionCard.value && isDesc.value
+  const decorated: [string | number, string, Connection][] = filtered.map((connection) => [
+    getSortKey(connection),
+    connection.id,
+    connection,
+  ])
 
-      if (sortResult === 0) {
-        return a.id.localeCompare(b.id)
-      }
+  decorated.sort((left, right) => {
+    const a = descending ? right : left
+    const b = descending ? left : right
+    const keyA = a[0]
+    const keyB = b[0]
+    const result =
+      typeof keyA === 'number'
+        ? keyA - (keyB as number)
+        : keyA.localeCompare(keyB as string)
 
-      return sortResult
-    })
+    return result || a[1].localeCompare(b[1])
+  })
+
+  return decorated.map((item) => item[2])
 })

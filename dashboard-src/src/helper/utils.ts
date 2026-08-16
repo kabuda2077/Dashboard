@@ -100,13 +100,11 @@ export const scrollIntoCenter = (el: HTMLElement) => {
 
   if (!scrollableParent) return
 
-  const elRect = el.getBoundingClientRect()
-  const parentRect = scrollableParent.getBoundingClientRect()
-
-  if (elRect.top >= parentRect.top && elRect.bottom <= parentRect.bottom) return
-
   const parentTop = scrollableParent.offsetTop
   const childTop = el.offsetTop
+  const relativeTop = childTop - parentTop - scrollableParent.scrollTop
+
+  if (relativeTop >= 0 && relativeTop + el.clientHeight <= scrollableParent.clientHeight) return
 
   const centerOffset =
     childTop - parentTop - scrollableParent.clientHeight / 2 + el.clientHeight / 2

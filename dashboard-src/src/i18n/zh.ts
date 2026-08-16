@@ -176,6 +176,7 @@ const zh: LANG_MESSAGE = {
   sourceIP: '源IP',
   activeConnections: '活跃',
   closedConnections: '已关闭',
+  allConnections: '全部',
   logLevel: '日志等级',
   logType: '日志类型',
 
@@ -414,6 +415,8 @@ const zh: LANG_MESSAGE = {
   syncSettingsSuccess: '设置同步成功',
   syncSettingsConfirm: '后端存储的设置将覆盖以下本地设置:\n\n{keys}\n\n是否应用?',
   importSettingsConfirm: '导入的设置将覆盖以下本地设置:\n\n{keys}\n\n是否应用?',
+  dontAskAgainAlwaysApply: '不再提示，以后自动应用',
+  confirmBeforeOverride: '覆盖本地设置前确认',
   deleteUploadedSettingsSuccess: '已上传设置删除成功',
   deleteUploadedSettingsConfirm: '确定要删除后端上已上传的设置吗？此操作不可撤销。',
   upgradeSuccess: '升级成功',

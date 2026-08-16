@@ -13,7 +13,7 @@ import type {
 import axios from 'axios'
 import { debounce } from 'lodash'
 import ReconnectingWebSocket from 'reconnectingwebsocket'
-import { ref } from 'vue'
+import { shallowRef } from 'vue'
 
 export const fetchClashVersion = () => axios.get<{ version: string }>('/version')
 
@@ -209,7 +209,7 @@ export const createClashWebSocket = <T>(url: string, searchParams?: Record<strin
     })
   }
 
-  const data = ref<T>()
+  const data = shallowRef<T>()
   const websocket = new ReconnectingWebSocket(resurl.toString())
 
   const close = () => {

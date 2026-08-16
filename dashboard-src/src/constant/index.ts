@@ -130,6 +130,7 @@ export enum SORT_DIRECTION {
 export enum CONNECTION_TAB_TYPE {
   ACTIVE = 'activeConnections',
   CLOSED = 'closedConnections',
+  ALL = 'allConnections',
 }
 
 export enum LOG_LEVEL {

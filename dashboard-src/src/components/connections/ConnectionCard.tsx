@@ -11,7 +11,7 @@ import {
   PROXY_CHAIN_DIRECTION,
 } from '@/constant'
 import { getConnectionChains, getConnectionSmartBlock } from '@/helper'
-import { connectionFilter, connectionTabShow } from '@/store/connections'
+import { connectionFilter, connectionTabShow, isClosedConnection } from '@/store/connections'
 import { connectionCardLines, proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import type { Connection } from '@/types'
 import {
@@ -227,6 +227,9 @@ export default defineComponent<{
           return closeButton
         })(),
       }
+      const isClosed = isClosedConnection(conn)
+      const dimmed = isClosed && connectionTabShow.value === CONNECTION_TAB_TYPE.ALL
+
       return (
         <div
           class={[
@@ -235,12 +238,12 @@ export default defineComponent<{
           onClick={() => handlerInfo(conn)}
         >
           {connectionCardLines.value.map((line) => (
-            <div class="flex h-5 items-center gap-1 text-sm">
+            <div class={['flex h-5 items-center gap-1 text-sm', dimmed ? 'opacity-60' : '']}>
               {line
                 .filter(
                   (key) =>
                     key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close ||
-                    connectionTabShow.value !== CONNECTION_TAB_TYPE.CLOSED,
+                    !isClosed,
                 )
                 .map((key) => {
                   return componentMap[key]

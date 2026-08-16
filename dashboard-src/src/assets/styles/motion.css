@@ -92,6 +92,63 @@
   }
 }
 
+.proxy-node-move {
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.proxy-node-enter-active {
+  transition:
+    opacity 0.2s ease-out,
+    scale 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.proxy-node-enter-from {
+  opacity: 0;
+  scale: 0.92;
+}
+
+.proxy-node-leave-active {
+  transition:
+    opacity 0.15s ease-in,
+    scale 0.15s ease-in;
+}
+
+.proxy-node-leave-to {
+  opacity: 0;
+  scale: 0.92;
+}
+
+.latency-highlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-color: var(--color-info);
+  animation: latencyHighlightFade 1.5s ease-out forwards;
+}
+
+@keyframes latencyHighlightFade {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proxy-node-move,
+  .proxy-node-enter-active,
+  .proxy-node-leave-active {
+    transition: none;
+  }
+
+  .latency-highlight::after {
+    animation: none;
+  }
+}
+
 @keyframes progressBar {
   from {
     width: 100%;

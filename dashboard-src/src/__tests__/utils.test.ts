@@ -134,3 +134,33 @@ describe('dashboard settings storage', () => {
     })
   })
 })
+
+describe('proxy scrolling', () => {
+  it('uses layout offsets when deciding whether a reordered card is visible', async () => {
+    const { PROXIES_PARENT_CLASS, scrollIntoCenter } = await import('@/helper/utils')
+    const parent = document.createElement('div')
+    const card = document.createElement('div')
+    const scrollTo = vi.fn()
+
+    parent.classList.add(PROXIES_PARENT_CLASS)
+    parent.append(card)
+    Object.defineProperties(parent, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 100 },
+      offsetTop: { configurable: true, value: 0 },
+      scrollTop: { configurable: true, value: 100 },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+    Object.defineProperties(card, {
+      clientHeight: { configurable: true, value: 20 },
+      offsetTop: { configurable: true, value: 120 },
+    })
+
+    scrollIntoCenter(card)
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    Object.defineProperty(card, 'offsetTop', { configurable: true, value: 300 })
+    scrollIntoCenter(card)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 260, behavior: 'smooth' })
+  })
+})

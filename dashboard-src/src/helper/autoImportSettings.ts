@@ -13,6 +13,8 @@ export const DEFAULT_SETTINGS_URL = './zashboard-settings.json'
 export const importSettingsUrl = useStorage(IMPORT_SETTINGS_URL_KEY, DEFAULT_SETTINGS_URL)
 export const autoImportSettings = useStorage('config/auto-import-settings', false)
 export const autoSyncSettings = useStorage('config/auto-sync-settings', false)
+export const skipImportSettingsConfirm = useStorage('cache/skip-import-settings-confirm', false)
+export const skipSyncSettingsConfirm = useStorage('cache/skip-sync-settings-confirm', false)
 
 const autoImportSettingsHash = useStorage('cache/auto-import-settings-hash', '')
 const autoSyncSettingsHash = useStorage('cache/auto-sync-settings-hash', '')
@@ -40,13 +42,24 @@ const getImportOverriddenKeys = (settings: Record<string, unknown>) =>
     return localStorage.getItem(key) !== settings[key]
   })
 
-const confirmSettingsOverride = async (overriddenKeys: string[], messageKey: string) => {
+export const confirmSettingsOverride = async (
+  overriddenKeys: string[],
+  messageKey: 'importSettingsConfirm' | 'syncSettingsConfirm',
+) => {
   if (overriddenKeys.length === 0) return false
 
-  return showConfirmDialog({
-    title: i18n.global.t(messageKey === 'syncSettingsConfirm' ? 'syncSettings' : 'importSettings'),
+  const isSync = messageKey === 'syncSettingsConfirm'
+  const skipConfirm = isSync ? skipSyncSettingsConfirm : skipImportSettingsConfirm
+  if (skipConfirm.value) return true
+
+  const { confirmed, checked } = await showConfirmDialog({
+    title: i18n.global.t(isSync ? 'syncSettings' : 'importSettings'),
     message: i18n.global.t(messageKey, { keys: overriddenKeys.join('\n') }),
+    checkboxText: i18n.global.t('dontAskAgainAlwaysApply'),
   })
+
+  if (confirmed && checked) skipConfirm.value = true
+  return confirmed
 }
 
 export const syncSettingsFromCore = async ({

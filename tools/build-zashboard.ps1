@@ -179,6 +179,44 @@ foreach ($pattern in @('upgradeUIAPI', 'handlerClickUpgradeUI', 'autoUpgradeDash
     }
 }
 
+$runtimeFollowups = @{
+    'src\views\HomePage.vue' = @('stopConnections()', 'stopLogs()', 'stopSatistic()', 'if (!visible || !activeUuid.value) return')
+    'src\api\clash.ts' = @('shallowRef<T>()')
+    'src\assembly\connections\accessor.ts' = @('let lastKeys:', 'keys !== lastKeys')
+    'src\assembly\logs\index.ts' = @('shallowRef<LogWithSeq[]>')
+    'src\store\connections.ts' = @('shallowRef<Connection[]>', 'connectionBackendUuid === backendUuid', 'stopConnections', 'CONNECTION_TAB_TYPE.ALL', 'isClosedConnection')
+    'src\store\connHistory.ts' = @('FLUSH_EVERY_TICKS', 'flushCurrentSession', 'pagehide')
+    'src\helper\autoImportSettings.ts' = @('skipImportSettingsConfirm', 'skipSyncSettingsConfirm', 'dontAskAgainAlwaysApply')
+    'src\components\common\ConfirmDialogHost.vue' = @('confirmDialogState.checkboxText', 'v-model="checked"')
+    'src\assembly\connections\clash.ts' = @('shallowRef<ConnectionsSnapshot>()', 'metadata.processPath?.replace')
+    'src\components\proxies\ProxyNodeGrid.vue' = @('<TransitionGroup name="proxy-node">')
+    'src\components\proxies\LatencyTag.vue' = @('<Transition name="latency-state">', 'shownLatency')
+    'src\assets\styles\motion.css' = @('.proxy-node-move', '.latency-highlight::after')
+}
+
+foreach ($entry in $runtimeFollowups.GetEnumerator()) {
+    $path = Join-Path $sourceRoot $entry.Key
+    $content = Get-Content -LiteralPath $path -Raw
+    foreach ($pattern in $entry.Value) {
+        if ($content -notmatch [regex]::Escape($pattern)) {
+            throw "dashboard source check failed: $($entry.Key) must keep '$pattern'"
+        }
+    }
+}
+
+$homePageRuntime = Get-Content -LiteralPath (Join-Path $sourceRoot 'src\views\HomePage.vue') -Raw
+foreach ($stopCall in @('stopConnections()', 'stopLogs()', 'stopSatistic()')) {
+    if ([regex]::Matches($homePageRuntime, [regex]::Escape($stopCall)).Count -lt 2) {
+        throw "dashboard source check failed: HomePage must stop '$stopCall' after backend removal and on unmount"
+    }
+}
+
+$textInputPath = Join-Path $sourceRoot 'src\components\common\TextInput.vue'
+$textInput = Get-Content -LiteralPath $textInputPath -Raw
+if ([regex]::Matches($textInput, 'type="button"').Count -lt 2) {
+    throw 'dashboard source check failed: both TextInput clear buttons must use type="button"'
+}
+
 $forbiddenSourcePatterns = @(
     'DnsQuery',
     'DNSQuery',
