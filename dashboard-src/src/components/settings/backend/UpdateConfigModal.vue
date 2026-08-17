@@ -5,7 +5,7 @@
   >
     <div class="flex flex-col gap-4 p-2">
       <div class="flex flex-col gap-2">
-        <label class="text-sm font-medium">{{ $t('configFilePath') }}</label>
+        <label class="text-sm">{{ $t('configFilePath') }}</label>
         <input
           class="input input-bordered input-sm w-full"
           type="text"
@@ -17,7 +17,7 @@
       <div class="divider my-0">{{ $t('or') }}</div>
 
       <div class="flex flex-col gap-2">
-        <label class="text-sm font-medium">{{ $t('configPayload') }}</label>
+        <label class="text-sm">{{ $t('configPayload') }}</label>
         <textarea
           class="textarea textarea-bordered w-full font-mono text-xs"
           rows="10"

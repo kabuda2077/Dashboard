@@ -15,7 +15,7 @@
             class="h-3.5 w-3.5"
             :class="item.iconColor ?? 'text-base-content/60'"
           />
-          <span class="text-base-content/90 text-xs leading-tight font-medium tabular-nums">
+          <span class="text-base-content/90 text-xs leading-tight tabular-nums">
             {{ item.value }}
           </span>
           <span

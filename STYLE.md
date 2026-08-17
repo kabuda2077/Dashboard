@@ -54,7 +54,7 @@ Recommended meaning of each text level:
 
 Avoid adding new text opacities like `/50`, `/70`, or `/80` unless there is a specific visual mismatch that the existing levels cannot solve.
 
-`base-border` is defined as an 8% mix of `base-content` in `dashboard-src/src/assets/styles/override.css`. Keep it for low-emphasis dividers. Use `base-content/20` only where the border intentionally needs more presence, especially top bar controls.
+`base-border` is defined as an 8% mix of `base-content` in `dashboard-src/src/assets/styles/theme/tokens.css`. Keep it for low-emphasis dividers. Use `base-content/20` only where the border intentionally needs more presence, especially top bar controls.
 
 Border policy:
 
@@ -64,7 +64,7 @@ Border policy:
 
 ## Surfaces
 
-Shared surfaces are defined in `dashboard-src/src/assets/styles/override.css`.
+Shared surfaces are split by ownership: project containers and settings live in `dashboard-src/src/assets/styles/components/app.css`, while DaisyUI component overrides live in `dashboard-src/src/assets/styles/components/daisyui.css`.
 
 - `base-container`: `bg-base-100 overflow-hidden rounded-xl shadow-xs`
 - `card`: `bg-base-100 rounded-xl shadow-xs`
@@ -73,6 +73,8 @@ Shared surfaces are defined in `dashboard-src/src/assets/styles/override.css`.
 - `badge`: `bg-base-200/80`
 
 For most new settings or dashboard panels, prefer `settings-grid`, `base-container`, or existing card components rather than creating custom wrappers.
+
+Connections, Logs, and Rules card views use one `base-container` per repeated row with `gap-3` between rows. In virtual lists, that 12px gap must be implemented as bottom padding on the measured row so the virtualizer includes it in row height. Do not restore the old shared-container `.scroller-item` divider pattern for these views.
 
 Use only two broad panel families for custom desktop/Core UI:
 
@@ -119,6 +121,7 @@ When adding or changing UI, prefer these existing patterns first:
 
 - `settings-grid` + `setting-item` + `setting-item-label`
 - `base-container` / `card`
+- Repeated list rows: one `base-container` per row with `gap-3`
 - `CtrlsBar` + shared top bar select/input styles
 - `bg-base-200/70` secondary control surfaces
 - `text-base-content/60` for muted/read-only text

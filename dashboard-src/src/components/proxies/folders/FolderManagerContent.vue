@@ -5,7 +5,7 @@
       v-if="!isMiddleScreen"
     >
       <FolderIcon class="h-4 w-4" />
-      <h3 class="flex-1 text-sm font-medium">{{ $t('folder_manage') }}</h3>
+      <h3 class="flex-1 text-sm">{{ $t('folder_manage') }}</h3>
       <button
         v-if="!isMiddleScreen"
         class="btn btn-circle btn-ghost btn-xs"

@@ -26,7 +26,7 @@
     </div>
 
     <section>
-      <div class="text-base-content/70 mb-1.5 text-xs font-medium uppercase">
+      <div class="text-base-content/70 mb-1.5 text-xs uppercase">
         {{ $t('folder_rules') }}
       </div>
       <div class="flex flex-col gap-1.5">
@@ -89,7 +89,7 @@
     </section>
 
     <section>
-      <div class="text-base-content/70 mb-1.5 text-xs font-medium uppercase">
+      <div class="text-base-content/70 mb-1.5 text-xs uppercase">
         {{ $t('folder_preview') }} ({{ matched.length }})
       </div>
       <div class="bg-base-200/50 border-base-300 max-h-40 overflow-y-auto rounded-md border p-2">
@@ -115,9 +115,7 @@
     </section>
 
     <section>
-      <div
-        class="text-base-content/70 mb-1.5 flex items-center gap-2 text-xs font-medium uppercase"
-      >
+      <div class="text-base-content/70 mb-1.5 flex items-center gap-2 text-xs uppercase">
         <span>{{ $t('folder_manual_includes') }} ({{ folder.manualIncludes.length }})</span>
       </div>
       <input

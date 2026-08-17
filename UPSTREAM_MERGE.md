@@ -93,6 +93,8 @@ Preserve these decisions unless the product direction is explicitly changed.
 - Standalone Settings is folded into Core page.
 - Backend settings live in Core page, not as a separate primary route.
 - Core page contains active core status, start/stop/switch controls, path/API settings, logs, operation buttons, and current download summary.
+- Core operation buttons keep this row-major order: reload config, restart core, flush DNS cache, flush Fake IP, update GEO, upgrade core. sing-box omits update GEO; optional smart-group maintenance actions come after this sequence.
+- When a core update is available, the same update dot appears beside the Backend version and on the upgrade-core button.
 - Core page section titles use the same `dashboard-section-title` structure.
 - The embedded Backend heading is static text; do not restore upstream version links or click-through heading behavior.
 - The sidebar bottom must not show a backend settings button or backend version.
@@ -202,11 +204,17 @@ These often contain both upstream value and local layout changes. Inspect carefu
 - `dashboard-src/src/components/controls/ProxiesCtrl.tsx`
 - `dashboard-src/src/components/controls/ConnectionCtrl.tsx`
 - `dashboard-src/src/components/controls/LogsCtrl.tsx`
+- `dashboard-src/src/components/common/TextInput.vue`
+- `dashboard-src/src/components/common/VirtualScroller.vue`
+- `dashboard-src/src/views/LogsPage.vue`
+- `dashboard-src/src/views/RulesPage.vue`
 - `dashboard-src/src/assembly/backend.ts`
 - `dashboard-src/src/assembly/version.ts`
 - `dashboard-src/src/assets/main.css`
-- `dashboard-src/src/assets/styles/override.css`
-- `dashboard-src/src/assets/styles/components.css`
+- `dashboard-src/src/assets/styles/theme/`
+- `dashboard-src/src/assets/styles/base/`
+- `dashboard-src/src/assets/styles/components/`
+- `dashboard-src/src/assets/styles/utilities/`
 
 ## Merge Workflow
 
@@ -233,6 +241,7 @@ Required rules:
 - Top bars, settings, colors, borders, text hierarchy, and reusable components must follow `STYLE.md`.
 - Core page headings use `dashboard-section-title`.
 - Top bar dropdowns that need controlled popup styling should use the project dropdown component, not native WebView `<select>` popups.
+- Connections, Logs, and Rules card views use independent `base-container` rows with the measured `gap-3` spacing defined in `STYLE.md`.
 - Core top status text must truncate inside its own box and not run into buttons.
 - Sidebar route items keep `gap-1`.
 - Overview Network and Latency cards must keep the Product Contract above.
@@ -330,6 +339,7 @@ UI:
 - [ ] Sidebar route items keep `gap-1`.
 - [ ] Core top status text truncates inside its own box.
 - [ ] Core page section titles share the same `dashboard-section-title` structure.
+- [ ] Core operation buttons keep the documented order, and core updates mark both the version and upgrade action.
 
 Product:
 

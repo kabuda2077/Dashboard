@@ -1,6 +1,6 @@
 <template>
   <div
-    class="join-item input input-sm inline w-48 p-0"
+    class="input input-sm inline w-48 p-0"
     @click="handlerDropdown"
   >
     <div class="flex h-full w-full cursor-pointer items-center indent-4">

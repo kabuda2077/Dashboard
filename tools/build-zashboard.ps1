@@ -109,6 +109,32 @@ foreach ($pattern in @('OverviewCardSettingsDialog')) {
     }
 }
 
+$backendSettingsPath = Join-Path $sourceRoot 'src\components\settings\backend\BackendSettings.vue'
+$backendSettings = Get-Content -LiteralPath $backendSettingsPath -Raw
+$coreOperationMarkers = @(
+    '@click="handlerClickReloadConfigs"',
+    '@click="coreHostActions.restartCore"',
+    '@click="handleFlushDNSCache"',
+    '@click="handleFlushFakeIP"',
+    '@click="handlerClickUpdateGeo"',
+    '@click="coreHostActions.upgradeCore"'
+)
+$previousOperationIndex = -1
+foreach ($marker in $coreOperationMarkers) {
+    $operationIndex = $backendSettings.IndexOf($marker, [System.StringComparison]::Ordinal)
+    if ($operationIndex -lt 0 -or $operationIndex -le $previousOperationIndex) {
+        throw "dashboard source check failed: BackendSettings core operation buttons must keep the documented row-major order"
+    }
+    $previousOperationIndex = $operationIndex
+}
+$upgradeIndicatorPattern = '(?s)v-if="coreHostActions\?\.canUpgradeCore\.value".*?v-if="hostState\.coreUpdateAvailable".*?@click="coreHostActions\.upgradeCore"'
+if ($backendSettings -notmatch $upgradeIndicatorPattern) {
+    throw "dashboard source check failed: upgrade-core button must show the host core-update indicator"
+}
+if ($backendSettings -notmatch '<template v-if="!isSingBox">') {
+    throw "dashboard source check failed: sing-box must omit the update-GEO operation"
+}
+
 $packageJson = Get-Content -LiteralPath (Join-Path $sourceRoot 'package.json') -Raw
 foreach ($pattern in @('@bufbuild/protobuf', '@connectrpc/connect', '@connectrpc/connect-web', '@xterm/xterm')) {
     if ($packageJson -match [regex]::Escape($pattern)) {
@@ -196,7 +222,7 @@ $runtimeFollowups = @{
     'src\components\rules\RulesTable.vue' = @('toggleRuleDisabledWithSideEffects', 'getRuleSize')
     'src\composables\rules.ts' = @('isRuleDisabled', 'getRuleSize', 'toggleRuleDisabledWithSideEffects')
     'src\assembly\proxies\index.ts' = @('return nowNode?.history')
-    'src\assets\styles\motion.css' = @('.proxy-node-move', '.latency-highlight::after')
+    'src\assets\styles\utilities\motion.css' = @('.proxy-node-move', '.latency-highlight::after')
 }
 
 foreach ($entry in $runtimeFollowups.GetEnumerator()) {
@@ -218,8 +244,12 @@ foreach ($stopCall in @('stopConnections()', 'stopLogs()', 'stopSatistic()')) {
 
 $textInputPath = Join-Path $sourceRoot 'src\components\common\TextInput.vue'
 $textInput = Get-Content -LiteralPath $textInputPath -Raw
-if ([regex]::Matches($textInput, 'type="button"').Count -lt 2) {
-    throw 'dashboard source check failed: both TextInput clear buttons must use type="button"'
+$clearButtonPattern = '(?s)<button(?=[^>]*\bv-if="clearable")(?=[^>]*\btype="button")[^>]*>'
+if ([regex]::Matches($textInput, $clearButtonPattern).Count -ne 1) {
+    throw 'dashboard source check failed: TextInput must have one clear button with type="button"'
+}
+if ($textInput -match 'beforeClose') {
+    throw 'dashboard source check failed: TextInput must keep the single clear-button contract'
 }
 
 $forbiddenSourcePatterns = @(

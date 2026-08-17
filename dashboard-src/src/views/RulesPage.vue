@@ -15,23 +15,31 @@
         :style="padding"
       >
         <template v-if="rulesTabShow === RULE_TAB_TYPE.PROVIDER">
-          <div class="base-container">
-            <RuleProvider
+          <div class="flex flex-col gap-3">
+            <div
               v-for="(ruleProvider, index) in renderRulesProvider"
               :key="ruleProvider.name"
-              :ruleProvider="ruleProvider"
-              :index="index + 1"
-            />
+              class="base-container"
+            >
+              <RuleProvider
+                :ruleProvider="ruleProvider"
+                :index="index + 1"
+              />
+            </div>
           </div>
         </template>
         <template v-else>
-          <div class="base-container">
-            <RuleCard
+          <div class="flex flex-col gap-3">
+            <div
               v-for="rule in renderRules"
               :key="rule.payload"
-              :rule="rule"
-              :index="rules.indexOf(rule) + 1"
-            />
+              class="base-container"
+            >
+              <RuleCard
+                :rule="rule"
+                :index="rules.indexOf(rule) + 1"
+              />
+            </div>
           </div>
         </template>
       </div>

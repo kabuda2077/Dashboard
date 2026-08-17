@@ -4,10 +4,10 @@
       :name="name"
       :icon-size="proxyGroupIconSize"
       :icon-margin="proxyGroupIconMargin"
-      class="text-base-content font-medium"
+      class="text-base-content"
     />
     <span
-      class="text-base-content/40 min-w-0 flex-1 truncate text-[11px] font-medium tracking-wider uppercase tabular-nums"
+      class="text-base-content/40 min-w-0 flex-1 truncate text-[11px] tracking-wider uppercase tabular-nums"
       @mouseenter="checkTruncation"
     >
       {{ proxyGroup.type }} · {{ proxiesCount }}

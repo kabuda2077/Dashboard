@@ -151,7 +151,6 @@ export default defineComponent({
       const searchInput = (
         <TextInput
           v-model={logFilter.value}
-          beforeClose={true}
           class="ctrls-search min-w-0"
           placeholder={`${t('search')} | Regex`}
           clearable={true}

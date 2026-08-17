@@ -1,0 +1,21 @@
+/* Shared project tokens layered on top of daisyUI themes. */
+
+:root,
+[data-theme] {
+  --color-base-150: color-mix(in oklch, var(--color-base-100) 50%, var(--color-base-200));
+  --color-base-border: color-mix(in srgb, var(--color-base-content) 8%, transparent);
+  --radius-field: 0.625rem;
+  --radius-selector: 0.5rem;
+}
+
+[data-theme='light-neutral'],
+[data-theme='dark-neutral'] {
+  --color-low-latency: oklch(0.551 0.08 167);
+  --color-medium-latency: oklch(0.72 0.14 85);
+  --color-high-latency: oklch(0.56 0.17 22);
+}
+
+@theme inline {
+  --color-base-150: var(--color-base-150);
+  --color-base-border: var(--color-base-border);
+}

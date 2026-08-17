@@ -18,7 +18,7 @@
       </button>
     </div>
     <button
-      class="btn btn-circle join-item btn-sm"
+      class="btn btn-circle btn-sm"
       v-if="customBackgroundURL"
       @click="displayBgProperty = !displayBgProperty"
     >

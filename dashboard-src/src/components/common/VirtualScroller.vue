@@ -12,7 +12,7 @@
       v-if="data.length > 0"
     >
       <div
-        :class="['base-container virtual-scroller absolute top-3 right-3 left-3', contentClass]"
+        :class="['absolute top-3 right-3 left-3', contentClass]"
         :style="{
           transform: `translateY(${virtualRows[0]?.start ?? 0}px)`,
         }"
@@ -22,12 +22,14 @@
           :key="row.key.toString()"
           :data-index="row.index"
           :ref="(ref) => measureElement(ref as Element | null)"
-          :class="getBorderClass(row.index)"
+          class="pb-3"
         >
-          <slot
-            :item="data[row.index]"
-            :index="row.index"
-          />
+          <div class="base-container">
+            <slot
+              :item="data[row.index]"
+              :index="row.index"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -81,12 +83,6 @@ const virutalOptions = computed(() => {
 const rowVirtualizer = useVirtualizer(virutalOptions)
 const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
 const totalSize = computed(() => rowVirtualizer.value.getTotalSize())
-const getBorderClass = (index: number) => {
-  if (index !== 0) {
-    return 'border-base-border border-t'
-  }
-  return ''
-}
 
 const measureElement = (el: Element | null) => {
   if (!el) {

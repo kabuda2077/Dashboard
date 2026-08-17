@@ -63,28 +63,6 @@
           <div class="setting-panel-row">
             <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
               <button
-                v-if="coreHostActions"
-                class="btn btn-sm dashboard-action-btn"
-                :disabled="
-                  !coreHostActions.isRunning.value || coreHostActions.isCoreUpgrading.value
-                "
-                @click="coreHostActions.restartCore"
-              >
-                重启内核
-              </button>
-              <button
-                v-if="coreHostActions?.canUpgradeCore.value"
-                class="btn btn-sm dashboard-action-btn"
-                :disabled="coreHostActions.isCoreUpgrading.value"
-                @click="coreHostActions.upgradeCore"
-              >
-                <span
-                  v-if="coreHostActions.isCoreUpgrading.value"
-                  class="loading loading-spinner loading-xs"
-                />
-                {{ coreHostActions.isCoreUpgrading.value ? '升级中' : '升级内核' }}
-              </button>
-              <button
                 class="btn btn-sm dashboard-action-btn"
                 @click="handlerClickReloadConfigs"
               >
@@ -94,18 +72,16 @@
                 ></span>
                 {{ $t('reloadConfigs') }}
               </button>
-              <template v-if="!isSingBox || displayAllFeatures">
-                <button
-                  class="btn btn-sm dashboard-action-btn"
-                  @click="handlerClickUpdateGeo"
-                >
-                  <span
-                    v-if="isGeoUpdating"
-                    class="loading loading-spinner loading-md"
-                  ></span>
-                  {{ $t('updateGeoDatabase') }}
-                </button>
-              </template>
+              <button
+                v-if="coreHostActions"
+                class="btn btn-sm dashboard-action-btn"
+                :disabled="
+                  !coreHostActions.isRunning.value || coreHostActions.isCoreUpgrading.value
+                "
+                @click="coreHostActions.restartCore"
+              >
+                重启内核
+              </button>
               <button
                 class="btn btn-sm dashboard-action-btn"
                 @click="handleFlushDNSCache"
@@ -118,6 +94,41 @@
               >
                 {{ $t('flushFakeIP') }}
               </button>
+              <template v-if="!isSingBox">
+                <button
+                  class="btn btn-sm dashboard-action-btn"
+                  @click="handlerClickUpdateGeo"
+                >
+                  <span
+                    v-if="isGeoUpdating"
+                    class="loading loading-spinner loading-md"
+                  ></span>
+                  {{ $t('updateGeoDatabase') }}
+                </button>
+              </template>
+              <span
+                v-if="coreHostActions?.canUpgradeCore.value"
+                class="indicator w-full"
+              >
+                <span
+                  v-if="hostState.coreUpdateAvailable"
+                  class="indicator-item top-1 -right-1 flex"
+                >
+                  <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
+                  <span class="bg-secondary h-2 w-2 rounded-full"></span>
+                </span>
+                <button
+                  class="btn btn-sm dashboard-action-btn w-full"
+                  :disabled="coreHostActions.isCoreUpgrading.value"
+                  @click="coreHostActions.upgradeCore"
+                >
+                  <span
+                    v-if="coreHostActions.isCoreUpgrading.value"
+                    class="loading loading-spinner loading-xs"
+                  />
+                  {{ coreHostActions.isCoreUpgrading.value ? '升级中' : '升级内核' }}
+                </button>
+              </span>
               <button
                 v-if="hasSmartGroup"
                 class="btn btn-sm dashboard-action-btn"
@@ -159,7 +170,6 @@ import { showNotification } from '@/helper/notification'
 import { fetchConfigs } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
-import { displayAllFeatures } from '@/store/settings'
 import { inject, ref } from 'vue'
 
 const coreHostActions = inject(coreHostActionsKey, null)

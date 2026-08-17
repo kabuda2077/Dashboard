@@ -1,18 +1,10 @@
 <template>
-  <div class="relative">
-    <button
-      v-if="beforeClose && clearable"
-      type="button"
-      class="btn btn-ghost btn-circle btn-xs absolute top-1/2 right-1 z-10 h-5 min-h-5 w-5 -translate-y-1/2 p-0"
-      @click="clearInput"
-    >
-      <XMarkIcon class="h-3 w-3" />
-    </button>
+  <label :class="['input input-sm', { 'pe-1': clearable }]">
     <input
       v-model="inputValue"
       ref="inputRef"
       type="text"
-      :class="['input input-sm join-item w-full', inputClass, { 'pr-6': clearable }]"
+      :class="inputClass"
       :placeholder="placeholder || ''"
       :name="name || ''"
       :autocomplete="autocomplete || ''"
@@ -21,14 +13,14 @@
       @change="emits('change', inputValue || '')"
     />
     <button
-      v-if="!beforeClose && clearable"
+      v-if="clearable"
       type="button"
-      class="btn btn-ghost btn-circle btn-xs absolute top-1/2 right-1 h-5 min-h-5 w-5 -translate-y-1/2 p-0"
+      class="btn btn-ghost btn-circle btn-xs h-5 min-h-5 w-5 shrink-0 p-0"
       @click="clearInput"
     >
       <XMarkIcon class="h-3 w-3" />
     </button>
-  </div>
+  </label>
 </template>
 
 <script lang="ts" setup>
@@ -44,7 +36,6 @@ const emits = defineEmits<{
 
 const props = defineProps<{
   placeholder?: string
-  beforeClose?: boolean
   name?: string
   autocomplete?: string
   clearable?: boolean

@@ -132,7 +132,7 @@
           <div class="join flex-1">
             <TextInput
               v-model="importSettingsUrl"
-              class="max-w-none flex-1"
+              class="join-item max-w-none flex-1"
             />
             <button
               class="btn btn-sm join-item"

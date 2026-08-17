@@ -117,7 +117,7 @@
               <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                 <CircleStackIcon class="h-10 w-10 opacity-60" />
                 <div class="space-y-1">
-                  <div class="text-base font-medium">{{ t('noData') }}</div>
+                  <div class="text-base">{{ t('noData') }}</div>
                 </div>
               </div>
             </td>

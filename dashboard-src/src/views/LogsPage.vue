@@ -31,13 +31,17 @@
       no-padding
       :title="`${t('sameConnectionLogs')} (${connectionLogID})`"
     >
-      <div class="flex flex-col">
-        <LogsCard
+      <div class="bg-base-200 flex flex-col gap-3 p-3">
+        <div
           v-for="log in connectionLogs"
           :key="log.seq"
-          :log="log"
-          connection-detail-disabled
-        />
+          class="base-container"
+        >
+          <LogsCard
+            :log="log"
+            connection-detail-disabled
+          />
+        </div>
       </div>
     </DialogWrapper>
   </div>

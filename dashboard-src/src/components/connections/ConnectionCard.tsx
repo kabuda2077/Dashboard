@@ -232,19 +232,13 @@ export default defineComponent<{
 
       return (
         <div
-          class={[
-            'scroller-item text-base-content/65 flex cursor-pointer flex-col gap-1 px-3 py-2',
-          ]}
+          class="text-base-content/65 flex cursor-pointer flex-col gap-1 px-3 py-2"
           onClick={() => handlerInfo(conn)}
         >
           {connectionCardLines.value.map((line) => (
             <div class={['flex h-5 items-center gap-1 text-sm', dimmed ? 'opacity-60' : '']}>
               {line
-                .filter(
-                  (key) =>
-                    key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close ||
-                    !isClosed,
-                )
+                .filter((key) => key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close || !isClosed)
                 .map((key) => {
                   return componentMap[key]
                 })}

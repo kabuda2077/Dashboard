@@ -6,9 +6,6 @@ import prettyBytes, { type Options } from 'pretty-bytes'
 
 export const isPreferredDark = useMediaQuery('(prefers-color-scheme: dark)')
 export const isMiddleScreen = useMediaQuery('(max-width: 768px)')
-export const isPWA = (() => {
-  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone
-})()
 
 export const prettyBytesHelper = (bytes: number, opts?: Options) => {
   return prettyBytes(bytes, {

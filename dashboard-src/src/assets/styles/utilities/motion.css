@@ -1,0 +1,207 @@
+/* Shared animations, transitions, and reduced-motion fallbacks. */
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bounceInForPC {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.bounce-in {
+  animation: bounceIn 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media screen and (min-width: 1024px) {
+  .bounce-in {
+    animation: bounceInForPC 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+@keyframes highlightFlash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 100%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent);
+  }
+}
+
+.highlight-flash {
+  animation: highlightFlash 0.6s ease-out 2;
+}
+
+.sidebar-tab-indicator {
+  border-radius: var(--radius-field);
+  transform-origin: center;
+  will-change: transform, width, height;
+}
+
+.sidebar-tab-indicator-ready {
+  transition:
+    transform 0.55s cubic-bezier(0.22, 1.5, 0.36, 1),
+    width 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    height 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.15s ease-out;
+}
+
+.sidebar-tab-active {
+  color: var(--color-neutral-content);
+  transition: color 0.18s ease-out;
+}
+
+.ios-segment-indicator {
+  will-change: transform, width;
+}
+
+.ios-segment-indicator-ready {
+  transition:
+    transform 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-tab-indicator-ready,
+  .sidebar-tab-active,
+  .ios-segment-indicator-ready {
+    transition: none;
+  }
+}
+
+.proxy-node-move {
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.proxy-node-enter-active {
+  transition:
+    opacity 0.2s ease-out,
+    scale 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.proxy-node-enter-from {
+  opacity: 0;
+  scale: 0.92;
+}
+
+.proxy-node-leave-active {
+  transition:
+    opacity 0.15s ease-in,
+    scale 0.15s ease-in;
+}
+
+.proxy-node-leave-to {
+  opacity: 0;
+  scale: 0.92;
+}
+
+.latency-highlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-color: var(--color-info);
+  animation: latencyHighlightFade 1.5s ease-out forwards;
+}
+
+@keyframes latencyHighlightFade {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proxy-node-move,
+  .proxy-node-enter-active,
+  .proxy-node-leave-active {
+    transition: none;
+  }
+
+  .latency-highlight::after {
+    animation: none;
+  }
+}
+
+@keyframes progressBar {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+/* iOS-style slide transitions */
+.slide-right-enter-active,
+.slide-right-leave-active,
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* slide-left: content moves left */
+.slide-left-enter-from {
+  transform: translateX(100%);
+}
+.slide-left-enter-to {
+  transform: translateX(0);
+}
+.slide-left-leave-from {
+  transform: translateX(0);
+}
+.slide-left-leave-to {
+  transform: translateX(-100%);
+}
+
+/* slide-right: content moves right */
+.slide-right-enter-from {
+  transform: translateX(-100%);
+}
+.slide-right-enter-to {
+  transform: translateX(0);
+}
+.slide-right-leave-from {
+  transform: translateX(0);
+}
+.slide-right-leave-to {
+  transform: translateX(100%);
+}
+
+/* PC route transition: subtle fade, used with mode="out-in" */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.2s ease-in-out;
+  will-change: opacity;
+}
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+}

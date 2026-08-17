@@ -21,6 +21,6 @@ import VirtualScroller from '../common/VirtualScroller.vue'
 import ConnectionCtrl from '../controls/ConnectionCtrl.tsx'
 import ConnectionCard from './ConnectionCard'
 const size = computed(() => {
-  return connectionCardLines.value.length * 28 + 4
+  return connectionCardLines.value.length * 28 + 16
 })
 </script>

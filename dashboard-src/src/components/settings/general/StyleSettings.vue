@@ -20,7 +20,7 @@
         </div>
         <div class="join">
           <ThemeSelector
-            class="w-38!"
+            class="join-item w-38!"
             v-model:value="defaultTheme"
           />
           <button

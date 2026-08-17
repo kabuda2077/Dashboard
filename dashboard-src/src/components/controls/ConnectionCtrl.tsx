@@ -155,7 +155,6 @@ export default defineComponent({
           v-model={connectionFilter.value}
           placeholder={`${t('search')} | Regex`}
           clearable={true}
-          before-close={true}
           class={isLargeCtrlsBar.value ? 'ctrls-search min-w-0' : 'w-full'}
         />
       )

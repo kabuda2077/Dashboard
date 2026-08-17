@@ -1,0 +1,97 @@
+/* User-configurable background opacity and blur intensity. */
+
+@for $i from 0 to 100 {
+  .custom-background.custom-background-$(i) {
+    .bg-base-100,
+    .bg-primary,
+    .card,
+    .collapse,
+    .input,
+    .select,
+    .toggle,
+    .settings-menu,
+    .ctrls-bar,
+    .settings-grid,
+    .base-container,
+    .btn:not(.btn-ghost, .btn-neutral, .btn-primary),
+    .tabs {
+      @apply bg-base-100/$(i);
+    }
+
+    .btn.btn-neutral {
+      @apply bg-neutral/$(i);
+    }
+
+    option,
+    optgroup {
+      @apply backdrop-blur-sm;
+    }
+
+    .bg-base-150,
+    .bg-base-200,
+    .dock {
+      @apply bg-base-200/$(i);
+    }
+
+    .modal-box {
+      @if $i > 70 {
+        @apply bg-base-100/$(i);
+      } @else  {
+        @apply bg-base-100/70;
+      }
+    }
+
+    .bg-primary:not(.tab.tab-active) {
+      @if $i > 60 {
+        @apply bg-primary/$(i);
+      } @else  {
+        @apply bg-primary/60;
+      }
+    }
+
+    .bg-primary .latency-tag {
+      @if $i > 90 {
+        @apply bg-base-100/$(i);
+      } @else  {
+        @apply bg-base-100/90;
+      }
+    }
+
+    .home-page.bg-base-200 {
+      background-color: transparent;
+    }
+  }
+}
+
+@for $i from 0 to 40 {
+  .blur-intensity-$(i) {
+    .card,
+    .collapse,
+    .sidebar,
+    .nav-bar,
+    .modal-box,
+    .need-blur,
+    .settings-grid,
+    .base-container,
+    .btn,
+    .table thead {
+      /* prettier-ignore */
+      backdrop-filter: blur($(i)px);
+    }
+
+    .pinned-td {
+      @apply bg-transparent! backdrop-blur-xl;
+    }
+
+    .table tbody::before {
+      position: absolute;
+      content: '';
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      /* prettier-ignore */
+      backdrop-filter: blur($(i)px);
+    }
+  }
+}

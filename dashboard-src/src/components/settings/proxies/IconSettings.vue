@@ -40,6 +40,7 @@
           />
           <TextInput
             v-model="newIconReflect.icon"
+            class="w-full"
             :placeholder="$t('dropOrClickUpload')"
             :clearable="true"
             @keydown.enter="() => addIconReflect()"
@@ -87,6 +88,7 @@
               />
               <TextInput
                 v-model="iconReflect.icon"
+                class="w-full"
                 placeholder="Icon URL"
                 :clearable="true"
               />

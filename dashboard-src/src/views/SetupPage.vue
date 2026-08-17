@@ -12,7 +12,7 @@
     <div
       class="border-base-border bg-base-100 mx-auto flex w-96 max-w-[90%] flex-col gap-3 rounded-xl border px-6 py-5 shadow-none max-sm:my-4"
     >
-      <h1 class="mb-1 text-lg font-medium">{{ $t('setup') }}</h1>
+      <h1 class="mb-1 text-lg font-semibold">{{ $t('setup') }}</h1>
 
       <div class="flex gap-2">
         <div class="flex w-24 flex-none flex-col gap-1">

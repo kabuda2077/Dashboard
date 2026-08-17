@@ -1,11 +1,11 @@
 <template>
-  <div :class="{ 'opacity-50': isDisabled, 'scroller-item': 1 }">
+  <div :class="{ 'opacity-50': isDisabled }">
     <div
       class="transparent-collapse collapse rounded-none!"
       :class="isExpanded ? 'collapse-open' : 'collapse-close'"
     >
       <div
-        class="collapse-title hover:bg-base-200/40 flex min-h-0 flex-col gap-3 overflow-hidden px-3 py-2 text-sm transition-colors"
+        class="collapse-title hover:bg-base-200/40 flex min-h-0 flex-col gap-1.5 overflow-hidden px-3 py-2.5 text-sm transition-colors"
         :class="{
           'cursor-pointer': isSelectable,
         }"
@@ -88,7 +88,7 @@
         @transitionend="handlerExpandTransitionEnd"
       >
         <template v-if="showExpandedContent">
-          <div class="border-base-content/3 border-b"></div>
+          <div class="border-base-border border-b"></div>
           <ProxyGroup
             :name="selected"
             :force-open="true"

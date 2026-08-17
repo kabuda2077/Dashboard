@@ -32,7 +32,7 @@
       <!-- China IP -->
       <div>
         <div class="text-base-content/60 text-xs">ipip.net</div>
-        <div class="mt-0.5 text-sm font-medium">
+        <div class="mt-0.5 text-sm">
           {{ showPrivacy ? ipForChina.ipWithPrivacy[0] : ipForChina.ip[0] }}
           <span
             v-if="ipForChina.ip[1]"
@@ -48,7 +48,7 @@
       <!-- Global IP -->
       <div>
         <div class="text-base-content/60 text-xs">{{ IPInfoAPI }}</div>
-        <div class="mt-0.5 text-sm font-medium">
+        <div class="mt-0.5 text-sm">
           {{ showPrivacy ? ipForGlobal.ipWithPrivacy[0] : ipForGlobal.ip[0] }}
           <span
             v-if="ipForGlobal.ip[1]"

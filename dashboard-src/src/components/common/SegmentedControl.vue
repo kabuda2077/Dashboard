@@ -23,7 +23,7 @@
         role="tab"
         type="button"
         :class="[
-          'ios-segment-item relative z-1 flex items-center justify-center gap-1 rounded-[0.5rem] px-3 py-1 text-sm font-medium whitespace-nowrap transition-colors duration-150',
+          'ios-segment-item relative z-1 flex items-center justify-center gap-1 rounded-[0.5rem] px-3 py-1 text-sm whitespace-nowrap transition-colors duration-150',
           modelValue === opt.value
             ? 'text-primary-content'
             : 'text-base-content/55 hover:text-base-content/80',
