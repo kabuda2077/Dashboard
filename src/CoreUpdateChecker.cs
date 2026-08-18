@@ -50,10 +50,10 @@ internal static partial class CoreUpdateChecker
                 throw new InvalidOperationException("无法识别当前内核版本。");
             }
 
-            using var response = await client.GetAsync(SingBoxReleasesApi, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(
+                client,
+                SingBoxReleasesApi,
+                cancellationToken);
             var release = SingBoxUpdater.FindMatchingRelease(document.RootElement, singBoxCurrentVersion);
             var latestVersion = release.GetProperty("tag_name").GetString() ?? "";
             return new CoreUpdateCheckResult(
@@ -77,12 +77,10 @@ internal static partial class CoreUpdateChecker
             MihomoChannel.Smart => MihomoSmartApi,
             _ => MihomoStableApi
         };
-        using var releaseResponse = await client.GetAsync(releaseApi, cancellationToken);
-        releaseResponse.EnsureSuccessStatusCode();
-        await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync(cancellationToken);
-        using var releaseDocument = await JsonDocument.ParseAsync(
-            releaseStream,
-            cancellationToken: cancellationToken);
+        using var releaseDocument = await CoreUpgradeSupport.GetReleaseJsonAsync(
+            client,
+            releaseApi,
+            cancellationToken);
         var root = releaseDocument.RootElement;
         var latest = root.GetProperty("tag_name").GetString() ?? "";
 

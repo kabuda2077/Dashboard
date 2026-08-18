@@ -123,6 +123,7 @@ public sealed class MainForm : Form
             OpenConfigLocationAsync = () => OpenPathLocationAsync(_settings.ActiveConfigPath, "配置文件"),
             CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
             OpenAppRelease = _host.OpenAppReleasePage,
+            OpenCoreRepository = _host.OpenCoreRepositoryPage,
             ShowNoticeAsync = ShowDashboardNoticeAsync,
             SendState = SendStateToDashboard,
             SendWindowChromeState = SendWindowChromeState

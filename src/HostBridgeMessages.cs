@@ -26,6 +26,7 @@ internal static class HostBridgeCommand
     public const string OpenConfigLocation = "openConfigLocation";
     public const string CheckAppUpdate = "checkAppUpdate";
     public const string OpenAppRelease = "openAppRelease";
+    public const string OpenCoreRepository = "openCoreRepository";
     public const string SaveDashboardSettings = "saveDashboardSettings";
 }
 

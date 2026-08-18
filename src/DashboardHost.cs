@@ -7,6 +7,9 @@ namespace Dashboard;
 
 internal sealed class DashboardHost : IDisposable
 {
+    internal const string MihomoRepositoryUrl = "https://github.com/MetaCubeX/mihomo";
+    internal const string SingBoxRepositoryUrl = "https://github.com/reF1nd/sing-box";
+
     private readonly CoreProcessManager _core = new();
     private readonly ProxyGroupIconCache _iconCache = new();
     private readonly DashboardServer _dashboardServer;
@@ -166,6 +169,7 @@ internal sealed class DashboardHost : IDisposable
 
     public async Task UpgradeCoreAsync()
     {
+        ResetCoreUpdateState();
         await _coreLifecycle.UpgradeAsync();
         await CheckForCoreUpdateAsync();
     }
@@ -180,6 +184,7 @@ internal sealed class DashboardHost : IDisposable
 
         try
         {
+            ResetCoreUpdateState(publish: false);
             IsCoreUpdateChecking = true;
             PublishStateChanged();
             var result = await CoreUpdateChecker.CheckAsync(
@@ -197,6 +202,7 @@ internal sealed class DashboardHost : IDisposable
         }
         catch (Exception ex)
         {
+            ResetCoreUpdateState(publish: false);
             HostOperationLogger.Error("update", $"{Settings.CoreTitle} update check failed.", ex);
         }
         finally
@@ -273,6 +279,28 @@ internal sealed class DashboardHost : IDisposable
             HostOperationLogger.Error("update", "Failed to open Dashboard Releases page.", ex);
             _ = ShowNoticeAsync("无法打开 GitHub Release 页面，请检查系统默认浏览器。");
         }
+    }
+
+    public void OpenCoreRepositoryPage()
+    {
+        var repositoryUrl = GetCoreRepositoryUrl(Settings.IsSingBox);
+        try
+        {
+            Process.Start(new ProcessStartInfo(repositoryUrl)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("core", $"Failed to open core repository: {repositoryUrl}", ex);
+            _ = ShowNoticeAsync("无法打开内核 GitHub 仓库，请检查系统默认浏览器。");
+        }
+    }
+
+    internal static string GetCoreRepositoryUrl(bool isSingBox)
+    {
+        return isSingBox ? SingBoxRepositoryUrl : MihomoRepositoryUrl;
     }
 
     public void CompleteSetup()
@@ -464,11 +492,14 @@ internal sealed class DashboardHost : IDisposable
         return $"{Settings.CoreType}|{Settings.ActiveCorePath}";
     }
 
-    private void ResetCoreUpdateState()
+    private void ResetCoreUpdateState(bool publish = true)
     {
         LatestCoreVersion = "";
         CoreUpdateAvailable = false;
-        PublishStateChanged();
+        if (publish)
+        {
+            PublishStateChanged();
+        }
     }
 
     private bool? GetActiveTunConfigured()
@@ -593,9 +624,13 @@ internal sealed class DashboardHost : IDisposable
         _loadingCoreVersionKey = key;
         _coreVersionLoadTask = Task.Run(() => ReadCoreVersion(corePath, isSingBox)).ContinueWith(task =>
         {
+            var versionChanged = false;
             if (task.Status == TaskStatus.RanToCompletion
                 && string.Equals(key, _loadingCoreVersionKey, StringComparison.OrdinalIgnoreCase))
             {
+                versionChanged = !string.IsNullOrWhiteSpace(_cachedCoreVersion)
+                    && !string.IsNullOrWhiteSpace(task.Result)
+                    && !string.Equals(_cachedCoreVersion, task.Result, StringComparison.OrdinalIgnoreCase);
                 _cachedCoreVersionKey = key;
                 _cachedCoreVersion = task.Result;
             }
@@ -606,6 +641,11 @@ internal sealed class DashboardHost : IDisposable
             }
 
             RuntimeStateChanged?.Invoke(this, EventArgs.Empty);
+            if (versionChanged)
+            {
+                ResetCoreUpdateState();
+                _ = CheckForCoreUpdateAsync();
+            }
         }, TaskScheduler.Default);
     }
 

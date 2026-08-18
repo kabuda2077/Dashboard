@@ -26,11 +26,10 @@ public static class SingBoxUpdater
 
         var installedVersion = await GetInstalledVersionAsync(corePath, cancellationToken);
         using var client = CoreUpgradeSupport.CreateHttpClient();
-        using var releaseResponse = await client.GetAsync(ReleasesApi, cancellationToken);
-        releaseResponse.EnsureSuccessStatusCode();
-
-        await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(releaseStream, cancellationToken: cancellationToken);
+        using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(
+            client,
+            ReleasesApi,
+            cancellationToken);
         var release = FindMatchingRelease(document.RootElement, installedVersion);
         var version = release.GetProperty("tag_name").GetString() ?? "latest";
         var asset = FindWindowsAmd64V3Asset(release.GetProperty("assets"));

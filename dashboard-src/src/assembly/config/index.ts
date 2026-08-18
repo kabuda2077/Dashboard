@@ -24,8 +24,12 @@ export const defaultConfig: Config = {
 export const configs = ref<Config>({ ...defaultConfig })
 export const configsLoaded = ref(false)
 export const configsLoadedBackendUuid = ref('')
+let configsGeneration = 0
+
+export const getConfigsGeneration = () => configsGeneration
 
 export const resetConfigs = () => {
+  configsGeneration += 1
   configs.value = { ...defaultConfig }
   configsLoaded.value = false
   configsLoadedBackendUuid.value = ''
@@ -34,15 +38,24 @@ export const resetConfigs = () => {
 const load = () => import('./clash')
 
 export const fetchConfigs = async () => {
+  const requestedGeneration = configsGeneration
   const backendUuid = activeUuid.value
   const result = await (await load()).fetchConfigs()
+
+  if (requestedGeneration !== configsGeneration || backendUuid !== activeUuid.value) {
+    return result
+  }
+
+  configs.value = result
   configsLoaded.value = true
   configsLoadedBackendUuid.value = backendUuid
   return result
 }
 
-export const updateConfigs = async (cfg: Record<string, string | boolean | object | number>) =>
-  (await load()).updateConfigs(cfg)
+export const updateConfigs = async (cfg: Record<string, string | boolean | object | number>) => {
+  await (await load()).updateConfigs(cfg)
+  await fetchConfigs()
+}
 
 // 配置 / 缓存 / DNS 维护动作(Clash 专属),经 config 域门面暴露给 view。
 export {

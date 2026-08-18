@@ -99,6 +99,9 @@ internal sealed class HostMessageRouter
             case HostBridgeCommand.OpenAppRelease:
                 _handlers.OpenAppRelease();
                 return;
+            case HostBridgeCommand.OpenCoreRepository:
+                _handlers.OpenCoreRepository();
+                return;
         }
 
         _handlers.SendState();
@@ -126,6 +129,7 @@ internal sealed class HostMessageHandlers
     public required Func<Task> OpenConfigLocationAsync { get; init; }
     public required Func<Task> CheckAppUpdateAsync { get; init; }
     public required Action OpenAppRelease { get; init; }
+    public required Action OpenCoreRepository { get; init; }
     public required Func<string, Task> ShowNoticeAsync { get; init; }
     public required Action SendState { get; init; }
     public required Action SendWindowChromeState { get; init; }

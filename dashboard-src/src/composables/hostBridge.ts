@@ -57,13 +57,7 @@ export type HostRuntimeState = Pick<
 
 export type HostMessage = {
   type?:
-    | 'state'
-    | 'runtimeState'
-    | 'logAppend'
-    | 'iconCacheUpdated'
-    | 'notice'
-    | 'windowState'
-    | string
+    'state' | 'runtimeState' | 'logAppend' | 'iconCacheUpdated' | 'notice' | 'windowState' | string
   state?: HostState
   runtimeState?: HostRuntimeState
   message?: string
@@ -82,6 +76,7 @@ export type HostCommand =
   | { type: 'requestState' }
   | { type: 'checkAppUpdate' }
   | { type: 'openAppRelease' }
+  | { type: 'openCoreRepository' }
   | { type: 'performance'; name: string; durationMs?: number }
   | { type: 'saveDashboardSettings'; settings: Record<string, string> }
   | ({ type: string } & Record<string, unknown>)

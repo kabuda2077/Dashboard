@@ -29,8 +29,8 @@ export const shouldIgnoreErrorNotification = (
   url?: string,
   options?: { isNetworkError?: boolean },
 ) =>
-  ignoreNotificationUrls.some((ignoredUrl) => url?.endsWith(ignoredUrl))
-  || (options?.isNetworkError === true && url?.endsWith('/configs'))
+  ignoreNotificationUrls.some((ignoredUrl) => url?.endsWith(ignoredUrl)) ||
+  (options?.isNetworkError === true && url?.endsWith('/configs'))
 
 axios.interceptors.response.use(
   null,
@@ -49,9 +49,11 @@ axios.interceptors.response.use(
       nextTick(() => {
         showNotification({ content: 'unauthorizedTip' })
       })
-    } else if (!shouldIgnoreErrorNotification(error.config?.url, {
-      isNetworkError: !error.response,
-    })) {
+    } else if (
+      !shouldIgnoreErrorNotification(error.config?.url, {
+        isNetworkError: !error.response,
+      })
+    ) {
       const errorMessage = error.response?.data?.message || error.message
 
       showNotification({
@@ -62,6 +64,6 @@ axios.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    return error
+    return Promise.reject(error)
   },
 )

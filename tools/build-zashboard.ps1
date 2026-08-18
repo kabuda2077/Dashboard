@@ -92,8 +92,18 @@ foreach ($pattern in @('BackendVersion', 'getLabelFromBackend', 'activeBackend')
 
 $hostBridgePath = Join-Path $sourceRoot 'src\composables\hostBridge.ts'
 $hostBridge = Get-Content -LiteralPath $hostBridgePath -Raw
-if ($hostBridge -notmatch 'isAutostartUpdating\?: boolean') {
-    throw "dashboard source check failed: host state must expose isAutostartUpdating"
+foreach ($pattern in @('isAutostartUpdating?: boolean', "{ type: 'openCoreRepository' }")) {
+    if ($hostBridge -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: host bridge must keep '$pattern'"
+    }
+}
+
+$backendVersionPath = Join-Path $sourceRoot 'src\components\common\BackendVersion.vue'
+$backendVersion = Get-Content -LiteralPath $backendVersionPath -Raw
+foreach ($pattern in @('https://github.com/MetaCubeX/mihomo', 'https://github.com/reF1nd/sing-box', 'openCoreRepository', 'target="_blank"')) {
+    if ($backendVersion -notmatch [regex]::Escape($pattern)) {
+        throw "dashboard source check failed: BackendVersion must keep the active-core repository link"
+    }
 }
 
 $corePagePath = Join-Path $sourceRoot 'src\views\CorePage.vue'
@@ -320,6 +330,10 @@ foreach ($selector in $requiredSelectors) {
 
 if ($missingSelectors.Count -gt 0) {
     throw "dashboard source check failed: missing desktop selectors: $($missingSelectors -join ', ')"
+}
+
+if ($desktopCss -match '\.toggle:disabled') {
+    throw "dashboard source check failed: disabled toggles must follow DaisyUI without a desktop appearance override"
 }
 
 Write-Host 'dashboard source contract check completed.'

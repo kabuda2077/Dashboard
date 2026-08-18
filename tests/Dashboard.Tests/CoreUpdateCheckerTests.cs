@@ -63,6 +63,29 @@ public sealed class CoreUpdateCheckerTests
         Assert.Equal("v1.14.0-beta.14-reF1nd", result.LatestVersion);
     }
 
+    [Fact]
+    public async Task TreatsMatchingSingBoxPrereleaseAsCurrent()
+    {
+        using var client = new HttpClient(new StubHandler("""
+            [
+              {
+                "tag_name":"v1.14.0-beta.15-reF1nd",
+                "prerelease":true,
+                "published_at":"2026-08-16T17:25:32Z"
+              }
+            ]
+            """));
+
+        var result = await CoreUpdateChecker.CheckReleaseAsync(
+            client,
+            "sing-box version 1.14.0-beta.15-reF1nd",
+            isSingBox: true);
+
+        Assert.False(result.UpdateAvailable);
+        Assert.Equal("1.14.0-beta.15-reF1nd", result.CurrentVersion);
+        Assert.Equal("v1.14.0-beta.15-reF1nd", result.LatestVersion);
+    }
+
     private sealed class StubHandler(string content) : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }

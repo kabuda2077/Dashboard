@@ -95,8 +95,10 @@ Preserve these decisions unless the product direction is explicitly changed.
 - Core page contains active core status, start/stop/switch controls, path/API settings, logs, operation buttons, and current download summary.
 - Core operation buttons keep this row-major order: reload config, restart core, flush DNS cache, flush Fake IP, update GEO, upgrade core. sing-box omits update GEO; optional smart-group maintenance actions come after this sequence.
 - When a core update is available, the same update dot appears beside the Backend version and on the upgrade-core button.
+- mihomo and sing-box update availability must use the same host-owned state lifecycle: clear stale availability before a check or upgrade, clear it after a failed check, and recheck after the installed binary version changes.
+- Both cores must use the shared release-metadata request/retry helper. Their GitHub release endpoints and upgrade execution can differ where required by their release channels and native capabilities.
 - Core page section titles use the same `dashboard-section-title` structure.
-- The embedded Backend heading is static text; do not restore upstream version links or click-through heading behavior.
+- The embedded Backend heading remains static text. Only the adjacent core version is clickable: mihomo opens `MetaCubeX/mihomo`, while sing-box opens `reF1nd/sing-box` in the system browser.
 - The sidebar bottom must not show a backend settings button or backend version.
 - Dashboard uses the Clash-compatible API path for both mihomo and sing-box main pages.
 - sing-box native API / Tools is intentionally removed from the desktop frontend. See the sing-box version contract for API endpoint and version fallback details.
@@ -110,6 +112,7 @@ Do not regress the Backend version display after switching cores.
 - Do not treat sing-box `services.type=api` as the desktop Dashboard main API. That service may exist for sing-box's own dashboard/native API and can use a different port.
 - If Clash `/version` is not reachable yet, use the C# host-provided executable version fallback, read from the active `sing-box.exe version` output.
 - A failed API probe must not leave the Backend title with only the sing-box icon and no version text.
+- The displayed version remains a repository link after switching cores and must update its target with the active core.
 
 ### Settings Defaults
 
@@ -340,6 +343,7 @@ UI:
 - [ ] Core top status text truncates inside its own box.
 - [ ] Core page section titles share the same `dashboard-section-title` structure.
 - [ ] Core operation buttons keep the documented order, and core updates mark both the version and upgrade action.
+- [ ] Backend version opens the active core's GitHub repository, and read-only TUN follows DaisyUI's disabled-toggle appearance.
 
 Product:
 

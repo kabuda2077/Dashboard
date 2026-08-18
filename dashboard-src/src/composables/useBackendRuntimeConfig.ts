@@ -3,6 +3,7 @@ import {
   configsLoaded,
   configsLoadedBackendUuid,
   fetchConfigs,
+  getConfigsGeneration,
   resetConfigs,
   updateConfigs,
 } from '@/assembly/config'
@@ -23,9 +24,12 @@ export type RuntimeTunState = {
 
 const isConfigLoading = ref(false)
 const configError = ref<unknown>(null)
+let loadingRequestKey = ''
 let retryTimer: ReturnType<typeof window.setTimeout> | undefined
 let readyRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
-const readyRefreshedBackendUuids = new Set<string>()
+const readyRefreshedRequestKeys = new Set<string>()
+
+const getConfigRequestKey = (backendUuid: string) => `${backendUuid}:${getConfigsGeneration()}`
 
 const clearRetryTimer = () => {
   if (!retryTimer) return
@@ -42,9 +46,10 @@ const clearReadyRefreshTimer = () => {
 export const useBackendRuntimeConfig = () => {
   const activeBackendUuid = computed(() => activeBackend.value?.uuid || '')
   const isActiveConfigLoaded = computed(
-    () => !!activeBackendUuid.value
-      && configsLoaded.value
-      && configsLoadedBackendUuid.value === activeBackendUuid.value,
+    () =>
+      !!activeBackendUuid.value &&
+      configsLoaded.value &&
+      configsLoadedBackendUuid.value === activeBackendUuid.value,
   )
 
   const configStatus = computed<ConfigStatus>(() => {
@@ -62,10 +67,9 @@ export const useBackendRuntimeConfig = () => {
       : undefined,
   )
 
-  const hasWritableApiTun = computed(() =>
-    isActiveConfigLoaded.value
-    && !!configs.value?.tun
-    && !activeBackend.value?.disableTunMode,
+  const hasWritableApiTun = computed(
+    () =>
+      isActiveConfigLoaded.value && !!configs.value?.tun && !activeBackend.value?.disableTunMode,
   )
 
   const tunState = computed<RuntimeTunState>(() => {
@@ -117,14 +121,15 @@ export const useBackendRuntimeConfig = () => {
   const scheduleReadyRefresh = () => {
     const backendUuid = activeBackendUuid.value
     if (!backendUuid) return
-    if (readyRefreshTimer || readyRefreshedBackendUuids.has(backendUuid)) return
+    const requestKey = getConfigRequestKey(backendUuid)
+    if (readyRefreshTimer || readyRefreshedRequestKeys.has(requestKey)) return
 
-    readyRefreshedBackendUuids.add(backendUuid)
+    readyRefreshedRequestKeys.add(requestKey)
     readyRefreshTimer = window.setTimeout(() => {
       readyRefreshTimer = undefined
-      if (activeBackendUuid.value !== backendUuid) return
+      if (getConfigRequestKey(activeBackendUuid.value) !== requestKey) return
       void fetchConfigs().catch((error) => {
-        if (activeBackendUuid.value === backendUuid) {
+        if (getConfigRequestKey(activeBackendUuid.value) === requestKey) {
           configError.value = error
         }
       })
@@ -132,21 +137,26 @@ export const useBackendRuntimeConfig = () => {
   }
 
   const ensureConfigLoaded = async () => {
-    if (!activeBackend.value || isActiveConfigLoaded.value || isConfigLoading.value) return
+    if (!activeBackend.value || isActiveConfigLoaded.value) return
     const requestedBackendUuid = activeBackendUuid.value
+    const requestKey = getConfigRequestKey(requestedBackendUuid)
+    if (loadingRequestKey === requestKey) return
+
+    loadingRequestKey = requestKey
     isConfigLoading.value = true
     configError.value = null
     try {
       await fetchConfigs()
     } catch (error) {
-      if (activeBackendUuid.value === requestedBackendUuid) {
+      if (getConfigRequestKey(activeBackendUuid.value) === requestKey) {
         configError.value = error
       }
     } finally {
+      if (loadingRequestKey !== requestKey) return
+
+      loadingRequestKey = ''
       isConfigLoading.value = false
-      if (activeBackend.value && !isActiveConfigLoaded.value) {
-        scheduleConfigRetry()
-      }
+      if (activeBackend.value && !isActiveConfigLoaded.value) scheduleConfigRetry()
     }
   }
 
@@ -157,6 +167,7 @@ export const useBackendRuntimeConfig = () => {
     clearRetryTimer()
     clearReadyRefreshTimer()
     resetConfigs()
+    configError.value = null
     void ensureConfigLoaded()
   }
 

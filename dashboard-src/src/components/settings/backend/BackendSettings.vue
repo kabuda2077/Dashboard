@@ -36,7 +36,6 @@
               type="checkbox"
               :checked="!!tunState.enabled"
               :disabled="!tunState.writable"
-              :class="!tunState.writable && 'opacity-50'"
               @change="hanlderTunModeChange"
             />
           </div>
