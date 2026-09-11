@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net.NetworkInformation;
+using Microsoft.Win32;
 
 namespace Dashboard;
 
@@ -14,6 +16,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private MainForm? _mainForm;
     private TrayMenuForm? _trayMenu;
     private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
+    private bool _mihomoTunWasUpBeforeSuspend;
     private bool _exiting;
     private bool _disposed;
 
@@ -29,6 +32,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _host.TrayNotificationRequested += OnTrayNotificationRequested;
         _host.MessageRequested += OnMessageRequested;
         _host.RelaunchRequested += OnRelaunchRequested;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
         _appIcon = LoadAppIcon();
         _trayIconImage = LoadTrayIcon(_appIcon);
@@ -65,6 +69,22 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     internal static bool ShouldRelaunchBeforeShowingWindow(bool shouldStartCore, bool isAdministrator)
     {
         return shouldStartCore && !isAdministrator;
+    }
+
+    internal static bool ShouldRestartCoreAfterResume(
+        bool coreRunning,
+        bool isSingBox,
+        bool coreOperationInProgress,
+        bool tunWasUpBeforeSuspend,
+        bool physicalNetworkUp,
+        bool tunUp)
+    {
+        return coreRunning
+            && !isSingBox
+            && !coreOperationInProgress
+            && tunWasUpBeforeSuspend
+            && physicalNetworkUp
+            && !tunUp;
     }
 
     private async Task RunAutomaticUpdateCheckAsync(CancellationToken cancellationToken)
@@ -232,6 +252,120 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         RunOnUiThread(() => RelaunchAsAdministrator(request));
     }
 
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        if (_disposed || _exiting)
+        {
+            return;
+        }
+
+        if (e.Mode == PowerModes.Suspend)
+        {
+            _mihomoTunWasUpBeforeSuspend = NetworkInterface.GetAllNetworkInterfaces()
+                .Any(networkInterface =>
+                    IsMihomoTun(networkInterface)
+                    && networkInterface.OperationalStatus == OperationalStatus.Up);
+            return;
+        }
+
+        if (e.Mode == PowerModes.Resume && _mihomoTunWasUpBeforeSuspend)
+        {
+            HostOperationLogger.Info("power", "System resumed; checking mihomo TUN state.");
+            _ = RecoverMihomoTunAfterResumeAsync(_lifetimeCancellation.Token);
+        }
+    }
+
+    private async Task RecoverMihomoTunAfterResumeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+
+            for (var attempt = 0; attempt < 6; attempt++)
+            {
+                var interfaces = NetworkInterface.GetAllNetworkInterfaces();
+                var physicalNetworkUp = interfaces.Any(networkInterface =>
+                    !IsMihomoTun(networkInterface)
+                    && networkInterface.OperationalStatus == OperationalStatus.Up
+                    && networkInterface.NetworkInterfaceType is NetworkInterfaceType.Ethernet
+                        or NetworkInterfaceType.Wireless80211);
+                var tun = interfaces.FirstOrDefault(IsMihomoTun);
+                var shouldRestart = ShouldRestartCoreAfterResume(
+                    _host.IsRunning,
+                    _host.Settings.IsSingBox,
+                    _host.IsUpgradeInProgress || _host.IsSwitchInProgress,
+                    _mihomoTunWasUpBeforeSuspend,
+                    physicalNetworkUp,
+                    tun?.OperationalStatus == OperationalStatus.Up);
+
+                if (shouldRestart)
+                {
+                    var previousPid = _host.ProcessId;
+                    HostOperationLogger.Info(
+                        "power",
+                        $"Attempting mihomo recovery after resume: tunStatus={tun?.OperationalStatus.ToString() ?? "missing"}, previousPid={previousPid?.ToString() ?? "none"}, dashboardAdmin={DashboardHost.IsRunningAsAdministrator()}.");
+                    var restartRequested = _host.RestartCore(showTrayNotification: true);
+                    if (!restartRequested)
+                    {
+                        HostOperationLogger.Info(
+                            "power",
+                            $"Mihomo recovery did not complete in this process. previousPid={previousPid?.ToString() ?? "none"}, currentPid={_host.ProcessId?.ToString() ?? "none"}. An elevated relaunch may have been requested.");
+                        return;
+                    }
+
+                    for (var check = 0; check < 10; check++)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                        var recoveredTun = NetworkInterface.GetAllNetworkInterfaces()
+                            .FirstOrDefault(IsMihomoTun);
+                        if (recoveredTun?.OperationalStatus == OperationalStatus.Up)
+                        {
+                            HostOperationLogger.Info(
+                                "power",
+                                $"Mihomo recovery succeeded. previousPid={previousPid?.ToString() ?? "none"}, currentPid={_host.ProcessId?.ToString() ?? "none"}, tunStatus={recoveredTun.OperationalStatus}.");
+                            _mihomoTunWasUpBeforeSuspend = false;
+                            return;
+                        }
+                    }
+
+                    HostOperationLogger.Error(
+                        "power",
+                        $"Mihomo recovery failed: TUN did not become Up within 10 seconds. previousPid={previousPid?.ToString() ?? "none"}, currentPid={_host.ProcessId?.ToString() ?? "none"}.",
+                        new InvalidOperationException("Meta Tunnel did not recover after mihomo restart."));
+                    return;
+                }
+
+                if (!_host.IsRunning
+                    || _host.Settings.IsSingBox
+                    || tun?.OperationalStatus == OperationalStatus.Up)
+                {
+                    HostOperationLogger.Diagnostic(
+                        "power",
+                        $"No resume recovery needed: coreRunning={_host.IsRunning}, core={_host.Settings.CoreType}, tunStatus={tun?.OperationalStatus.ToString() ?? "missing"}.");
+                    _mihomoTunWasUpBeforeSuspend = false;
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            }
+
+            HostOperationLogger.Info("power", "Mihomo TUN remained unavailable after resume, but the physical network was not ready.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("power", "Failed to check mihomo TUN state after resume.", ex);
+        }
+    }
+
+    private static bool IsMihomoTun(NetworkInterface networkInterface)
+    {
+        return string.Equals(networkInterface.Name, "mihomo", StringComparison.OrdinalIgnoreCase)
+            || networkInterface.Description.Contains("Meta Tunnel", StringComparison.OrdinalIgnoreCase);
+    }
+
     private void UpdateTrayStatus()
     {
         _trayIcon.Text = _host.IsRunning ? "Dashboard - 运行中" : "Dashboard - 未运行";
@@ -371,6 +505,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _host.TrayNotificationRequested -= OnTrayNotificationRequested;
         _host.MessageRequested -= OnMessageRequested;
         _host.RelaunchRequested -= OnRelaunchRequested;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _host.ShouldKeepMinimizedForRelaunch = null;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();

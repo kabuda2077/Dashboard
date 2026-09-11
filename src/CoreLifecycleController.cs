@@ -87,28 +87,54 @@ internal sealed class CoreLifecycleController
         }
     }
 
-    public void Restart(bool showTrayNotification = false)
+    public bool Restart(bool showTrayNotification = false)
     {
+        var beforeProcessId = _core.ProcessId;
         try
         {
-            if (!_core.IsRunning)
+            if (!_services.IsRunningAsAdministrator())
             {
-                Start();
-                return;
+                HostOperationLogger.Info(
+                    "core",
+                    $"Restart requires elevation; requesting elevated Dashboard restart. currentPid={beforeProcessId?.ToString() ?? "none"}.");
+                _services.RelaunchAsAdministrator(
+                    true,
+                    _services.ShouldKeepMinimizedForRelaunch(),
+                    true);
+                return false;
             }
 
-            _core.Stop();
+            if (_core.IsRunning)
+            {
+                _core.Stop();
+            }
+
             Start();
+            var started = _core.IsRunning;
+            HostOperationLogger.Info(
+                "core",
+                $"Core restart {(started ? "started" : "failed to start")}. previousPid={beforeProcessId?.ToString() ?? "none"}, currentPid={_core.ProcessId?.ToString() ?? "none"}.");
+            if (!started)
+            {
+                return false;
+            }
+
             _ = _services.ShowNoticeAsync("内核已重启。");
             if (showTrayNotification)
             {
                 _services.ShowTrayNotification("内核已重启");
             }
+
+            return true;
         }
         catch (Exception ex)
         {
-            HostOperationLogger.Error("core", "Failed to restart core.", ex);
+            HostOperationLogger.Error(
+                "core",
+                $"Failed to restart core. previousPid={beforeProcessId?.ToString() ?? "none"}.",
+                ex);
             _services.ShowMessage("重启失败", ex.Message, MessageBoxIcon.Error);
+            return false;
         }
         finally
         {

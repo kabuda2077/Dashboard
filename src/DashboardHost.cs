@@ -155,9 +155,9 @@ internal sealed class DashboardHost : IDisposable
         _coreLifecycle.Stop(showTrayNotification);
     }
 
-    public void RestartCore(bool showTrayNotification = false)
+    public bool RestartCore(bool showTrayNotification = false)
     {
-        _coreLifecycle.Restart(showTrayNotification);
+        return _coreLifecycle.Restart(showTrayNotification);
     }
 
     public async Task SwitchCoreAsync(string targetCoreType)
