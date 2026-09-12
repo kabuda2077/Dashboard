@@ -605,11 +605,11 @@ internal sealed class DashboardHost : IDisposable
             }
 
             StartCoreVersionReadIfNeeded(key, fullPath, Settings.IsSingBox);
-            return _cachedCoreVersion;
+            return "";
         }
         catch
         {
-            return _cachedCoreVersion;
+            return "";
         }
     }
 

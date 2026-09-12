@@ -1,0 +1,1 @@
+import{S as a,b as s}from"./clash-BNmRMhWA.js";var t=async()=>(await s()).data,r=async s=>{await a(s)};export{t as fetchConfigs,r as updateConfigs};

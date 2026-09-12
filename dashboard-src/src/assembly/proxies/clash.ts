@@ -13,6 +13,8 @@ import { disconnectByIdAPI } from '@/assembly/connections'
 import { GLOBAL, IPV6_TEST_URL, NOT_CONNECTED, PROXY_TYPE, SPEEDTEST_MODE } from '@/constant'
 import { getConnectionChains, isProxyGroup } from '@/helper'
 import { showNotification } from '@/helper/notification'
+import { notifyRequestError } from '@/helper/requestError'
+import { i18n } from '@/i18n'
 import { activeConnections } from '@/store/connections'
 import {
   automaticDisconnection,
@@ -130,7 +132,7 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
   if (automaticDisconnection.value) {
     activeConnections.value
       .filter((c) => getConnectionChains(c).includes(proxyGroupName))
-      .forEach((c) => disconnectByIdAPI(c.id))
+      .forEach((c) => disconnectByIdAPI(c.id).catch(() => {}))
   }
   fetchProxies()
 }
@@ -190,10 +192,9 @@ export const proxyLatencyTest = async (
   url = speedtestUrlWithDefault.value,
   timeout = speedtestTimeout.value,
 ) => {
-  const res = await latencyTestForSingle(proxyName, url, timeout)
-  await fetchProxies()
-
-  if (res.status !== 200) {
+  try {
+    await latencyTestForSingle(proxyName, url, timeout)
+  } catch {
     showNotification({
       content: 'testFailedTip',
       params: {
@@ -201,11 +202,13 @@ export const proxyLatencyTest = async (
       },
       type: 'alert-error',
     })
+  } finally {
+    await fetchProxies().catch(() => {})
   }
 }
 
-const setHistory = (proxyName: string, delay: number) => {
-  const history = getHistoryByName(proxyName)
+const setHistory = (proxyName: string, delay: number, groupName?: string) => {
+  const history = getHistoryByName(proxyName, groupName)
   const now = new Date()
 
   history.push({
@@ -224,9 +227,10 @@ const isLatencyTestable = (name: string) => {
 }
 
 const testLatencyOneByOneWithTip = async (
-  proxyGroupName: string,
+  tipName: string,
   nodes: string[],
   url = speedtestUrlWithDefault.value,
+  groupName?: string,
 ) => {
   const total = nodes.length
   let testDone = 0
@@ -235,34 +239,41 @@ const testLatencyOneByOneWithTip = async (
   await Promise.allSettled(
     nodes.map((name) =>
       limiter(async () => {
-        const res = await latencyTestForSingle(name, url, Math.min(2000, speedtestTimeout.value))
+        try {
+          const { data } = await latencyTestForSingle(
+            name,
+            url,
+            Math.min(2000, speedtestTimeout.value),
+          )
 
-        if (res.status !== 200) {
+          setHistory(name, data.delay, groupName)
+        } catch {
           testFailed++
-          setHistory(name, NOT_CONNECTED)
-        } else {
-          setHistory(name, res.data.delay)
+          setHistory(name, NOT_CONNECTED, groupName)
+        } finally {
+          testDone++
+          showNotification({
+            content: 'testFinishedTip',
+            key: TIP_KEY + tipName,
+            params: {
+              name: getNameForNotification(tipName, url),
+              total: total.toString(),
+              number: testDone.toString(),
+            },
+            type: 'alert-info',
+            timeout: 0,
+          })
         }
-        testDone++
-        showNotification({
-          content: 'testFinishedTip',
-          key: TIP_KEY + proxyGroupName,
-          params: {
-            name: getNameForNotification(proxyGroupName, url),
-            total: total.toString(),
-            number: testDone.toString(),
-          },
-          type: 'alert-info',
-          timeout: 0,
-        })
       }),
     ),
   )
+  await fetchProxies().catch(() => {})
+
   showNotification({
     content: 'testFinishedResultTip',
-    key: TIP_KEY + proxyGroupName,
+    key: TIP_KEY + tipName,
     params: {
-      name: getNameForNotification(proxyGroupName, url),
+      name: getNameForNotification(tipName, url),
       total: total.toString(),
       success: `${total - testFailed}`,
       failed: `${testFailed}`,
@@ -284,9 +295,9 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
     )
   ) {
     if (proxyNode.fixed) {
-      deleteFixedProxyAPI(proxyGroupName)
+      deleteFixedProxyAPI(proxyGroupName).catch(() => {})
     }
-    return testLatencyOneByOneWithTip(proxyGroupName, all, url)
+    return testLatencyOneByOneWithTip(proxyGroupName, all, url, proxyGroupName)
   }
 
   const timeout = Math.max(5000, speedtestTimeout.value)
@@ -308,8 +319,14 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
       })
     }
   }
-  await fetchProxyGroupLatencyAPI(proxyGroupName, url, timeout)
-  await fetchProxies()
+  try {
+    await fetchProxyGroupLatencyAPI(proxyGroupName, url, timeout)
+  } catch (error) {
+    notifyRequestError(error)
+    return
+  } finally {
+    await fetchProxies().catch(() => {})
+  }
 
   const total = all.length
   const testFailed = all.filter(
@@ -343,9 +360,11 @@ export const allProxiesLatencyTest = async () => {
     )
   }
 
-  const proxyNode = Object.keys(proxyMap.value).filter((proxy) => !isProxyGroup(proxy))
+  const proxyNode = Object.keys(proxyMap.value).filter(
+    (proxy) => !isProxyGroup(proxy) && isLatencyTestable(proxy),
+  )
 
-  return testLatencyOneByOneWithTip('all', proxyNode)
+  return testLatencyOneByOneWithTip(i18n.global.t('all'), proxyNode)
 }
 
 const getIPv6FromExtra = (proxy: Proxy) => {

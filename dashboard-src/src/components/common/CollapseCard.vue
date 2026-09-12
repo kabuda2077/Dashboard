@@ -1,34 +1,50 @@
 <template>
-  <div :class="`group collapse ${showCollapse ? 'collapse-open' : 'collapse-close'}`">
+  <div
+    ref="placeholderRef"
+    class="collapse-motion-placeholder"
+  >
     <div
-      class="collapse-title cursor-pointer pr-4"
-      @click="showCollapse = !showCollapse"
-    >
-      <slot name="title" />
-      <slot
-        v-if="!showCollapse"
-        name="preview"
-      />
-    </div>
-    <div
-      class="collapse-content p-0"
-      @transitionend="handlerTransitionEnd"
+      ref="cardRef"
+      class="group collapse-motion collapse"
+      :class="expanded && 'collapse-motion-open'"
     >
       <div
-        v-if="showContent"
-        class="max-h-108 overflow-y-auto p-4 pt-0"
-        :class="[PROXIES_PARENT_CLASS, !showCollapse && 'opacity-0']"
+        ref="headerRef"
+        class="collapse-motion-header relative cursor-pointer px-4 pt-4"
+        @click="showCollapse = !showCollapse"
       >
-        <slot name="content" />
+        <slot name="title" />
+      </div>
+      <div
+        ref="bodyRef"
+        class="collapse-motion-body"
+        :class="transitioning && 'collapse-motion-body-transitioning'"
+      >
+        <div
+          v-if="showPreview"
+          ref="previewRef"
+          class="collapse-motion-preview px-4 pb-4"
+        >
+          <slot name="preview" />
+        </div>
+        <div
+          v-if="showContent"
+          ref="contentRef"
+          class="collapse-motion-content mt-2 max-h-108 overflow-y-auto p-4 pt-0"
+          :class="PROXIES_PARENT_CLASS"
+        >
+          <slot name="content" />
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useCollapseMotion } from '@/composables/collapseMotion'
 import { PROXIES_PARENT_CLASS } from '@/helper/utils'
 import { collapseGroupMap } from '@/store/settings'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps<{
   name: string
@@ -36,27 +52,22 @@ const props = defineProps<{
 }>()
 
 const showCollapse = computed({
-  get() {
-    return props.forceOpen || collapseGroupMap.value[props.name]
-  },
+  get: () => Boolean(props.forceOpen || collapseGroupMap.value[props.name]),
   set(value) {
-    if (!props.forceOpen) {
-      collapseGroupMap.value[props.name] = value
-    }
+    if (!props.forceOpen) collapseGroupMap.value[props.name] = value
   },
 })
 
-watch(showCollapse, (value) => {
-  if (value) {
-    showContent.value = true
-  }
-})
-
-const showContent = ref(showCollapse.value)
-
-const handlerTransitionEnd = () => {
-  if (!showCollapse.value) {
-    showContent.value = false
-  }
-}
+const {
+  placeholderRef,
+  cardRef,
+  headerRef,
+  bodyRef,
+  previewRef,
+  contentRef,
+  expanded,
+  transitioning,
+  showContent,
+  showPreview,
+} = useCollapseMotion(showCollapse)
 </script>

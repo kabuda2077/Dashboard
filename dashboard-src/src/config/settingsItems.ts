@@ -56,6 +56,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.fonts`, label: 'fonts' },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.emoji`, label: 'emoji' },
+      { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.customCSS`, label: 'customCSS' },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.language`, label: 'language' },
       {
         key: `${SETTINGS_MENU_KEY.general}.autoDisconnectIdleUDP`,
@@ -87,10 +88,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: `${SETTINGS_MENU_KEY.general}.shortcuts`,
         label: 'keyboardShortcuts',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.general}.displayAllFeatures`,
-        label: 'displayAllFeatures',
       },
     ],
   },

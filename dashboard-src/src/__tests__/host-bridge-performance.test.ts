@@ -38,6 +38,20 @@ describe('host bridge incremental messages', () => {
     })
   })
 
+  it('refreshes the backend update event when the host version arrives asynchronously', async () => {
+    const { HOST_BACKEND_UPDATED_EVENT } = await import('@/constant/hostEvents')
+    const { applyHostRuntimeState, hostWindow } = await import('@/composables/hostBridge')
+    const listener = vi.fn()
+    window.addEventListener(HOST_BACKEND_UPDATED_EVENT, listener)
+
+    hostWindow.__mihomoHostCoreVersion = ''
+    applyHostRuntimeState({ coreVersion: 'sing-box 1.2.3' })
+
+    expect(hostWindow.__mihomoHostCoreVersion).toBe('sing-box 1.2.3')
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener(HOST_BACKEND_UPDATED_EVENT, listener)
+  })
+
   it('updates icon cache independently from full state', async () => {
     const { applyHostIconCache, hostIconCache } = await import('@/composables/hostBridge')
 

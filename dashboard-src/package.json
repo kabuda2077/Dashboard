@@ -1,6 +1,6 @@
 {
   "name": "zashboard",
-  "version": "3.19.0",
+  "version": "3.26.0",
   "description": "A Dashboard Using Clash API",
   "license": "MIT",
   "type": "module",
@@ -71,8 +71,6 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.2.0",
     "postcss": "^8.5.25",
-    "postcss-conditionals": "^2.1.0",
-    "postcss-for": "^2.1.1",
     "prettier": "^3.9.6",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",

@@ -279,6 +279,8 @@ const zh: LANG_MESSAGE = {
   ruleStyle: '规则样式',
   connectionDetails: '连接详情',
   customTheme: '自定义主题',
+  customCSS: '自定义 CSS',
+  customCSSTip: '自定义 CSS 将全局生效，错误的规则可能影响面板布局。',
   unavailableProxy: '隐藏不可用节点',
   protocolTips:
     '您正在尝试连接一个http后端但zashboard是通过https提供的，这可能会导致连接错误，请在浏览器设置中允许不安全的内容，或者使用http版本面板例如http://board.zash.run.place',
@@ -291,7 +293,6 @@ const zh: LANG_MESSAGE = {
   unauthorizedTip: '未授权，请重新登录',
   restartCore: '重启核心',
   checkCoreUpgrade: '检查核心升级',
-  autoUpgradeDashboard: '自动升级面板',
   autoUpgradeCore: '自动升级核心',
   secondaryPath: '二级路径',
   secondaryPathTip: '如果有的话以/开头，没有则留空不填',

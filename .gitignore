@@ -21,3 +21,4 @@ dashboard-src/dist/
 .pnpm-store/
 config.yaml
 cores/*.exe
+.local/agent-work/

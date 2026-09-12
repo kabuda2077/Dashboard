@@ -278,6 +278,8 @@ const en = {
   ruleStyle: 'Rule style',
   connectionDetails: 'Connection details',
   customTheme: 'Custom theme',
+  customCSS: 'Custom CSS',
+  customCSSTip: 'Custom CSS is applied globally. Invalid rules may affect the dashboard layout.',
   unavailableProxy: 'Hide unavailable proxies',
   protocolTips:
     'You are trying to connect to an HTTP backend, but zashboard is provided via HTTPS. This may cause connection errors. Please allow insecure content in your browser settings or use the HTTP version of zashboard, such as http://board.zash.run.place.',
@@ -290,7 +292,6 @@ const en = {
   unauthorizedTip: 'Unauthorized, please log in again.',
   restartCore: 'Restart core',
   checkCoreUpgrade: 'Check for core upgrades',
-  autoUpgradeDashboard: 'Auto-upgrade dashboard',
   autoUpgradeCore: 'Auto-upgrade core',
   secondaryPath: 'Secondary path',
   secondaryPathTip: 'If present, start with "/", otherwise leave empty.',

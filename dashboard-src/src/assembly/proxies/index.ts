@@ -1,9 +1,9 @@
 // 组装层 · Clash-compatible proxies 门面。
 import { isSingBoxCore } from '@/assembly/version'
 import { NOT_CONNECTED, PROXY_TAB_TYPE, PROXY_TYPE, TEST_URL } from '@/constant'
+import { useStorage } from '@/helper/storage'
 import { groupTestUrls, independentLatencyTest, speedtestUrl } from '@/store/settings'
 import type { Proxy, ProxyProvider } from '@/types'
-import { useStorage } from '@vueuse/core'
 import { last } from 'lodash'
 import { computed, ref } from 'vue'
 

@@ -1,4 +1,5 @@
 import { readonly, ref } from 'vue'
+import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 
 export const HOST_ICON_CACHE_UPDATED_EVENT = '__mihomoIconCacheUpdated'
 
@@ -145,14 +146,25 @@ export const applyHostState = (state: HostState | undefined) => {
 
 export const applyHostRuntimeState = (runtimeState: HostRuntimeState | undefined) => {
   if (!runtimeState) return
+
+  const previousCoreVersion = hostWindow.__mihomoHostCoreVersion || ''
   hostStateRef.value = {
     ...hostStateRef.value,
     ...runtimeState,
   }
   hostWindow.__mihomoHostCoreVersion =
-    runtimeState.coreVersion || hostWindow.__mihomoHostCoreVersion || ''
+    runtimeState.coreVersion !== undefined
+      ? runtimeState.coreVersion
+      : hostWindow.__mihomoHostCoreVersion || ''
   if (typeof runtimeState.isWindowMaximized === 'boolean') {
     hostWindowMaximizedRef.value = runtimeState.isWindowMaximized
+  }
+
+  if (
+    runtimeState.coreVersion !== undefined &&
+    runtimeState.coreVersion !== previousCoreVersion
+  ) {
+    window.dispatchEvent(new CustomEvent(HOST_BACKEND_UPDATED_EVENT))
   }
 }
 

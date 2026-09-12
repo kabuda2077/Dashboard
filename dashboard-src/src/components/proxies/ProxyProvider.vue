@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <CollapseCard :name="proxyProvider.name">
     <template v-slot:title>
       <div class="flex items-center justify-between gap-2">
@@ -146,8 +146,7 @@ const healthCheckClickHandler = async () => {
   try {
     await proxyProviderHealthCheckAPI(props.name)
     await fetchProxies()
-    isHealthChecking.value = false
-  } catch {
+  } finally {
     isHealthChecking.value = false
   }
 }
@@ -159,8 +158,7 @@ const updateProviderClickHandler = async () => {
   try {
     await updateProxyProviderAPI(props.name)
     await fetchProxies()
-    isUpdating.value = false
-  } catch {
+  } finally {
     isUpdating.value = false
   }
 }

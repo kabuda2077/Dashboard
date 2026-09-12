@@ -92,18 +92,28 @@ export const theme = computed(() => {
 })
 export const customThemes = useStorage<THEME[]>('config/custom-themes', [])
 
-const replaceLegacyTheme = (theme: string, defaultTheme: string) => {
-  if (theme === 'dark-apple') {
-    return 'dark'
+const replaceLegacyTheme = (selectedTheme: string, fallback: string) => {
+  const legacyThemeReplacements: Record<string, string> = {
+    'dark-apple': 'dark',
+    lofi: 'light',
+    wireframe: 'light',
+    black: 'dark-neutral',
+    business: 'dark-neutral',
   }
-  if ([...ALL_THEME, ...customThemes.value.map((theme) => theme.name)].includes(theme)) {
-    return theme
+
+  if (selectedTheme in legacyThemeReplacements) {
+    return legacyThemeReplacements[selectedTheme]
   }
-  return defaultTheme
+  if ([...ALL_THEME, ...customThemes.value.map((item) => item.name)].includes(selectedTheme)) {
+    return selectedTheme
+  }
+  return fallback
 }
 
-defaultTheme.value = replaceLegacyTheme(defaultTheme.value, 'light')
-darkTheme.value = replaceLegacyTheme(darkTheme.value, 'dark')
+const migratedDefaultTheme = replaceLegacyTheme(defaultTheme.value, 'light')
+if (migratedDefaultTheme !== defaultTheme.value) defaultTheme.value = migratedDefaultTheme
+const migratedDarkTheme = replaceLegacyTheme(darkTheme.value, 'dark')
+if (migratedDarkTheme !== darkTheme.value) darkTheme.value = migratedDarkTheme
 
 export const language = useStorage<LANG>(
   'config/language',
@@ -142,8 +152,8 @@ export const emoji = useStorage<EMOJIS>(
   IS_APPLE_DEVICE ? EMOJIS.TWEMOJI : EMOJIS.NOTO_COLOR_EMOJI,
 )
 export const customBackgroundURL = useStorage('config/custom-background-image', '')
+export const customCSS = useStorage('config/custom-css', '')
 export const dashboardTransparent = useStorage('config/dashboard-transparent', 90)
-export const autoUpgradeDashboard = useStorage('config/auto-upgrade', false)
 export const checkUpgradeCore = useStorage('config/check-upgrade-core', true)
 export const autoUpgradeCore = useStorage('config/auto-upgrade-core', false)
 export const swipeInPages = useStorage('config/swipe-in-pages', true)

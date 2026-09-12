@@ -3,7 +3,8 @@
     ref="parentRef"
     class="base-container m-3 h-full overflow-auto backdrop-blur-none!"
   >
-    <table :class="['table', sizeOfTable]">
+    <div class="bg-base-100/80 min-w-min">
+      <table :class="['table', sizeOfTable]">
       <thead class="bg-base-100 border-base-300/60 sticky top-0 z-10 border-b backdrop-blur-none!">
         <tr
           v-for="headerGroup in tanstackTable.getHeaderGroups()"
@@ -83,7 +84,8 @@
           ></tr>
         </template>
       </tbody>
-    </table>
+      </table>
+    </div>
   </div>
 </template>
 
@@ -114,10 +116,12 @@ const props = withDefaults(
     data: T[]
     columns: ColumnDef<T>[]
     sortingKey: string
+    initialSorting?: SortingState
     estimateSize?: number
     overscan?: number
     columnVisibility?: VisibilityState
     rowClass?: (row: T) => string | undefined
+    getRowKey?: (row: T, index: number) => string | number
   }>(),
   {
     estimateSize: 36,
@@ -130,7 +134,9 @@ const emits = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const sorting = useStorage<SortingState>(props.sortingKey, [])
+const sorting = useStorage<SortingState>(props.sortingKey, props.initialSorting ?? [])
+const rowIdentities = new WeakMap<object, number>()
+let nextRowIdentity = 0
 
 const tanstackTable = useVueTable({
   get data() {
@@ -139,6 +145,7 @@ const tanstackTable = useVueTable({
   get columns() {
     return props.columns
   },
+  getRowId: (row, index) => String(props.getRowKey?.(row, index) ?? defaultRowKey(row, index)),
   state: {
     get sorting() {
       return sorting.value
@@ -155,11 +162,30 @@ const tanstackTable = useVueTable({
 })
 
 const rows = computed(() => tanstackTable.getRowModel().rows)
+
+function defaultRowKey(row: T, index: number) {
+  if (row && typeof row === 'object') {
+    const record = row as Record<string, unknown>
+    for (const key of ['id', 'uuid', 'seq', 'name']) {
+      const value = record[key]
+      if (typeof value === 'string' || typeof value === 'number') return `${key}:${value}`
+    }
+    let identity = rowIdentities.get(row)
+    if (identity === undefined) {
+      identity = nextRowIdentity++
+      rowIdentities.set(row, identity)
+    }
+    return `object:${identity}`
+  }
+  return `${typeof row}:${String(row)}:${index}`
+}
+
 const parentRef = ref<HTMLElement | null>(null)
 const rowVirtualizerOptions = computed(() => ({
   count: rows.value.length,
   getScrollElement: () => parentRef.value,
   estimateSize: () => props.estimateSize,
+  getItemKey: (index: number) => rows.value[index]?.id ?? index,
   overscan: props.overscan,
 }))
 const rowVirtualizer = useVirtualizer(rowVirtualizerOptions)

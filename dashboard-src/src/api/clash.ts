@@ -111,9 +111,13 @@ export const toggleRuleDisabledAPI = (data: Record<number, boolean>) => {
   return axios.patch(`/rules/disable`, data)
 }
 
-export const toggleRuleDisabledSingBoxAPI = (uuid: string) => {
+// reFind-compatible rules expose stable UUIDs at PUT /rules/{uuid}.
+export const toggleRuleDisabledRefindAPI = (uuid: string) => {
   return axios.put(`/rules/${encodeURIComponent(uuid)}`)
 }
+
+// Compatibility alias for existing desktop callers; this is not sing-box native API.
+export const toggleRuleDisabledSingBoxAPI = toggleRuleDisabledRefindAPI
 
 export const fetchRuleProvidersAPI = () => {
   return axios.get<{ providers: Record<string, RuleProvider> }>('/providers/rules')
@@ -165,13 +169,10 @@ export const updateConfigsAPI = (
   })
 }
 
-export const upgradeUIAPI = () => {
-  return axios.post('/upgrade/ui')
-}
-
 export const updateGeoDataAPI = () => {
   return axios.post('/configs/geo')
 }
+
 
 export const upgradeCoreAPI = (type: 'release' | 'alpha' | 'auto') => {
   const url = type === 'auto' ? '/upgrade' : `/upgrade?channel=${type}`

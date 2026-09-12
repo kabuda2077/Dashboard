@@ -279,6 +279,8 @@ const zhTW: LANG_MESSAGE = {
   ruleStyle: '規則樣式',
   connectionDetails: '連接詳情',
   customTheme: '自訂主題',
+  customCSS: '自訂 CSS',
+  customCSSTip: '自訂 CSS 將全域生效，錯誤的規則可能影響面板佈局。',
   unavailableProxy: '隱藏不可用節點',
   protocolTips:
     '您正在嘗試連接一個http後端但zashboard是通過https提供的，這可能會導致連接錯誤，請在瀏覽器設定中允許不安全的內容，或者使用http版本面板例如http://board.zash.run.place',
@@ -291,7 +293,6 @@ const zhTW: LANG_MESSAGE = {
   unauthorizedTip: '未授權，請重新登入',
   restartCore: '重啟核心',
   checkCoreUpgrade: '檢查核心升級',
-  autoUpgradeDashboard: '自動升級面板',
   autoUpgradeCore: '自動升級核心',
   secondaryPath: '二級路徑',
   secondaryPathTip: '如果有的話以/開頭，沒有則留空不填',

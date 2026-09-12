@@ -3,6 +3,7 @@
 // 当前连接目标(baseURL / 鉴权)。其余 api 文件不得依赖上层。
 import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
+import { notifyRequestError } from '@/helper/requestError'
 import { getUrlFromBackend } from '@/helper/utils'
 import router from '@/router'
 import { activeBackend, activeUuid } from '@/store/setup'
@@ -54,13 +55,7 @@ axios.interceptors.response.use(
         isNetworkError: !error.response,
       })
     ) {
-      const errorMessage = error.response?.data?.message || error.message
-
-      showNotification({
-        key: errorMessage,
-        content: `${decodeURIComponent(error.config?.url || '')} \n${errorMessage}`,
-        type: 'alert-error',
-      })
+      notifyRequestError(error)
       return Promise.reject(error)
     }
 

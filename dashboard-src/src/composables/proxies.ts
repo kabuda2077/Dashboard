@@ -74,24 +74,11 @@ const getRenderProxyProviders = () => {
   return names.filter(matches)
 }
 
-const limitInitialRender = (names: string[]) => {
-  if (isProxiesPageMounted.value) {
-    return names
-  }
-
-  return names.slice(0, 16)
-}
-
 export const disableProxiesPageScroll = ref(false)
-export const isProxiesPageMounted = ref(false)
 
-export const renderProxyGroups = computed(() => {
-  return limitInitialRender(getRenderProxyGroups())
-})
+export const renderProxyGroups = computed(getRenderProxyGroups)
 
-export const renderProxyProviders = computed(() => {
-  return limitInitialRender(getRenderProxyProviders())
-})
+export const renderProxyProviders = computed(getRenderProxyProviders)
 
 export const renderProxiesPageItems = computed(() => {
   if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {

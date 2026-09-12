@@ -23,7 +23,6 @@ import {
   NoSymbolIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
-import { first, last } from 'lodash'
 import { defineComponent } from 'vue'
 import type { JSX } from 'vue/jsx-runtime'
 import HighlightText from '../common/HighlightText.vue'
@@ -106,60 +105,63 @@ export default defineComponent<{
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Process)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Chains]: (
-          <span
-            class={[
-              'flex w-80 grow items-center gap-1 truncate break-all',
-              proxyChainDirection.value === PROXY_CHAIN_DIRECTION.REVERSE &&
-                'flex-row-reverse justify-end',
-            ]}
-          >
-            {
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Chains]: (() => {
+          let visibleChains = chains
+          if (!showFullProxyChain.value && chains.length > 2) {
+            visibleChains = [chains[0], chains[chains.length - 1]]
+          }
+          const chainNodes: JSX.Element[] = []
+          visibleChains.forEach((chain, index) => {
+            chainNodes.unshift(
               <ProxyName
-                name={last(chains)!}
+                key={`${chain}-${index}`}
+                name={chain}
                 filter={connectionFilter.value}
-              />
+              />,
+            )
+            if (index < visibleChains.length - 1) {
+              chainNodes.unshift(<ArrowRightCircleIcon key={`arrow-${index}`} class="h-4 w-4 shrink-0" />)
             }
-            {last(chains) !== first(chains) && (
-              <>
-                <ArrowRightCircleIcon class="h-4 w-4 shrink-0"></ArrowRightCircleIcon>
-                {
-                  <ProxyName
-                    name={first(chains)!}
-                    filter={connectionFilter.value}
-                  />
-                }
-              </>
-            )}
-          </span>
-        ),
+          })
+          return (
+            <span
+              class={[
+                'flex w-80 grow items-center gap-1 truncate break-all',
+                proxyChainDirection.value === PROXY_CHAIN_DIRECTION.REVERSE &&
+                  'flex-row-reverse justify-end',
+              ]}
+            >
+              {chainNodes}
+            </span>
+          )
+        })(),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.Outbound]: (
           <span class="w-60 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Outbound)}
           </span>
         ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.Download]: (
-          <div class="flex items-center text-xs whitespace-nowrap">
+          <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
+            <ArrowDownIcon class="text-success h-3 w-3 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Download)}
-            <ArrowDownIcon class="text-success ml-1 h-3 w-3" />
           </div>
         ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.Upload]: (
-          <div class="flex items-center text-xs whitespace-nowrap">
+          <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
+            <ArrowUpIcon class="text-info h-3 w-3 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Upload)}
-            <ArrowUpIcon class="text-info ml-1 h-3 w-3" />
           </div>
         ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed]: (
-          <div class="flex items-center text-xs whitespace-nowrap">
+          <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
+            <ArrowDownCircleIcon class="text-success h-4 w-4 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed)}
-            <ArrowDownCircleIcon class="text-success ml-1 h-4 w-4" />
           </div>
         ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed]: (
-          <div class="flex items-center text-xs whitespace-nowrap">
+          <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
+            <ArrowUpCircleIcon class="text-info h-4 w-4 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed)}
-            <ArrowUpCircleIcon class="text-info ml-1 h-4 w-4" />
           </div>
         ),
         [CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime]: (
