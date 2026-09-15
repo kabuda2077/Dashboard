@@ -42,7 +42,14 @@ public sealed class AppSettings
     public string CoreDisplayName => IsSingBox ? "sing-box" : "mihomo";
 
     [JsonIgnore]
-    public string CoreTitle => IsSingBox ? "sing-box" : "Mihomo Core";
+    public string CoreTitle => CoreTitleFor(CoreType);
+
+    public static string CoreTitleFor(string? coreType)
+    {
+        return string.Equals(NormalizeCoreType(coreType), CoreTypeSingBox, StringComparison.Ordinal)
+            ? "sing-box"
+            : "Mihomo Core";
+    }
 
     [JsonIgnore]
     public string ActiveCorePath
@@ -241,12 +248,6 @@ public sealed class AppSettings
         catch
         {
         }
-    }
-
-    public static void MigrateLegacyDataDirectory(string directoryName)
-    {
-        var targetDirectory = Path.Combine(SettingsDirectory, directoryName);
-        MigrateLegacyDataDirectory(directoryName, targetDirectory);
     }
 
     public static void MigrateLegacyDataDirectory(string directoryName, string targetDirectory)

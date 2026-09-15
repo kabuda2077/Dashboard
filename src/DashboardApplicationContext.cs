@@ -40,8 +40,10 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         UpdateTrayStatus();
         var shouldStartCore = _host.Settings.StartCoreOnLaunch || startCoreAfterLaunch;
         var isAdministrator = DashboardHost.IsRunningAsAdministrator();
-        var willRelaunchElevated = ShouldRelaunchBeforeShowingWindow(shouldStartCore, isAdministrator);
-        if (!ShouldDeferAutostartReconcile(shouldStartCore, isAdministrator))
+        // Starting the core without elevation always ends in an elevated relaunch,
+        // so both the window and the autostart reconcile wait for that restart.
+        var willRelaunchElevated = WillRelaunchElevated(shouldStartCore, isAdministrator);
+        if (!willRelaunchElevated)
         {
             _ = Task.Run(_host.ReconcileAutostartAsync);
         }
@@ -61,12 +63,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
 
-    internal static bool ShouldDeferAutostartReconcile(bool shouldStartCore, bool isAdministrator)
-    {
-        return shouldStartCore && !isAdministrator;
-    }
-
-    internal static bool ShouldRelaunchBeforeShowingWindow(bool shouldStartCore, bool isAdministrator)
+    internal static bool WillRelaunchElevated(bool shouldStartCore, bool isAdministrator)
     {
         return shouldStartCore && !isAdministrator;
     }

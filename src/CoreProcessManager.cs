@@ -7,7 +7,8 @@ public sealed class CoreProcessManager : IDisposable
 {
     private const int MaxLogLines = 500;
     private const int LogEventFlushIntervalMs = 125;
-    private readonly CircularBuffer<string> _logLines = new(MaxLogLines);
+    private readonly Queue<string> _logLines = new(MaxLogLines);
+    private readonly object _logLinesLock = new();
     private readonly object _processLock = new();
     private readonly object _logEventLock = new();
     private readonly HashSet<int> _stoppingProcessIds = new();
@@ -41,18 +42,14 @@ public sealed class CoreProcessManager : IDisposable
         }
     }
 
-    public string LogText
-    {
-        get
-        {
-            var lines = _logLines.GetAll();
-            return string.Join("", lines);
-        }
-    }
-
     public string GetLogTail(int maxLength)
     {
-        var lines = _logLines.GetAll();
+        List<string> lines;
+        lock (_logLinesLock)
+        {
+            lines = new List<string>(_logLines);
+        }
+
         var sb = new StringBuilder(maxLength);
 
         // 从后往前拼接，直到达到长度限制
@@ -207,7 +204,15 @@ public sealed class CoreProcessManager : IDisposable
         }
 
         var entry = $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
-        _logLines.Add(entry);
+        lock (_logLinesLock)
+        {
+            _logLines.Enqueue(entry);
+            if (_logLines.Count > MaxLogLines)
+            {
+                _logLines.Dequeue();
+            }
+        }
+
         QueueLogReceived(entry);
     }
 
@@ -337,54 +342,5 @@ public sealed class CoreProcessManager : IDisposable
         }
 
         process?.Dispose();
-    }
-
-    /// <summary>
-    /// 环形缓冲区，用于高效存储固定数量的日志行
-    /// </summary>
-    private sealed class CircularBuffer<T>
-    {
-        private readonly T[] _buffer;
-        private readonly object _lock = new();
-        private int _start;
-        private int _count;
-
-        public CircularBuffer(int capacity)
-        {
-            if (capacity <= 0)
-            {
-                throw new ArgumentException("Capacity must be positive", nameof(capacity));
-            }
-            _buffer = new T[capacity];
-        }
-
-        public void Add(T item)
-        {
-            lock (_lock)
-            {
-                if (_count < _buffer.Length)
-                {
-                    _buffer[_count++] = item;
-                }
-                else
-                {
-                    _buffer[_start] = item;
-                    _start = (_start + 1) % _buffer.Length;
-                }
-            }
-        }
-
-        public List<T> GetAll()
-        {
-            lock (_lock)
-            {
-                var result = new List<T>(_count);
-                for (int i = 0; i < _count; i++)
-                {
-                    result.Add(_buffer[(_start + i) % _buffer.Length]);
-                }
-                return result;
-            }
-        }
     }
 }

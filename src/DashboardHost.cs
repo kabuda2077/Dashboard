@@ -41,7 +41,7 @@ internal sealed class DashboardHost : IDisposable
                 ShouldKeepMinimizedForRelaunch = () => ShouldKeepMinimizedForRelaunch?.Invoke() ?? true,
                 RelaunchAsAdministrator = (startCore, startMinimized, elevatedRestart) =>
                     RelaunchRequested?.Invoke(this, new HostRelaunchRequest(startCore, startMinimized, elevatedRestart)),
-                ShowNoticeAsync = ShowNoticeAsync,
+                ShowNotice = ShowNotice,
                 PublishState = PublishStateChanged,
                 RefreshIconCache = RefreshIconCache,
                 ShowTrayNotification = message => TrayNotificationRequested?.Invoke(this, message),
@@ -219,7 +219,7 @@ internal sealed class DashboardHost : IDisposable
         {
             if (manual)
             {
-                await ShowNoticeAsync("正在检查 Dashboard 更新，请稍候。");
+                ShowNotice("正在检查 Dashboard 更新，请稍候。");
             }
             return;
         }
@@ -239,11 +239,11 @@ internal sealed class DashboardHost : IDisposable
 
             if (manual && result.UpdateAvailable)
             {
-                await ShowNoticeAsync($"发现 Dashboard 新版本 v{result.LatestVersion}，可前往 Release 下载。");
+                ShowNotice($"发现 Dashboard 新版本 v{result.LatestVersion}，可前往 Release 下载。");
             }
             else if (manual)
             {
-                await ShowNoticeAsync($"当前已是最新版本（v{result.CurrentVersion}）。");
+                ShowNotice($"当前已是最新版本（v{result.CurrentVersion}）。");
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -254,7 +254,7 @@ internal sealed class DashboardHost : IDisposable
             HostOperationLogger.Error("update", "Dashboard update check failed.", ex);
             if (manual)
             {
-                await ShowNoticeAsync("检查 Dashboard 更新失败，请稍后重试。");
+                ShowNotice("检查 Dashboard 更新失败，请稍后重试。");
             }
         }
         finally
@@ -277,7 +277,7 @@ internal sealed class DashboardHost : IDisposable
         catch (Exception ex)
         {
             HostOperationLogger.Error("update", "Failed to open Dashboard Releases page.", ex);
-            _ = ShowNoticeAsync("无法打开 GitHub Release 页面，请检查系统默认浏览器。");
+            ShowNotice("无法打开 GitHub Release 页面，请检查系统默认浏览器。");
         }
     }
 
@@ -294,7 +294,7 @@ internal sealed class DashboardHost : IDisposable
         catch (Exception ex)
         {
             HostOperationLogger.Error("core", $"Failed to open core repository: {repositoryUrl}", ex);
-            _ = ShowNoticeAsync("无法打开内核 GitHub 仓库，请检查系统默认浏览器。");
+            ShowNotice("无法打开内核 GitHub 仓库，请检查系统默认浏览器。");
         }
     }
 
@@ -356,7 +356,7 @@ internal sealed class DashboardHost : IDisposable
 
         if (showMessage)
         {
-            _ = ShowNoticeAsync(autostartSucceeded ? "设置已保存。" : "其他设置已保存。");
+            ShowNotice(autostartSucceeded ? "设置已保存。" : "其他设置已保存。");
         }
     }
 
@@ -389,7 +389,7 @@ internal sealed class DashboardHost : IDisposable
         catch (Exception ex)
         {
             HostOperationLogger.Error("autostart", "Failed to reconcile autostart state.", ex);
-            _ = ShowNoticeAsync($"检查开机自启失败：{ex.Message}");
+            ShowNotice($"检查开机自启失败：{ex.Message}");
         }
     }
 
@@ -453,10 +453,9 @@ internal sealed class DashboardHost : IDisposable
         });
     }
 
-    public Task ShowNoticeAsync(string message)
+    public void ShowNotice(string message)
     {
         NoticeRequested?.Invoke(this, message);
-        return Task.CompletedTask;
     }
 
     public static bool IsRunningAsAdministrator()
@@ -745,7 +744,7 @@ internal sealed class DashboardHost : IDisposable
                 PublishStateChanged();
                 if (isMigration)
                 {
-                    _ = ShowNoticeAsync(enabled
+                    ShowNotice(enabled
                         ? "开机自启已迁移到计划任务。"
                         : "已清理旧的开机自启配置。");
                 }
@@ -759,7 +758,7 @@ internal sealed class DashboardHost : IDisposable
                 ? $"开机自启设置失败：{result.Message}"
                 : $"关闭开机自启失败：{result.Message}";
             HostOperationLogger.Error("autostart", message, new InvalidOperationException(result.Message));
-            _ = ShowNoticeAsync(message);
+            ShowNotice(message);
             return false;
         }
         finally

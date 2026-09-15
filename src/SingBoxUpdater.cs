@@ -25,7 +25,7 @@ public static class SingBoxUpdater
         }
 
         var installedVersion = await GetInstalledVersionAsync(corePath, cancellationToken);
-        using var client = CoreUpgradeSupport.CreateHttpClient();
+        var client = CoreUpgradeSupport.SharedClient;
         using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(
             client,
             ReleasesApi,

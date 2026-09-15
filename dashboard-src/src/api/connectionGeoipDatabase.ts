@@ -5,7 +5,6 @@ import { AsyncMMDBReader } from '@/helper/mmdb'
 import { geoipASNDatabaseURL, geoipCountryDatabaseURL, language } from '@/store/settings'
 import { watchDebounced } from '@vueuse/core'
 import * as ipaddr from 'ipaddr.js'
-import type { AsnResponse, CountryResponse } from 'mmdb-lib'
 import { reactive } from 'vue'
 
 /**
@@ -17,6 +16,19 @@ import { reactive } from 'vue'
  * IndexedDB chunk store. Lookups only read the MMDB tree/data chunks they touch.
  */
 const GEOIP_DATABASE_TTL = 30 * 24 * 60 * 60 * 1000
+
+// Minimal shapes of the MaxMind Country / ASN records, covering only the fields
+// read below. The MMDB decoding itself lives in @/helper/mmdb.
+type LocalizedNames = { en: string; 'zh-CN'?: string }
+
+type CountryResponse = {
+  country?: { iso_code?: string; names?: LocalizedNames }
+}
+
+type AsnResponse = {
+  autonomous_system_number?: number
+  autonomous_system_organization?: string
+}
 
 type GeoIPResponse = CountryResponse | AsnResponse
 
@@ -105,7 +117,7 @@ const getReader = <T extends GeoIPResponse>(url: string): Promise<AsyncMMDBReade
   return reader as Promise<AsyncMMDBReader<T>>
 }
 
-const localizedName = (names?: { en: string; 'zh-CN'?: string }): string => {
+const localizedName = (names?: LocalizedNames): string => {
   if (!names) {
     return ''
   }

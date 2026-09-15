@@ -147,7 +147,7 @@ powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboa
 
 - `src/`：Windows 桌面宿主。
 - `dashboard-src/`：基于 zashboard 的前端源码。
-- `resources/dashboard/`：构建后的前端静态资源。
+- `resources/dashboard/`：构建后的前端静态资源，由 `tools/build-zashboard.ps1` 生成，不纳入版本控制。新克隆的仓库需要先构建前端，再构建 .NET，否则产物里没有界面。`build.ps1` 和 `check.ps1` 已经按这个顺序执行。
 - `STYLE.md`：本项目 UI 规则。
 - `UPSTREAM_MERGE.md`：跟进 zashboard 上游时的检查清单。
 

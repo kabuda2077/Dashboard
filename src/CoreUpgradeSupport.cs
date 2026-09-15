@@ -9,7 +9,11 @@ internal static class CoreUpgradeSupport
     private const int MaxCoreBackups = 3;
     private const int MaxReleaseRequestAttempts = 3;
 
-    public static HttpClient CreateHttpClient()
+    // Shared across upgrade/update checks. HttpClient is thread-safe; creating one
+    // per call leaks connection pools. Callers must not dispose it.
+    public static HttpClient SharedClient { get; } = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient
         {

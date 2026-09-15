@@ -32,7 +32,7 @@ internal static partial class CoreUpdateChecker
             throw new InvalidOperationException("无法读取当前内核版本。");
         }
 
-        using var client = CoreUpgradeSupport.CreateHttpClient();
+        var client = CoreUpgradeSupport.SharedClient;
         return await CheckReleaseAsync(client, versionOutput, isSingBox, cancellationToken);
     }
 

@@ -143,16 +143,15 @@ internal sealed class DashboardStatePublisher : IDisposable
         _postDashboardMessage(HostOutboundMessage.IconCacheUpdated(_buildIconCacheMap()));
     }
 
-    public Task ShowNoticeAsync(string message)
+    public void ShowNotice(string message)
     {
         if (_shouldHoldUpdates() || !_hasDashboardWebView())
         {
             _pendingNotice = message;
-            return Task.CompletedTask;
+            return;
         }
 
         _postDashboardMessage(HostOutboundMessage.Notice(message));
-        return Task.CompletedTask;
     }
 
     public void SendWindowChromeState(bool isMaximized)

@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Principal;
-using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using Microsoft.Win32;
 
@@ -223,7 +222,8 @@ internal static class AutostartManager
         var tempPath = Path.Combine(Path.GetTempPath(), $"dashboard-autostart-{Guid.NewGuid():N}.xml");
         try
         {
-            EnsureTaskFolder();
+            // schtasks /Create creates missing parent folders (verified: \Dashboard
+            // does not need to exist beforehand), so no Task Scheduler COM call here.
             var xml = BuildTaskXml(Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid());
             File.WriteAllText(tempPath, xml, System.Text.Encoding.Unicode);
             var create = RunSchtasks(["/Create", "/TN", TaskName, "/XML", tempPath, "/F"]);
@@ -302,53 +302,6 @@ internal static class AutostartManager
     private static bool TaskExists()
     {
         return RunSchtasks(["/Query", "/TN", TaskName]).ExitCode == 0;
-    }
-
-    private static void EnsureTaskFolder()
-    {
-        var serviceType = Type.GetTypeFromProgID("Schedule.Service")
-            ?? throw new InvalidOperationException("Task Scheduler service is unavailable.");
-        object? serviceObject = null;
-        object? rootFolderObject = null;
-        object? dashboardFolderObject = null;
-        try
-        {
-            serviceObject = Activator.CreateInstance(serviceType)
-                ?? throw new InvalidOperationException("Failed to create the Task Scheduler service object.");
-            dynamic service = serviceObject;
-            service.Connect();
-            try
-            {
-                dashboardFolderObject = service.GetFolder("\\Dashboard");
-            }
-            catch (Exception ex) when (IsMissingTaskFolderException(ex))
-            {
-                rootFolderObject = service.GetFolder("\\");
-                dynamic rootFolder = rootFolderObject;
-                dashboardFolderObject = rootFolder.CreateFolder("Dashboard");
-            }
-        }
-        finally
-        {
-            ReleaseComObject(dashboardFolderObject);
-            ReleaseComObject(rootFolderObject);
-            ReleaseComObject(serviceObject);
-        }
-    }
-
-    internal static bool IsMissingTaskFolderException(Exception exception)
-    {
-        const int fileNotFoundHResult = unchecked((int)0x80070002);
-        return exception is FileNotFoundException or DirectoryNotFoundException
-            || exception.HResult == fileNotFoundHResult;
-    }
-
-    private static void ReleaseComObject(object? value)
-    {
-        if (value is not null && Marshal.IsComObject(value))
-        {
-            Marshal.FinalReleaseComObject(value);
-        }
     }
 
     private static SchtasksResult RunSchtasks(IEnumerable<string> arguments)

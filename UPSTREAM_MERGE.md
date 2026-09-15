@@ -56,17 +56,17 @@ git diff --no-index --stat .tmp\zashboard-vX.Y.Z\src dashboard-src\src
 Current embedded zashboard baseline:
 
 ```text
-dashboard-src/package.json: 3.19.0
+dashboard-src/package.json: 3.26.0
 ```
 
-The compatible zashboard 3.19.0 source and dependency updates selected for the desktop product are
+The compatible zashboard 3.26.0 source and dependency updates selected for the desktop product are
 applied on top of the customized frontend. Features excluded by the Product Contract remain omitted.
 
 The desktop app is not pure zashboard. It consists of:
 
 - C# desktop host in `src/`
 - customized zashboard copy in `dashboard-src/`
-- built frontend resources in `resources/dashboard/`
+- built frontend resources in `resources/dashboard/` (generated, not tracked in git)
 - build/release scripts in `tools/`, `build.ps1`, and `create-release.ps1`
 - local UI rules in `STYLE.md`
 
@@ -328,7 +328,7 @@ Merge:
 - [ ] Manual-Merge files were reviewed for both upstream behavior and local product constraints.
 - [ ] `src/main.ts` still imports `./hostBootstrap`.
 - [ ] `dashboard-desktop.css` still exists and remains imported last in `dashboard-src/src/assets/main.css`.
-- [ ] Built resources in `resources/dashboard/` were regenerated when frontend code changed.
+- [ ] `resources/dashboard/` was rebuilt after frontend changes. It is generated and untracked, so there is nothing to commit; `check.ps1` and `build.ps1` regenerate it before the .NET build.
 
 UI:
 
@@ -385,6 +385,6 @@ Before merging the branch back to `main`, answer:
 2. Which upstream features were intentionally skipped?
 3. Which local files required manual conflict resolution?
 4. Did any `STYLE.md` rule need to change?
-5. Were built resources in `resources/dashboard/` regenerated?
+5. Was `resources/dashboard/` rebuilt and verified? (Generated and untracked, so it never appears in the diff.)
 6. Did type-check, contract check, and full build pass?
 7. Was local replacement tested with `resources/EBWebView` cleared?

@@ -175,14 +175,4 @@ public sealed class AutostartManagerTests
     {
         Assert.Equal(2, AutostartManager.RunManagementCommand("invalid"));
     }
-
-    [Fact]
-    public void MissingTaskFolderRecognizesSchedulerAndDotNetErrors()
-    {
-        Assert.True(AutostartManager.IsMissingTaskFolderException(new FileNotFoundException()));
-        Assert.True(AutostartManager.IsMissingTaskFolderException(new DirectoryNotFoundException()));
-        Assert.True(AutostartManager.IsMissingTaskFolderException(
-            new System.Runtime.InteropServices.COMException("missing", unchecked((int)0x80070002))));
-        Assert.False(AutostartManager.IsMissingTaskFolderException(new UnauthorizedAccessException()));
-    }
 }

@@ -4,11 +4,14 @@ namespace Dashboard;
 
 internal sealed class CoreLifecycleController
 {
+    // Probe client is shared; the secret goes on each request so one instance
+    // serves both cores. Callers must not dispose it.
+    private static readonly HttpClient ApiProbeClient = new() { Timeout = TimeSpan.FromSeconds(10) };
+
     private readonly AppSettings _settings;
     private readonly CoreProcessManager _core;
     private readonly CoreLifecycleServices _services;
     private bool _elevatedRetryPending;
-    private bool _tunPermissionFailureSeen;
 
     public CoreLifecycleController(
         AppSettings settings,
@@ -38,7 +41,6 @@ internal sealed class CoreLifecycleController
             }
 
             _elevatedRetryPending = !_services.IsRunningAsAdministrator();
-            _tunPermissionFailureSeen = false;
             _core.Start(_settings);
             if (showTrayNotification)
             {
@@ -119,7 +121,7 @@ internal sealed class CoreLifecycleController
                 return false;
             }
 
-            _ = _services.ShowNoticeAsync("内核已重启。");
+            _services.ShowNotice("内核已重启。");
             if (showTrayNotification)
             {
                 _services.ShowTrayNotification("内核已重启");
@@ -154,13 +156,11 @@ internal sealed class CoreLifecycleController
             : AppSettings.CoreTypeSingBox;
         targetCoreType = AppSettings.NormalizeCoreType(
             string.IsNullOrWhiteSpace(targetCoreType) ? fallbackCoreType : targetCoreType);
-        var targetTitle = string.Equals(targetCoreType, AppSettings.CoreTypeSingBox, StringComparison.Ordinal)
-            ? "sing-box"
-            : "Mihomo Core";
+        var targetTitle = AppSettings.CoreTitleFor(targetCoreType);
 
         IsSwitchInProgress = true;
         _services.PublishState();
-        await _services.ShowNoticeAsync($"正在切换到 {targetTitle}。");
+        _services.ShowNotice($"正在切换到 {targetTitle}。");
 
         try
         {
@@ -177,13 +177,13 @@ internal sealed class CoreLifecycleController
 
             if (_core.IsRunning)
             {
-                await _services.ShowNoticeAsync($"已切换到 {targetTitle}。");
+                _services.ShowNotice($"已切换到 {targetTitle}。");
             }
         }
         catch (Exception ex)
         {
             HostOperationLogger.Error("core", "Failed to switch core.", ex);
-            await _services.ShowNoticeAsync($"切换内核失败：{ex.Message}");
+            _services.ShowNotice($"切换内核失败：{ex.Message}");
         }
         finally
         {
@@ -201,7 +201,7 @@ internal sealed class CoreLifecycleController
 
         if (!_settings.IsSingBox && !_core.IsRunning)
         {
-            await _services.ShowNoticeAsync("请先启动 mihomo 内核，再执行升级。");
+            _services.ShowNotice("请先启动 mihomo 内核，再执行升级。");
             return;
         }
 
@@ -209,7 +209,7 @@ internal sealed class CoreLifecycleController
         var stoppedForUpgrade = false;
         IsUpgradeInProgress = true;
         _services.PublishState();
-        await _services.ShowNoticeAsync(_settings.IsSingBox
+        _services.ShowNotice(_settings.IsSingBox
             ? "正在升级 sing-box 内核，请稍候。"
             : "正在升级内核，请稍候。");
 
@@ -223,11 +223,11 @@ internal sealed class CoreLifecycleController
                     var versionText = string.IsNullOrWhiteSpace(mihomoResult.Version)
                         ? ""
                         : $"（{mihomoResult.Version}）";
-                    await _services.ShowNoticeAsync($"当前已是最新版本{versionText}。");
+                    _services.ShowNotice($"当前已是最新版本{versionText}。");
                     return;
                 }
 
-                await _services.ShowNoticeAsync("mihomo 内核升级成功。");
+                _services.ShowNotice("mihomo 内核升级成功。");
                 return;
             }
 
@@ -247,16 +247,16 @@ internal sealed class CoreLifecycleController
             if (result.IsAlreadyLatest)
             {
                 HostOperationLogger.Info("upgrade", $"Core is already latest: {result.Version}.");
-                await _services.ShowNoticeAsync($"当前内核已经是最新版本（{result.Version}）。");
+                _services.ShowNotice($"当前内核已经是最新版本（{result.Version}）。");
                 return;
             }
 
-            await _services.ShowNoticeAsync($"内核已升级到 {result.Version}。");
+            _services.ShowNotice($"内核已升级到 {result.Version}。");
             HostOperationLogger.Info("upgrade", $"Core upgraded to {result.Version} from asset {result.AssetName}. Backup: {result.BackupPath}");
             if (!string.IsNullOrWhiteSpace(result.Warning))
             {
                 HostOperationLogger.Info("upgrade", result.Warning);
-                await _services.ShowNoticeAsync(result.Warning);
+                _services.ShowNotice(result.Warning);
             }
 
             if (stoppedForUpgrade)
@@ -267,7 +267,7 @@ internal sealed class CoreLifecycleController
         catch (MihomoApiUpgradeException ex)
         {
             HostOperationLogger.Error("upgrade", "Failed to upgrade mihomo through its API.", ex);
-            await _services.ShowNoticeAsync(ex.UserMessage);
+            _services.ShowNotice(ex.UserMessage);
         }
         catch (Exception ex)
         {
@@ -278,7 +278,7 @@ internal sealed class CoreLifecycleController
                 TaskCanceledException => "升级失败：请求超时，请稍后重试。",
                 _ => "升级失败：发生意外错误，详情请查看 upgrade.log。"
             };
-            await _services.ShowNoticeAsync(message);
+            _services.ShowNotice(message);
             if (stoppedForUpgrade && !_core.IsRunning)
             {
                 Start();
@@ -298,27 +298,31 @@ internal sealed class CoreLifecycleController
             return;
         }
 
-        _tunPermissionFailureSeen = true;
-        HandleTunPermissionFailure();
+        ResetTunRetry();
+        Stop();
+        _services.RelaunchAsAdministrator(
+            true,
+            _services.ShouldKeepMinimizedForRelaunch(),
+            true);
     }
 
     private async Task WaitForApiAndNotifyAsync()
     {
-        using var client = new HttpClient();
         var apiUrl = _settings.ActiveDashboardApiUrl;
         var secret = _settings.ActiveSecret;
-        if (!string.IsNullOrWhiteSpace(secret))
-        {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
-        }
-
         var endpoint = $"{apiUrl.TrimEnd('/')}/version";
         Exception? lastException = null;
         for (var attempt = 0; attempt < 20; attempt++)
         {
             try
             {
-                using var response = await client.GetAsync(endpoint);
+                using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+                if (!string.IsNullOrWhiteSpace(secret))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+                }
+
+                using var response = await ApiProbeClient.SendAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
                     _services.RunOnUiThread(() =>
@@ -350,29 +354,13 @@ internal sealed class CoreLifecycleController
                 HostOperationLogger.Info("core", $"Core API did not become reachable: {endpoint}");
             }
 
-            _ = _services.ShowNoticeAsync($"内核已启动，但无法连接 API：{apiUrl}");
+            _services.ShowNotice($"内核已启动，但无法连接 API：{apiUrl}");
         });
-    }
-
-    private void HandleTunPermissionFailure()
-    {
-        if (!_elevatedRetryPending || !_tunPermissionFailureSeen)
-        {
-            return;
-        }
-
-        ResetTunRetry();
-        Stop();
-        _services.RelaunchAsAdministrator(
-            true,
-            _services.ShouldKeepMinimizedForRelaunch(),
-            true);
     }
 
     private void ResetTunRetry()
     {
         _elevatedRetryPending = false;
-        _tunPermissionFailureSeen = false;
     }
 
     private static bool IsTunPermissionFailure(string? logEntry)
@@ -388,7 +376,7 @@ internal sealed class CoreLifecycleServices
     public required Func<bool> IsRunningAsAdministrator { get; init; }
     public required Func<bool> ShouldKeepMinimizedForRelaunch { get; init; }
     public required Action<bool, bool, bool> RelaunchAsAdministrator { get; init; }
-    public required Func<string, Task> ShowNoticeAsync { get; init; }
+    public required Action<string> ShowNotice { get; init; }
     public required Action PublishState { get; init; }
     public required Action RefreshIconCache { get; init; }
     public required Action<string> ShowTrayNotification { get; init; }
