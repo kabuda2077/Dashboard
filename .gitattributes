@@ -1,0 +1,36 @@
+# Normalize line endings so build output and cross-platform edits stop producing
+# "LF will be replaced by CRLF" churn. Text is stored LF in the repository and
+# checked out with the platform default.
+* text=auto
+
+# Windows-only tooling that must stay CRLF in the working tree.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Sources kept LF regardless of platform.
+*.cs text eol=lf
+*.csproj text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.vue text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+
+# Binary assets: never touch, never diff as text.
+*.ico binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.gif binary
+*.avif binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
+*.exe binary
+*.dll binary

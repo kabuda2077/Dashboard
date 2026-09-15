@@ -9,6 +9,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Several tools here write harmless warnings to stderr while exiting 0 (vite's
+# [PLUGIN_TIMINGS] hint, pnpm progress, git's safe.directory notice). Under
+# Windows PowerShell 5.1 those lines become NativeCommandError ErrorRecords as
+# soon as they enter the success pipeline, and $ErrorActionPreference = 'Stop'
+# then aborts the whole gate on a warning. Do NOT redirect native stderr with
+# 2>&1 here: the redirect is what feeds those records into the pipeline. Instead
+# Invoke-Step drops to 'Continue' around each step, so native stderr stays
+# informational and every step is judged by $LASTEXITCODE alone.
+
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dashboardRoot = Join-Path $repoRoot 'dashboard-src'
 $pnpmStoreDir = Join-Path $repoRoot '.tmp\pnpm-store'
@@ -20,6 +29,9 @@ function Invoke-Step {
     )
 
     Write-Host "==> $Name" -ForegroundColor Cyan
+    # Local to this scope only; the caller keeps 'Stop'. Steps must fail loudly
+    # via an explicit throw or a $LASTEXITCODE check, never via native stderr.
+    $ErrorActionPreference = 'Continue'
     & $Script
     Write-Host "    OK" -ForegroundColor Green
     Write-Host ""
@@ -63,24 +75,6 @@ Invoke-Step 'Dashboard desktop source contract' {
     powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1 -SkipBuild
     if ($LASTEXITCODE -ne 0) {
         throw "dashboard source contract check failed with exit code $LASTEXITCODE"
-    }
-}
-
-if (-not $SkipDotnetBuild) {
-    Invoke-Step ".NET build ($Configuration)" {
-        dotnet build .\Dashboard.csproj -c $Configuration --nologo
-        if ($LASTEXITCODE -ne 0) {
-            throw ".NET build failed with exit code $LASTEXITCODE"
-        }
-    }
-}
-
-if (-not $SkipDotnetTests) {
-    Invoke-Step ".NET tests ($Configuration)" {
-        dotnet test .\tests\Dashboard.Tests\Dashboard.Tests.csproj -c $Configuration --nologo
-        if ($LASTEXITCODE -ne 0) {
-            throw ".NET tests failed with exit code $LASTEXITCODE"
-        }
     }
 }
 
@@ -132,22 +126,52 @@ if (-not $SkipFrontendTypeCheck) {
 }
 
 if (-not $SkipFrontendBuild) {
-    Invoke-Step 'Frontend build' {
-        Push-Location $dashboardRoot
+    # Runs the full build-zashboard.ps1 (no -SkipBuild): vite build, then the copy
+    # into resources\dashboard\ and the icon sync. Dashboard.csproj includes
+    # resources\dashboard\**\* as Content, and those files are not tracked in git,
+    # so the .NET build below depends on this step having produced them.
+    Invoke-Step 'Dashboard UI build' {
+        # That script runs its own pnpm install. Without CI, pnpm asks before
+        # purging node_modules and aborts with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+        # because this gate has no TTY. Invoke-Pnpm sets CI for the calls it owns;
+        # the child process needs it too.
+        $previousCi = $env:CI
         try {
-            $previousFont = $env:FONT
-            $previousDesktopBuild = $env:DESKTOP_BUILD
-            $env:FONT = 'misans'
-            $env:DESKTOP_BUILD = '1'
-            & .\node_modules\.bin\vite.cmd build
+            $env:CI = 'true'
+            powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1
             if ($LASTEXITCODE -ne 0) {
-                throw "frontend build failed with exit code $LASTEXITCODE"
+                throw "dashboard UI build failed with exit code $LASTEXITCODE"
             }
         }
         finally {
-            $env:FONT = $previousFont
-            $env:DESKTOP_BUILD = $previousDesktopBuild
-            Pop-Location
+            $env:CI = $previousCi
+        }
+    }
+}
+
+if ($SkipFrontendBuild -and (-not $SkipDotnetBuild -or -not $SkipDotnetTests)) {
+    # Skipping the UI build is only safe when a previous build left the assets in
+    # place. Fail with the real reason instead of shipping a UI-less binary.
+    $dashboardAssets = Join-Path $repoRoot 'resources\dashboard\index.html'
+    if (-not (Test-Path -LiteralPath $dashboardAssets)) {
+        throw "resources\dashboard is empty and -SkipFrontendBuild was passed. Run without -SkipFrontendBuild, or build once with .\tools\build-zashboard.ps1, otherwise the .NET build produces an app with no UI."
+    }
+}
+
+if (-not $SkipDotnetBuild) {
+    Invoke-Step ".NET build ($Configuration)" {
+        dotnet build .\Dashboard.csproj -c $Configuration --nologo
+        if ($LASTEXITCODE -ne 0) {
+            throw ".NET build failed with exit code $LASTEXITCODE"
+        }
+    }
+}
+
+if (-not $SkipDotnetTests) {
+    Invoke-Step ".NET tests ($Configuration)" {
+        dotnet test .\tests\Dashboard.Tests\Dashboard.Tests.csproj -c $Configuration --nologo
+        if ($LASTEXITCODE -ne 0) {
+            throw ".NET tests failed with exit code $LASTEXITCODE"
         }
     }
 }

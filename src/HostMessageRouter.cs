@@ -56,7 +56,7 @@ internal sealed class HostMessageRouter
             case HostBridgeCommand.CompleteSetup:
                 await _handlers.SaveSettingsAsync(root, false);
                 _handlers.CompleteSetup();
-                await _handlers.ShowNoticeAsync("首次启动设置已完成。");
+                _handlers.ShowNotice("首次启动设置已完成。");
                 break;
             case HostBridgeCommand.Start:
                 await _handlers.SaveSettingsAsync(root, false);
@@ -87,11 +87,11 @@ internal sealed class HostMessageRouter
                 break;
             case HostBridgeCommand.OpenCoreLocation:
                 await _handlers.SaveSettingsAsync(root, false);
-                await _handlers.OpenCoreLocationAsync();
+                _handlers.OpenCoreLocation();
                 break;
             case HostBridgeCommand.OpenConfigLocation:
                 await _handlers.SaveSettingsAsync(root, false);
-                await _handlers.OpenConfigLocationAsync();
+                _handlers.OpenConfigLocation();
                 break;
             case HostBridgeCommand.CheckAppUpdate:
                 await _handlers.CheckAppUpdateAsync();
@@ -125,12 +125,12 @@ internal sealed class HostMessageHandlers
     public required Func<Task> UpgradeCoreAsync { get; init; }
     public required Action BrowseCorePath { get; init; }
     public required Action BrowseConfigPath { get; init; }
-    public required Func<Task> OpenCoreLocationAsync { get; init; }
-    public required Func<Task> OpenConfigLocationAsync { get; init; }
+    public required Action OpenCoreLocation { get; init; }
+    public required Action OpenConfigLocation { get; init; }
     public required Func<Task> CheckAppUpdateAsync { get; init; }
     public required Action OpenAppRelease { get; init; }
     public required Action OpenCoreRepository { get; init; }
-    public required Func<string, Task> ShowNoticeAsync { get; init; }
+    public required Action<string> ShowNotice { get; init; }
     public required Action SendState { get; init; }
     public required Action SendWindowChromeState { get; init; }
 }

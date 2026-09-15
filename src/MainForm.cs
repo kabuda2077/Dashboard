@@ -119,12 +119,12 @@ public sealed class MainForm : Form
             UpgradeCoreAsync = () => Task.Run(_host.UpgradeCoreAsync),
             BrowseCorePath = BrowseCorePath,
             BrowseConfigPath = BrowseConfigPath,
-            OpenCoreLocationAsync = () => OpenPathLocationAsync(_settings.ActiveCorePath, "内核文件"),
-            OpenConfigLocationAsync = () => OpenPathLocationAsync(_settings.ActiveConfigPath, "配置文件"),
+            OpenCoreLocation = () => OpenPathLocation(_settings.ActiveCorePath, "内核文件"),
+            OpenConfigLocation = () => OpenPathLocation(_settings.ActiveConfigPath, "配置文件"),
             CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
             OpenAppRelease = _host.OpenAppReleasePage,
             OpenCoreRepository = _host.OpenCoreRepositoryPage,
-            ShowNoticeAsync = ShowDashboardNoticeAsync,
+            ShowNotice = ShowDashboardNotice,
             SendState = SendStateToDashboard,
             SendWindowChromeState = SendWindowChromeState
         });
@@ -190,7 +190,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        var hitTest = GetResizeHitTest(GetString(root, "edge", string.Empty));
+        var hitTest = GetResizeHitTest(HostBridgeJson.GetString(root, "edge", string.Empty));
         if (hitTest == HTCLIENT)
         {
             return;
@@ -300,7 +300,7 @@ public sealed class MainForm : Form
 
     private void OnHostNoticeRequested(object? sender, string message)
     {
-        RunOnUiThread(() => _ = ShowDashboardNoticeAsync(message));
+        RunOnUiThread(() => ShowDashboardNotice(message));
     }
 
     private void MinimizeToTaskbar()
@@ -572,7 +572,7 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             HostOperationLogger.Error("host-bridge", "Failed to process dashboard message.", ex);
-            await ShowDashboardNoticeAsync($"操作失败：{ex.Message}");
+            ShowDashboardNotice($"操作失败：{ex.Message}");
         }
     }
 
@@ -599,16 +599,6 @@ public sealed class MainForm : Form
             + "  if (key.startsWith('config/') && typeof value === 'string') localStorage.setItem(key, value);"
             + "}"
             + "})();";
-    }
-
-    private static string GetString(JsonElement root, string propertyName, string fallback)
-    {
-        return HostBridgeJson.GetString(root, propertyName, fallback);
-    }
-
-    private static bool GetBool(JsonElement root, string propertyName, bool fallback)
-    {
-        return HostBridgeJson.GetBool(root, propertyName, fallback);
     }
 
     private void RunOnUiThread(Action action)
@@ -656,9 +646,9 @@ public sealed class MainForm : Form
         _statePublisher.SendState();
     }
 
-    private Task ShowDashboardNoticeAsync(string message)
+    private void ShowDashboardNotice(string message)
     {
-        return _statePublisher.ShowNoticeAsync(message);
+        _statePublisher.ShowNotice(message);
     }
 
     private void SendWindowChromeState()
@@ -818,11 +808,11 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task OpenPathLocationAsync(string path, string label)
+    private void OpenPathLocation(string path, string label)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            await ShowDashboardNoticeAsync($"请先设置{label}路径。");
+            ShowDashboardNotice($"请先设置{label}路径。");
             return;
         }
 
@@ -846,11 +836,11 @@ public sealed class MainForm : Form
             {
                 UseShellExecute = true
             });
-            await ShowDashboardNoticeAsync($"{label}不存在，已打开所在文件夹。");
+            ShowDashboardNotice($"{label}不存在，已打开所在文件夹。");
             return;
         }
 
-        await ShowDashboardNoticeAsync($"找不到{label}所在位置。");
+        ShowDashboardNotice($"找不到{label}所在位置。");
     }
 
     protected override void OnLocationChanged(EventArgs e)

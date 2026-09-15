@@ -39,67 +39,82 @@ public sealed class ProxyGroupIconCache
     public void LoadExisting(string configPath)
     {
         // 异步加载图标缓存，不阻塞主线程
-        _ = Task.Run(() => LoadExistingAsync(configPath));
+        _ = Task.Run(() => ScanExistingCacheFiles(configPath));
     }
 
-    private async Task LoadExistingAsync(string configPath)
+    private void ScanExistingCacheFiles(string configPath)
     {
-        var iconUrls = await Task.Run(() =>
-            ExtractProxyGroupIconUrls(configPath)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray()
-        );
+        var iconUrls = ExtractProxyGroupIconUrls(configPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         if (iconUrls.Length == 0)
         {
             return;
         }
 
-        // 并行检查文件存在性
-        var tasks = iconUrls.Select(async iconUrl =>
+        var changed = false;
+        foreach (var iconUrl in iconUrls)
         {
             if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
                 || uri.Scheme is not ("http" or "https"))
             {
-                return null;
+                continue;
             }
 
             var fileName = GetCacheFileName(uri);
-            var exists = await Task.Run(() =>
-                File.Exists(Path.Combine(CacheDirectory, fileName)));
-
-            return exists ? (iconUrl, uri, fileName) : ((string, Uri, string)?)null;
-        });
-
-        var results = await Task.WhenAll(tasks);
-
-        var changed = false;
-        lock (_sync)
-        {
-            foreach (var result in results)
+            if (!File.Exists(Path.Combine(CacheDirectory, fileName)))
             {
-                if (result == null)
-                {
-                    continue;
-                }
-
-                var (iconUrl, uri, fileName) = result.Value;
-                foreach (var key in GetCacheKeys(iconUrl, uri))
-                {
-                    if (!_cachedFiles.TryGetValue(key, out var existingFileName)
-                        || !string.Equals(existingFileName, fileName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _cachedFiles[key] = fileName;
-                        changed = true;
-                    }
-                }
+                continue;
             }
+
+            changed |= TryRecordCacheFile(iconUrl, fileName);
         }
 
         if (changed)
         {
             CacheChanged?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    // Records the icon under the URL as written in the config, and additionally
+    // under its normalized absolute form when the two differ.
+    //
+    // Both keys are needed because ProxyIcon.vue looks up twice: first the icon
+    // string verbatim, then `new URL(icon).href`. That second lookup is a plain
+    // JavaScript property read, so it is case-sensitive and cannot fall back to
+    // this dictionary's OrdinalIgnoreCase comparer. Storing only the raw key
+    // would leave the normalized lookup unmatched whenever a config writes a
+    // URL in non-normalized form.
+    //
+    // Returns true when the mapping changed.
+    private bool TryRecordCacheFile(string iconUrl, string fileName)
+    {
+        lock (_sync)
+        {
+            var changed = RecordKey(iconUrl, fileName);
+
+            if (Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
+                && !string.Equals(iconUrl, uri.AbsoluteUri, StringComparison.Ordinal))
+            {
+                changed |= RecordKey(uri.AbsoluteUri, fileName);
+            }
+
+            return changed;
+        }
+    }
+
+    // Caller must hold _sync.
+    private bool RecordKey(string key, string fileName)
+    {
+        if (_cachedFiles.TryGetValue(key, out var existingFileName)
+            && string.Equals(existingFileName, fileName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        _cachedFiles[key] = fileName;
+        return true;
     }
 
     public async Task RefreshAsync(string configPath, CancellationToken cancellationToken = default)
@@ -123,19 +138,7 @@ public sealed class ProxyGroupIconCache
                     continue;
                 }
 
-                lock (_sync)
-                {
-                    var iconUri = new Uri(iconUrl);
-                    foreach (var key in GetCacheKeys(iconUrl, iconUri))
-                    {
-                        if (!_cachedFiles.TryGetValue(key, out var existingFileName)
-                            || !string.Equals(existingFileName, fileName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _cachedFiles[key] = fileName;
-                            changed = true;
-                        }
-                    }
-                }
+                changed |= TryRecordCacheFile(iconUrl, fileName);
             }
 
             if (changed)
@@ -219,24 +222,6 @@ public sealed class ProxyGroupIconCache
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(iconUri.AbsoluteUri))).ToLowerInvariant();
         return hash + GetSafeExtension(iconUri);
-    }
-
-    private static IEnumerable<string> GetCacheKeys(string iconUrl, Uri iconUri)
-    {
-        yield return iconUrl;
-
-        var absoluteUri = iconUri.AbsoluteUri;
-        if (!string.Equals(iconUrl, absoluteUri, StringComparison.OrdinalIgnoreCase))
-        {
-            yield return absoluteUri;
-        }
-
-        var originalString = iconUri.OriginalString;
-        if (!string.Equals(iconUrl, originalString, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(absoluteUri, originalString, StringComparison.OrdinalIgnoreCase))
-        {
-            yield return originalString;
-        }
     }
 
     private static string GetSafeExtension(Uri iconUri)
