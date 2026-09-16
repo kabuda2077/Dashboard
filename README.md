@@ -155,4 +155,4 @@ powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboa
 
 本项目使用 MIT License 发布。
 
-内置前端基于 zashboard，zashboard 同样使用 MIT License。上游版权声明见 `dashboard-src/LICENSE`。
+内置前端基于 zashboard，上游版权声明见 `dashboard-src/LICENSE`。
