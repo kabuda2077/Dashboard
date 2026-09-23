@@ -41,6 +41,38 @@ public sealed class HostBridgeMessagesTests
         Assert.Equal("line\n", document.RootElement.GetProperty("logText").GetString());
     }
 
+    [Theory]
+    [InlineData(AppUpdateResultKind.Available, true, "1.2.0", "1.3.0")]
+    [InlineData(AppUpdateResultKind.UpToDate, true, "1.2.0", "1.2.0")]
+    [InlineData(AppUpdateResultKind.Failed, false, null, null)]
+    [InlineData(AppUpdateResultKind.Busy, true, null, null)]
+    public void AppUpdateResultMessageKeepsStructuredWireShape(
+        string result,
+        bool manual,
+        string? currentVersion,
+        string? latestVersion)
+    {
+        var json = HostBridgeJson.Serialize(HostOutboundMessage.AppUpdateResult(
+            result,
+            manual,
+            currentVersion,
+            latestVersion));
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("appUpdateResult", root.GetProperty("type").GetString());
+        Assert.Equal(result, root.GetProperty("result").GetString());
+        Assert.Equal(manual, root.GetProperty("manual").GetBoolean());
+        Assert.Equal(currentVersion, root.TryGetProperty("currentVersion", out var current)
+            ? current.GetString()
+            : null);
+        Assert.Equal(latestVersion, root.TryGetProperty("latestVersion", out var latest)
+            ? latest.GetString()
+            : null);
+        Assert.False(root.TryGetProperty("message", out _));
+    }
+
     [Fact]
     public void StateMessageIncludesDashboardSettingsWithCamelCaseName()
     {

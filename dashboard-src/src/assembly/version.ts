@@ -1,16 +1,16 @@
 // 组装层 · 版本与升级。
 // mihomo 与 sing-box 都通过 Clash-compatible /version 探测实际内核。
-import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI, upgradeUIAPI } from '@/api/clash'
-import { hostWindow } from '@/composables/hostBridge'
+import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI } from '@/api/clash'
+import { hasHostBridge, hostState } from '@/composables/hostBridge'
+import { backendSessionGeneration, backendSessionReady, captureBackendSession } from '@/helper/backendSession'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
-import { autoUpgradeCore, autoUpgradeDashboard, checkUpgradeCore } from '@/store/settings'
+import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import { computed, ref, watch } from 'vue'
 
 export const version = ref()
 export const isCoreUpdateAvailable = ref(false)
-export const zashboardVersion = ref(__APP_VERSION__)
 
 export const isSingBoxCore = computed(() => version.value?.includes('sing-box'))
 
@@ -33,14 +33,19 @@ export const mihomo = computed<[MIHOMO, string] | undefined>(() => {
 
 export const fetchVersionAPI = () => fetchClashVersion()
 
-const getHostCoreVersion = () => hostWindow.__mihomoHostCoreVersion || ''
+const getHostCoreVersion = () => hostState.value.coreVersion || ''
 
 let versionFetchId = 0
 
 const refreshVersion = async () => {
-  if (!activeBackend.value) return
-
   const currentFetchId = ++versionFetchId
+  const session = captureBackendSession()
+  if (!activeBackend.value || !backendSessionReady.value) {
+    version.value = ''
+    isCoreUpdateAvailable.value = false
+    return
+  }
+
   let nextVersion = ''
   try {
     const { data } = await fetchVersionAPI()
@@ -49,30 +54,42 @@ const refreshVersion = async () => {
     nextVersion = getHostCoreVersion()
   }
 
-  if (currentFetchId !== versionFetchId) return
+  if (currentFetchId !== versionFetchId || !session.isCurrent()) return
 
   version.value = nextVersion || getHostCoreVersion()
+  isCoreUpdateAvailable.value = false
   if (isSingBoxCore.value || !checkUpgradeCore.value || activeBackend.value?.disableUpgradeCore) {
     return
   }
 
-  isCoreUpdateAvailable.value = await fetchBackendUpdateAvailableAPI()
-
-  if (isCoreUpdateAvailable.value && autoUpgradeCore.value) {
-    upgradeCoreAPI('auto')
+  try {
+    const available = await fetchBackendUpdateAvailableAPI()
+    if (currentFetchId !== versionFetchId || !session.isCurrent()) return
+    isCoreUpdateAvailable.value = available
+    if (isCoreUpdateAvailable.value && autoUpgradeCore.value) {
+      await upgradeCoreAPI('auto')
+    }
+  } catch {
+    if (currentFetchId === versionFetchId && session.isCurrent()) isCoreUpdateAvailable.value = false
   }
 }
 
 watch(
-  activeBackend,
+  () => [backendSessionGeneration.value, backendSessionReady.value],
   () => {
     void refreshVersion()
   },
   { immediate: true },
 )
 
+// An exe-version result can arrive after the API probe failed. Fill the
+// fallback without issuing another /version request for an unchanged session.
+watch(() => hostState.value.coreVersion, (fallback) => {
+  if (backendSessionReady.value && !version.value && fallback) version.value = fallback
+})
+
 window.addEventListener(HOST_BACKEND_UPDATED_EVENT, () => {
-  void refreshVersion()
+  if (!hasHostBridge) void refreshVersion()
 })
 
 const CACHE_DURATION = 1000 * 60 * 60
@@ -118,14 +135,6 @@ async function fetchWithLocalCache<T>(url: string, version: string): Promise<T> 
   return data
 }
 
-export const fetchIsUIUpdateAvailable = async () => {
-  const { tag_name } = await fetchWithLocalCache<{ tag_name: string }>(
-    'https://api.github.com/repos/Zephyruso/zashboard/releases/latest',
-    zashboardVersion.value,
-  )
-
-  return Boolean(tag_name && tag_name !== `v${zashboardVersion.value}`)
-}
 
 const check = async (url: string, versionNumber: string) => {
   const { assets } = await fetchWithLocalCache<{ assets: { name: string }[] }>(url, versionNumber)
@@ -140,16 +149,4 @@ export const fetchBackendUpdateAvailableAPI = async () => {
     mihomo.value?.[1] ?? version.value,
   )
 }
-
-// 仪表盘(UI)更新检查,迁自 composables/settings.ts 的 useSettings。
-export const isUIUpdateAvailable = ref(false)
-
-export const checkUIUpdate = async () => {
-  isUIUpdateAvailable.value = await fetchIsUIUpdateAvailable()
-  if (isUIUpdateAvailable.value && autoUpgradeDashboard.value) {
-    upgradeUIAPI()
-  }
-}
-
-// 内核 / UI 维护动作(Clash 专属,无后端分支),经版本域门面暴露给 view。
-export { restartCoreAPI, upgradeCoreAPI, upgradeUIAPI }
+export { restartCoreAPI, upgradeCoreAPI }

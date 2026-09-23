@@ -1,5 +1,6 @@
 // 组装层 · Clash-compatible config 门面。
 import { activeUuid } from '@/store/setup'
+import { captureBackendSession } from '@/helper/backendSession'
 import type { Config } from '@/types'
 import { ref } from 'vue'
 
@@ -37,12 +38,25 @@ export const resetConfigs = () => {
 
 const load = () => import('./clash')
 
-export const fetchConfigs = async () => {
+let pending: { generation: number; session: ReturnType<typeof captureBackendSession>; promise: Promise<Config | undefined> } | undefined
+
+export const fetchConfigs = (): Promise<Config | undefined> => {
+  if (pending?.generation === configsGeneration && pending.session.isCurrent()) return pending.promise
+  const session = captureBackendSession()
+  const promise = fetchCurrentConfigs(session)
+  pending = { generation: configsGeneration, session, promise }
+  void promise.finally(() => { if (pending?.promise === promise) pending = undefined }).catch(() => {})
+  return promise
+}
+
+const fetchCurrentConfigs = async (session: ReturnType<typeof captureBackendSession>) => {
   const requestedGeneration = configsGeneration
   const backendUuid = activeUuid.value
-  const result = await (await load()).fetchConfigs()
+  const backend = await load()
+  if (!session.isCurrent()) return
+  const result = await backend.fetchConfigs()
 
-  if (requestedGeneration !== configsGeneration || backendUuid !== activeUuid.value) {
+  if (!session.isCurrent() || requestedGeneration !== configsGeneration || backendUuid !== activeUuid.value) {
     return result
   }
 
@@ -53,8 +67,11 @@ export const fetchConfigs = async () => {
 }
 
 export const updateConfigs = async (cfg: Record<string, string | boolean | object | number>) => {
-  await (await load()).updateConfigs(cfg)
-  await fetchConfigs()
+  const session = captureBackendSession()
+  const backend = await load()
+  if (!session.isCurrent()) return
+  await backend.updateConfigs(cfg)
+  if (session.isCurrent()) await fetchConfigs()
 }
 
 // 配置 / 缓存 / DNS 维护动作(Clash 专属),经 config 域门面暴露给 view。
@@ -62,6 +79,5 @@ export {
   flushDNSCacheAPI,
   flushFakeIPAPI,
   reloadConfigsAPI,
-  updateConfigsAPI,
   updateGeoDataAPI,
 } from '@/api/clash'

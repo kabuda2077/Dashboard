@@ -7,7 +7,17 @@ import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { debounce } from 'lodash'
 import type { ComputedRef, Ref } from 'vue'
-import { nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
+import {
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue'
 
 echarts.use([
   BarChart,
@@ -147,9 +157,11 @@ export const useEChart = (
   const { width, height } = useElementSize(chartRef)
   let removeInitListeners: (() => void) | undefined
   let touchTarget: HTMLElement | null = null
+  let active = true
+  let wasDeactivated = false
 
   const render = () => {
-    if (!chart.value || paused?.value) return
+    if (!active || !chart.value || paused?.value) return
 
     if (isEmpty?.value) {
       chart.value.clear()
@@ -159,7 +171,9 @@ export const useEChart = (
     chart.value.setOption(options.value)
   }
 
-  const resize = debounce(() => chart.value?.resize(), 100)
+  const resize = debounce(() => {
+    if (active) chart.value?.resize()
+  }, 100)
 
   const hideTooltip = () => {
     chart.value?.dispatchAction({ type: 'hideTip' })
@@ -172,7 +186,7 @@ export const useEChart = (
 
   const syncTouchListener = () => {
     removeTouchListener()
-    if (!isMiddleScreen.value || !chartRef.value) return
+    if (!active || !isMiddleScreen.value || !chartRef.value) return
 
     touchTarget = chartRef.value
     touchTarget.addEventListener('touchend', hideTooltip)
@@ -199,6 +213,23 @@ export const useEChart = (
     render()
   })
 
+  onDeactivated(() => {
+    active = false
+    wasDeactivated = true
+    resize.cancel()
+    removeTouchListener()
+  })
+
+  onActivated(() => {
+    if (!wasDeactivated) return // KeepAlive also calls this on the initial mount.
+    wasDeactivated = false
+    active = true
+    syncTouchListener()
+    render()
+    resize.cancel()
+    chart.value?.resize()
+  })
+
   onUnmounted(() => {
     resize.cancel()
     removeTouchListener()
@@ -212,7 +243,7 @@ export const useEChart = (
     render,
     resize: () => {
       resize.cancel()
-      chart.value?.resize()
+      if (active) chart.value?.resize()
     },
   }
 }

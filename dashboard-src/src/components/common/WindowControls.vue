@@ -35,35 +35,21 @@
 
 <script setup lang="ts">
 import {
-  addHostMessageListener,
-  applyHostMessage,
   hasHostBridge,
   hostWindowMaximized,
   postHostMessage,
-  type HostMessage,
 } from '@/composables/hostBridge'
 import { MinusIcon, Square2StackIcon, StopIcon, XMarkIcon } from '@heroicons/vue/24/outline'
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted } from 'vue'
 
 const showWindowControls = hasHostBridge || import.meta.env.DEV
 const isMaximized = hostWindowMaximized
-let removeHostMessageListener: (() => void) | undefined
 
 const post = (type: string) => {
   postHostMessage({ type })
 }
 
-const handleHostMessage = (event: MessageEvent<HostMessage>) => {
-  applyHostMessage(event.data)
-}
-
 onMounted(() => {
-  removeHostMessageListener = addHostMessageListener(handleHostMessage)
   post('requestWindowState')
-})
-
-onUnmounted(() => {
-  removeHostMessageListener?.()
-  removeHostMessageListener = undefined
 })
 </script>

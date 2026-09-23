@@ -91,18 +91,11 @@
     <div
       class="bg-base-100 border-base-200 absolute right-0 bottom-0 left-0 flex gap-2 border-t p-2 pt-2"
     >
-      <select
+      <SelectInput
         class="select select-sm w-26"
         v-model="applyFrom"
-      >
-        <option
-          v-for="opt in ALL_THEME"
-          :key="opt"
-          :value="opt"
-        >
-          {{ opt }}
-        </option>
-      </select>
+        :options="ALL_THEME.map((value) => ({ value, label: value }))"
+      />
       <button
         class="btn btn-sm"
         @click="resetCustomTheme"
@@ -134,6 +127,7 @@ import { customThemes, darkTheme, defaultTheme } from '@/store/settings'
 import { v4 as uuid } from 'uuid'
 import { computed, nextTick, reactive, ref } from 'vue'
 import DialogWrapper from '../../common/DialogWrapper.vue'
+import SelectInput from '../../common/SelectInput.vue'
 import TextInput from '../../common/TextInput.vue'
 
 const model = defineModel<boolean>('value', {

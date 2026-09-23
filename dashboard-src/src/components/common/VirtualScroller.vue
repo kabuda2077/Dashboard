@@ -60,6 +60,7 @@ const props = withDefaults(
     size?: number
     overscan?: number
     contentClass?: string
+    getItemKey?: (item: unknown, index: number) => string | number
   }>(),
   {
     data: () => [],
@@ -74,6 +75,7 @@ const virutalOptions = computed(() => {
     count: props.data.length,
     getScrollElement: () => parentRef.value,
     estimateSize: () => props.size,
+    getItemKey: (index: number) => props.getItemKey?.(props.data[index], index) ?? index,
     overscan: props.overscan,
     paddingStart: paddingTop.value,
     paddingEnd: paddingBottom.value + 24,

@@ -2,6 +2,7 @@ import { proxyGroupList, proxyMap } from '@/assembly/proxies'
 import { FOLDER_MODE, FOLDER_MODE_AUTO_THRESHOLD } from '@/constant'
 import { proxyFolderMode } from '@/store/settings'
 import { useStorage } from '@vueuse/core'
+import { useDashboardStorage } from '@/helper/storage'
 import { v4 as uuid } from 'uuid'
 import { computed, watch } from 'vue'
 
@@ -37,7 +38,7 @@ const defaultState = (): FolderState => ({
   seeded: false,
 })
 
-export const folderState = useStorage<FolderState>(
+export const folderState = useDashboardStorage<FolderState>(
   'config/proxy-folders',
   defaultState(),
   localStorage,

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <CollapseCard :name="proxyProvider.name">
     <template v-slot:title>
       <div class="flex items-center justify-between gap-2">
@@ -70,6 +70,8 @@
 </template>
 
 <script setup lang="ts">
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession } from '@/helper/requestError'
 import { proxyProviderHealthCheckAPI, updateProxyProviderAPI } from '@/assembly/proxies'
 import { useBounceOnVisible } from '@/composables/bouncein'
 import { useRenderProxyList } from '@/composables/renderProxies'
@@ -143,11 +145,13 @@ const healthCheckClickHandler = async () => {
   if (isHealthChecking.value) return
 
   isHealthChecking.value = true
+  const session = captureBackendSession()
   try {
     await proxyProviderHealthCheckAPI(props.name)
-    await fetchProxies()
-    isHealthChecking.value = false
-  } catch {
+    if (session.isCurrent()) await fetchProxies()
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
+  } finally {
     isHealthChecking.value = false
   }
 }
@@ -156,11 +160,13 @@ const updateProviderClickHandler = async () => {
   if (isUpdating.value) return
 
   isUpdating.value = true
+  const session = captureBackendSession()
   try {
     await updateProxyProviderAPI(props.name)
-    await fetchProxies()
-    isUpdating.value = false
-  } catch {
+    if (session.isCurrent()) await fetchProxies()
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
+  } finally {
     isUpdating.value = false
   }
 }

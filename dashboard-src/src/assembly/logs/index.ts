@@ -1,6 +1,7 @@
 import { LOG_LEVEL } from '@/constant'
+import { captureBackendSession } from '@/helper/backendSession'
+import { useStorage } from '@/helper/storage'
 import type { LogWithSeq } from '@/types'
-import { useStorage } from '@vueuse/core'
 import { ref, shallowRef } from 'vue'
 import { createLogsAccumulator } from './accumulator'
 import * as clash from './clash'
@@ -14,9 +15,11 @@ let cancel: (() => void) | undefined
 export const initLogs = () => {
   cancel?.()
   logs.value = []
-
   const accumulator = createLogsAccumulator(logs, () => isPaused.value)
-  const subscription = clash.subscribeLogs({ level: logLevel.value }, accumulator.push)
+  const session = captureBackendSession()
+  const subscription = clash.subscribeLogs({ level: logLevel.value }, (log) => {
+    if (session.isCurrent()) accumulator.push(log)
+  })
 
   cancel = () => {
     accumulator.dispose()
@@ -27,4 +30,9 @@ export const initLogs = () => {
 export const stopLogs = () => {
   cancel?.()
   cancel = undefined
+}
+
+export const resetLogs = () => {
+  stopLogs()
+  logs.value = []
 }

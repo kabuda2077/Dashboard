@@ -25,7 +25,7 @@ public static class SingBoxUpdater
         }
 
         var installedVersion = await GetInstalledVersionAsync(corePath, cancellationToken);
-        using var client = CoreUpgradeSupport.CreateHttpClient();
+        var client = CoreUpgradeSupport.SharedClient;
         using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(
             client,
             ReleasesApi,
@@ -51,6 +51,7 @@ public static class SingBoxUpdater
                 return new CoreUpgradeResult(version, asset.Name, "", IsAlreadyLatest: true);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             beforeReplace?.Invoke();
             var backupPath = CoreUpgradeSupport.BackupCore(corePath);
             CoreUpgradeSupport.ReplaceCoreWithRollback(extractedCore, corePath, backupPath);
@@ -143,15 +144,17 @@ public static class SingBoxUpdater
             {
                 await process.WaitForExitAsync(timeout.Token);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 TryKill(process);
+                cancellationToken.ThrowIfCancellationRequested();
                 return "";
             }
 
             var output = $"{await outputTask} {await errorTask}";
             return ExtractVersionToken(output);
         }
+        catch (OperationCanceledException) { throw; }
         catch
         {
             return "";

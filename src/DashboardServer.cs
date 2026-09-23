@@ -7,9 +7,22 @@ using System.Threading;
 
 namespace Dashboard;
 
+internal sealed class DashboardOriginUnavailableException : InvalidOperationException
+{
+    public DashboardOriginUnavailableException(int port, Exception innerException)
+        : base(
+            $"Dashboard cannot start because its required local port {port} is unavailable. "
+                + "Close the other process using this port, then reopen Dashboard. "
+                + "A random port is not used because it would change the WebView origin and hide saved preferences and history.",
+            innerException)
+    {
+    }
+}
+
 public sealed class DashboardServer : IDisposable
 {
-    private const int PreferredPort = 33291;
+    internal const int DashboardPort = 33291;
+    internal static readonly Uri DashboardOrigin = new($"http://127.0.0.1:{DashboardPort}/");
     private static readonly TimeSpan RequestReadTimeout = TimeSpan.FromSeconds(5);
 
     private readonly string _rootFullPath;
@@ -37,30 +50,42 @@ public sealed class DashboardServer : IDisposable
         _iconCacheRootFullPath = Path.GetFullPath(iconCacheRoot);
     }
 
-    public Uri Start()
+    public Uri Start() => StartCore(useEphemeralPort: false);
+
+    internal Uri StartForTests() => StartCore(useEphemeralPort: true);
+
+    private Uri StartCore(bool useEphemeralPort)
     {
-        _listener = StartListener(PreferredPort);
-        var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+        TcpListener Bind(int port)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, port);
+            try
+            {
+                listener.Start();
+                return listener;
+            }
+            catch
+            {
+                listener.Stop();
+                throw;
+            }
+        }
+        _listener = useEphemeralPort ? Bind(0) : StartListener(Bind);
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => ListenAsync(_cts.Token));
-        return new Uri($"http://127.0.0.1:{port}/");
+        return new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/");
     }
 
-    private static TcpListener StartListener(int preferredPort)
+    internal static TcpListener StartListener(Func<int, TcpListener> bind)
     {
-        var listener = new TcpListener(IPAddress.Loopback, preferredPort);
         try
         {
-            listener.Start();
-            return listener;
+            return bind(DashboardPort);
         }
-        catch
+        catch (SocketException ex)
         {
-            listener.Stop();
-            listener = new TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            return listener;
+            throw new DashboardOriginUnavailableException(DashboardPort, ex);
         }
     }
 

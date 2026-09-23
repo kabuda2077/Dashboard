@@ -14,46 +14,39 @@ internal static partial class AppUpdateChecker
     internal const string LatestReleaseApiUrl = "https://api.github.com/repos/kabuda2077/Dashboard/releases/latest";
     internal const string ReleasesPageUrl = "https://github.com/kabuda2077/Dashboard/releases/latest";
 
+    // One shared client per process; HttpClient is thread-safe and must not be
+    // created per call (each instance holds its own connection pool).
+    private static readonly HttpClient SharedClient = CreateHttpClient();
+
     public static async Task<AppUpdateResult> CheckAsync(
         string currentVersion,
         HttpClient? client = null,
         CancellationToken cancellationToken = default)
     {
-        var ownsClient = client is null;
-        client ??= CreateHttpClient();
-        try
+        client ??= SharedClient;
+        using var response = await client.GetAsync(LatestReleaseApiUrl, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var tagName = document.RootElement.TryGetProperty("tag_name", out var tagProperty)
+            ? tagProperty.GetString() ?? ""
+            : "";
+        var latestVersion = NormalizeVersion(tagName);
+        var normalizedCurrent = NormalizeVersion(currentVersion);
+        if (string.IsNullOrWhiteSpace(latestVersion))
         {
-            using var response = await client.GetAsync(LatestReleaseApiUrl, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var tagName = document.RootElement.TryGetProperty("tag_name", out var tagProperty)
-                ? tagProperty.GetString() ?? ""
-                : "";
-            var latestVersion = NormalizeVersion(tagName);
-            var normalizedCurrent = NormalizeVersion(currentVersion);
-            if (string.IsNullOrWhiteSpace(latestVersion))
-            {
-                throw new InvalidDataException("GitHub Release 没有有效的版本号。");
-            }
-
-            if (string.IsNullOrWhiteSpace(normalizedCurrent))
-            {
-                throw new InvalidDataException("当前 Dashboard 版本号无效。");
-            }
-
-            return new AppUpdateResult(
-                normalizedCurrent,
-                latestVersion,
-                CompareVersions(latestVersion, normalizedCurrent) > 0);
+            throw new InvalidDataException("GitHub Release 没有有效的版本号。");
         }
-        finally
+
+        if (string.IsNullOrWhiteSpace(normalizedCurrent))
         {
-            if (ownsClient)
-            {
-                client.Dispose();
-            }
+            throw new InvalidDataException("当前 Dashboard 版本号无效。");
         }
+
+        return new AppUpdateResult(
+            normalizedCurrent,
+            latestVersion,
+            CompareVersions(latestVersion, normalizedCurrent) > 0);
     }
 
     internal static string NormalizeVersion(string value)

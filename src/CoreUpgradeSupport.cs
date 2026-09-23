@@ -9,7 +9,11 @@ internal static class CoreUpgradeSupport
     private const int MaxCoreBackups = 3;
     private const int MaxReleaseRequestAttempts = 3;
 
-    public static HttpClient CreateHttpClient()
+    // Shared across upgrade/update checks. HttpClient is thread-safe; creating one
+    // per call leaks connection pools. Callers must not dispose it.
+    public static HttpClient SharedClient { get; } = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient
         {
@@ -90,30 +94,78 @@ internal static class CoreUpgradeSupport
     }
 
     public static void ReplaceCoreWithRollback(string candidatePath, string corePath, string backupPath)
+        => ReplaceCoreWithRollback(candidatePath, corePath, backupPath,
+            (source, destination, backup) => File.Replace(source, destination, backup));
+
+    // Stage on the destination volume: cancellation or process exit during the
+    // copy must never truncate the installed executable. The commit/rollback
+    // section deliberately does not accept cancellation.
+    internal static void ReplaceCoreWithRollback(
+        string candidatePath, string corePath, string backupPath,
+        Action<string, string, string> replaceFile)
     {
+        var stagedPath = corePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var rollbackPath = stagedPath + ".rollback";
+        var retainRollback = false;
         try
         {
-            File.Copy(candidatePath, corePath, overwrite: true);
-            HostOperationLogger.Info("upgrade", $"Replaced core binary: {corePath}");
-        }
-        catch (Exception replaceException)
-        {
-            try
+            using (var source = File.OpenRead(candidatePath))
+            using (var staged = new FileStream(stagedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                if (!string.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath))
-                {
-                    File.Copy(backupPath, corePath, overwrite: true);
-                    HostOperationLogger.Error("upgrade", $"Core replacement failed and backup was restored: {backupPath}", replaceException);
-                }
-            }
-            catch (Exception rollbackException)
-            {
-                throw new IOException(
-                    $"内核替换失败，且从备份恢复失败。备份路径：{backupPath}",
-                    new AggregateException(replaceException, rollbackException));
+                source.CopyTo(staged);
+                staged.Flush(flushToDisk: true);
             }
 
-            throw new IOException($"内核替换失败，已从备份恢复：{backupPath}", replaceException);
+            try
+            {
+                replaceFile(stagedPath, corePath, rollbackPath);
+            }
+            catch (Exception replaceException)
+            {
+                try
+                {
+                    // File.Replace can have moved the original to its backup
+                    // before reporting an error. Restore that exact original,
+                    // not a potentially older retained upgrade backup.
+                    if (File.Exists(rollbackPath))
+                    {
+                        retainRollback = true;
+                        File.Move(rollbackPath, corePath, overwrite: true);
+                        retainRollback = false;
+                    }
+                    else if (!File.Exists(corePath))
+                    {
+                        // Recover a missing destination from the retained backup
+                        // using the same staged, same-volume commit strategy.
+                        File.Copy(backupPath, stagedPath, overwrite: true);
+                        File.Move(stagedPath, corePath);
+                    }
+                }
+                catch (Exception rollbackException)
+                {
+                    throw new IOException(
+                        $"内核替换失败，且恢复失败。备份路径：{backupPath}；事务备份：{rollbackPath}",
+                        new AggregateException(replaceException, rollbackException));
+                }
+
+                throw new IOException($"内核替换失败，原文件已保留或恢复。备份路径：{backupPath}", replaceException);
+            }
+
+            HostOperationLogger.Info("upgrade", $"Replaced core binary: {corePath}");
+        }
+        finally
+        {
+            DeleteUpgradeTempFile(stagedPath);
+            if (!retainRollback) DeleteUpgradeTempFile(rollbackPath);
+        }
+    }
+
+    private static void DeleteUpgradeTempFile(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("upgrade", $"Failed to remove upgrade staging file: {path}", ex);
         }
     }
 

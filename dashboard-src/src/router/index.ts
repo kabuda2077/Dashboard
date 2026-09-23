@@ -1,4 +1,5 @@
 import { capabilities } from '@/assembly/backend'
+import { hasHostBridge } from '@/composables/hostBridge'
 import { ROUTE_NAME } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { i18n } from '@/i18n'
@@ -81,6 +82,7 @@ const setTitleByName = (name: string | symbol | undefined) => {
 }
 
 router.beforeEach((to, from) => {
+  if (hasHostBridge && to.name === ROUTE_NAME.setup) return { name: ROUTE_NAME.core }
   const toIndex = renderRoutes.value.findIndex((item) => item === to.name)
   const fromIndex = renderRoutes.value.findIndex((item) => item === from.name)
 
@@ -93,8 +95,7 @@ router.beforeEach((to, from) => {
   }
 
   if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)) {
-    router.push({ name: ROUTE_NAME.setup })
-    return
+    return { name: hasHostBridge ? ROUTE_NAME.core : ROUTE_NAME.setup }
   }
 
   const requiredCap = typeof to.name === 'string' ? ROUTE_CAPABILITY[to.name] : undefined

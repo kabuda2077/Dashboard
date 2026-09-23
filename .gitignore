@@ -9,6 +9,7 @@ dashboard-native/
 .dotnet-install.ps1
 .tmp/
 .vs/
+.claude/
 *.user
 *.suo
 zashboard-gh-pages.zip
@@ -18,6 +19,13 @@ _tmp_zashboard_source.zip
 _build_zashboard/
 dashboard-src/node_modules/
 dashboard-src/dist/
+# Build output copied from dashboard-src/dist by tools/build-zashboard.ps1.
+# Dashboard.csproj consumes it as Content, so check.ps1 and build.ps1 must build
+# the UI before the .NET build. Keep favicon.ico's consumer in mind:
+# tools/create-app-icon.ps1 derives resources/app.ico and resources/tray.ico
+# from it, and those two stay tracked.
+resources/dashboard/
 .pnpm-store/
 config.yaml
 cores/*.exe
+.local/agent-work/

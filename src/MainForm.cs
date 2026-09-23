@@ -13,6 +13,8 @@ public sealed class MainForm : Form
     private readonly HostMessageRouter _hostMessageRouter;
     private readonly DashboardStatePublisher _statePublisher;
     private readonly Uri _dashboardUri;
+    private readonly WebViewTrustPolicy _webViewTrust;
+    private readonly WebViewContentUpdate _webViewContentUpdate;
     private readonly Icon _appIcon;
     private Panel _contentPanel = null!;
     private WebView2? _webView;
@@ -78,11 +80,13 @@ public sealed class MainForm : Form
         }
     }
 
-    internal MainForm(DashboardHost host)
+    internal MainForm(DashboardHost host, WebViewContentUpdate webViewContentUpdate)
     {
         _host = host;
         _settings = host.Settings;
         _dashboardUri = host.DashboardUri;
+        _webViewContentUpdate = webViewContentUpdate;
+        _webViewTrust = new WebViewTrustPolicy(_dashboardUri);
         _statePublisher = new DashboardStatePublisher(
             () => _host.BuildState(WindowState == FormWindowState.Maximized),
             () => _host.BuildRuntimeState(WindowState == FormWindowState.Maximized),
@@ -110,21 +114,36 @@ public sealed class MainForm : Form
             WindowMinimize = MinimizeToTaskbar,
             WindowClose = Close,
             SaveSettingsAsync = _host.SaveSettingsAsync,
+            ExecuteSettingsCommandAsync = _host.ExecuteSettingsCommandAsync,
+            ExecuteSettingsUiCommandAsync = (root, command) => _host.ExecuteSettingsUiCommandAsync(root, () =>
+            {
+                switch (command)
+                {
+                    case HostSettingsUiCommand.BrowseCore: BrowseCorePath(); break;
+                    case HostSettingsUiCommand.BrowseConfig: BrowseConfigPath(); break;
+                    case HostSettingsUiCommand.OpenCoreLocation: OpenPathLocation(_settings.ActiveCorePath, "内核文件"); break;
+                    case HostSettingsUiCommand.OpenConfigLocation: OpenPathLocation(_settings.ActiveConfigPath, "配置文件"); break;
+                }
+            }),
+            RequestDashboardSettings = requestId => PostDashboardMessage(new
+            {
+                type = "dashboardSettingsSnapshot",
+                requestId,
+                settings = _settings.DashboardSettings
+            }),
             SaveDashboardSettings = _host.SaveDashboardSettings,
-            CompleteSetup = _host.CompleteSetup,
-            StartCore = () => RunCoreOperation(() => _host.StartCore()),
+            DashboardSettingsSaved = (requestId, success) => PostDashboardMessage(new
+            {
+                type = "dashboardSettingsSaved",
+                requestId,
+                success
+            }),
             StopCore = () => RunCoreOperation(() => _host.StopCore()),
-            RestartCore = () => RunCoreOperation(() => _host.RestartCore()),
-            SwitchCoreAsync = targetCoreType => Task.Run(() => _host.SwitchCoreAsync(targetCoreType)),
-            UpgradeCoreAsync = () => Task.Run(_host.UpgradeCoreAsync),
-            BrowseCorePath = BrowseCorePath,
-            BrowseConfigPath = BrowseConfigPath,
-            OpenCoreLocationAsync = () => OpenPathLocationAsync(_settings.ActiveCorePath, "内核文件"),
-            OpenConfigLocationAsync = () => OpenPathLocationAsync(_settings.ActiveConfigPath, "配置文件"),
+
             CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
             OpenAppRelease = _host.OpenAppReleasePage,
             OpenCoreRepository = _host.OpenCoreRepositoryPage,
-            ShowNoticeAsync = ShowDashboardNoticeAsync,
+            ShowNotice = ShowDashboardNotice,
             SendState = SendStateToDashboard,
             SendWindowChromeState = SendWindowChromeState
         });
@@ -190,7 +209,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        var hitTest = GetResizeHitTest(GetString(root, "edge", string.Empty));
+        var hitTest = GetResizeHitTest(HostBridgeJson.GetString(root, "edge", string.Empty));
         if (hitTest == HTCLIENT)
         {
             return;
@@ -268,6 +287,7 @@ public sealed class MainForm : Form
         _host.LogReceived += OnHostLogReceived;
         _host.IconCacheChanged += OnHostIconCacheChanged;
         _host.NoticeRequested += OnHostNoticeRequested;
+        _host.AppUpdateResultRequested += OnAppUpdateResultRequested;
         _dashboardDisposeTimer.Tick += (_, _) =>
         {
             _dashboardDisposeTimer.Stop();
@@ -300,7 +320,12 @@ public sealed class MainForm : Form
 
     private void OnHostNoticeRequested(object? sender, string message)
     {
-        RunOnUiThread(() => _ = ShowDashboardNoticeAsync(message));
+        RunOnUiThread(() => ShowDashboardNotice(message));
+    }
+
+    private void OnAppUpdateResultRequested(object? sender, HostOutboundMessage message)
+    {
+        RunOnUiThread(() => PostDashboardMessage(message));
     }
 
     private void MinimizeToTaskbar()
@@ -419,18 +444,25 @@ public sealed class MainForm : Form
                 webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
                 var settingsMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
+                stage = "content-cache";
+                stageStartedAt = Stopwatch.GetTimestamp();
+                await InvalidateStaleContentCachesAsync(webView.CoreWebView2);
+                var contentCacheMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+
                 stage = "bootstrap";
                 stageStartedAt = Stopwatch.GetTimestamp();
-                await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildDashboardSettingsBootstrapScript());
+
                 var bootstrapMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
+                webView.CoreWebView2.NavigationStarting += OnDashboardNavigationStarting;
+                webView.CoreWebView2.NewWindowRequested += OnDashboardNewWindowRequested;
                 webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 HostOperationLogger.Info(
                     "performance",
                     $"webview:initialized id={initializationId} trigger={trigger} attempt={attempt} "
                         + $"controlMs={controlMs:0.0} profileMs={profileMs:0.0} "
                         + $"environmentMs={environmentMs:0.0} controllerMs={controllerMs:0.0} "
-                        + $"settingsMs={settingsMs:0.0} bootstrapMs={bootstrapMs:0.0} "
+                        + $"settingsMs={settingsMs:0.0} contentCacheMs={contentCacheMs:0.0} bootstrapMs={bootstrapMs:0.0} "
                         + $"totalMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0.0} "
                         + $"runtime={environment.BrowserVersionString}");
                 return true;
@@ -477,6 +509,21 @@ public sealed class MainForm : Form
         }
 
         return false;
+    }
+
+    private async Task InvalidateStaleContentCachesAsync(CoreWebView2 coreWebView)
+    {
+        if (!_webViewContentUpdate.RequiresCacheInvalidation)
+        {
+            return;
+        }
+
+        const CoreWebView2BrowsingDataKinds staleContentData =
+            CoreWebView2BrowsingDataKinds.DiskCache
+            | CoreWebView2BrowsingDataKinds.CacheStorage
+            | CoreWebView2BrowsingDataKinds.ServiceWorkers;
+        await coreWebView.Profile.ClearBrowsingDataAsync(staleContentData);
+        _webViewContentUpdate.CompleteCacheInvalidation();
     }
 
     internal static bool IsWebViewInitializationAborted(Exception exception)
@@ -527,44 +574,79 @@ public sealed class MainForm : Form
                 $"webview:navigationCompleted id={initializationId} success={args.IsSuccess} "
                     + $"status={args.WebErrorStatus} navigationMs={Stopwatch.GetElapsedTime(navigationStartedAt).TotalMilliseconds:0.0} "
                     + $"totalMs={Stopwatch.GetElapsedTime(initializationStartedAt).TotalMilliseconds:0.0}");
-            SendStateToDashboard();
+            if (args.IsSuccess && ReferenceEquals(coreWebView, _webView?.CoreWebView2)
+                && _webViewTrust.IsTrustedDocument(coreWebView.Source))
+            {
+                SendStateToDashboard();
+            }
         };
 
-        var uri = new Uri(_dashboardUri, $"?{BuildDashboardQuery()}#/core");
-        coreWebView.Navigate(uri.ToString());
+        coreWebView.Navigate(new Uri(_dashboardUri, "#/core").ToString());
     }
 
-    private string BuildDashboardQuery()
+    private void OnDashboardNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
-        var query = new List<string>();
-        if (Uri.TryCreate(_settings.ActiveDashboardApiUrl, UriKind.Absolute, out var apiUri))
+        var current = _webView?.CoreWebView2;
+        if (!ReferenceEquals(sender, current) || current is null)
         {
-            query.Add(apiUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? "https=1" : "http=1");
-            query.Add($"hostname={Uri.EscapeDataString(apiUri.Host)}");
-            query.Add($"port={Uri.EscapeDataString(apiUri.Port.ToString())}");
-
-            var secondaryPath = apiUri.AbsolutePath.TrimEnd('/');
-            if (!string.IsNullOrWhiteSpace(secondaryPath) && secondaryPath != "/")
-            {
-                query.Add($"secondaryPath={Uri.EscapeDataString(secondaryPath)}");
-            }
-        }
-        else
-        {
-            query.Add("http=1");
-            query.Add("hostname=127.0.0.1");
-            query.Add("port=9090");
+            e.Cancel = true;
+            return;
         }
 
-        query.Add($"label={Uri.EscapeDataString("本机内核")}");
-        query.Add($"coreType={Uri.EscapeDataString(_settings.CoreType)}");
-        query.Add("disableUpgradeCore=1");
+        var target = _webViewTrust.ClassifyNavigation(e.Uri);
+        if (target == DashboardNavigationTarget.Dashboard) return;
 
-        return string.Join("&", query);
+        e.Cancel = true;
+        // Redirects and programmatic navigation cannot launch arbitrary applications.
+        if (target == DashboardNavigationTarget.ExternalWeb && e.IsUserInitiated && !e.IsRedirected
+            && _webViewTrust.IsTrustedDocument(current.Source))
+        {
+            OpenExternalWebLink(e.Uri);
+        }
+    }
+
+    private void OnDashboardNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        var current = _webView?.CoreWebView2;
+        if (current is null || !ReferenceEquals(sender, current) || !e.IsUserInitiated
+            || !_webViewTrust.IsTrustedDocument(current.Source)) return;
+
+        switch (_webViewTrust.ClassifyNavigation(e.Uri))
+        {
+            case DashboardNavigationTarget.Dashboard:
+                current.Navigate(e.Uri);
+                break;
+            case DashboardNavigationTarget.ExternalWeb:
+                OpenExternalWebLink(e.Uri);
+                break;
+        }
+    }
+
+    private void OpenExternalWebLink(string address)
+    {
+        if (_webViewTrust.ClassifyNavigation(address) != DashboardNavigationTarget.ExternalWeb) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo(address) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("webview", "Failed to open external web link.", ex);
+            ShowDashboardNotice("无法打开链接，请检查系统默认浏览器。");
+        }
     }
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        var current = _webView?.CoreWebView2;
+        if (!_webViewTrust.CanReceiveMessage(sender, current, e.Source, current?.Source))
+        {
+            // Do not log untrusted payloads or URLs, which may contain credentials.
+            HostOperationLogger.Info("host-bridge", "Rejected message from an untrusted or obsolete document.");
+            return;
+        }
+
         try
         {
             await _hostMessageRouter.RouteAsync(e.WebMessageAsJson);
@@ -572,43 +654,8 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             HostOperationLogger.Error("host-bridge", "Failed to process dashboard message.", ex);
-            await ShowDashboardNoticeAsync($"操作失败：{ex.Message}");
+            ShowDashboardNotice($"操作失败：{ex.Message}");
         }
-    }
-
-    private string BuildDashboardSettingsBootstrapScript()
-    {
-        var hasDashboardSettings = _settings.DashboardSettings is not null;
-        var settingsJson = JsonSerializer.Serialize(_settings.DashboardSettings ?? new Dictionary<string, string>(), HostBridgeJson.JsonOptions);
-        var shouldApply = hasDashboardSettings ? "true" : "false";
-
-        return "(() => {"
-            + $"const settings = {settingsJson};"
-            + $"const shouldApply = {shouldApply};"
-            + "window.__mihomoDashboardSettings = settings;"
-            + "window.__mihomoHasDashboardSettings = shouldApply;"
-            + "if (!shouldApply) return;"
-            + "const keys = Object.keys(settings || {});"
-            + "const keySet = new Set(keys);"
-            + "for (let i = localStorage.length - 1; i >= 0; i--) {"
-            + "  const key = localStorage.key(i);"
-            + "  if (key && key.startsWith('config/') && !keySet.has(key)) localStorage.removeItem(key);"
-            + "}"
-            + "for (const key of keys) {"
-            + "  const value = settings[key];"
-            + "  if (key.startsWith('config/') && typeof value === 'string') localStorage.setItem(key, value);"
-            + "}"
-            + "})();";
-    }
-
-    private static string GetString(JsonElement root, string propertyName, string fallback)
-    {
-        return HostBridgeJson.GetString(root, propertyName, fallback);
-    }
-
-    private static bool GetBool(JsonElement root, string propertyName, bool fallback)
-    {
-        return HostBridgeJson.GetBool(root, propertyName, fallback);
     }
 
     private void RunOnUiThread(Action action)
@@ -656,9 +703,9 @@ public sealed class MainForm : Form
         _statePublisher.SendState();
     }
 
-    private Task ShowDashboardNoticeAsync(string message)
+    private void ShowDashboardNotice(string message)
     {
-        return _statePublisher.ShowNoticeAsync(message);
+        _statePublisher.ShowNotice(message);
     }
 
     private void SendWindowChromeState()
@@ -683,7 +730,6 @@ public sealed class MainForm : Form
         }
 
         var suspendVersion = ++_dashboardSuspendVersion;
-        _statePublisher.StopRefreshTimer();
         _statePublisher.MarkDirty();
 
         try
@@ -737,7 +783,6 @@ public sealed class MainForm : Form
     {
         CancelDelayedDashboardDispose();
         _dashboardSuspendVersion++;
-        _statePublisher.StopRefreshTimer();
         _statePublisher.MarkDirty();
         _webViewSuspended = false;
         _dashboardInitialized = false;
@@ -780,7 +825,7 @@ public sealed class MainForm : Form
     private void PostDashboardMessage(object message)
     {
         var coreWebView = _webView?.CoreWebView2;
-        if (coreWebView is null)
+        if (coreWebView is null || !_webViewTrust.IsTrustedDocument(coreWebView.Source))
         {
             return;
         }
@@ -818,11 +863,11 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task OpenPathLocationAsync(string path, string label)
+    private void OpenPathLocation(string path, string label)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            await ShowDashboardNoticeAsync($"请先设置{label}路径。");
+            ShowDashboardNotice($"请先设置{label}路径。");
             return;
         }
 
@@ -846,11 +891,11 @@ public sealed class MainForm : Form
             {
                 UseShellExecute = true
             });
-            await ShowDashboardNoticeAsync($"{label}不存在，已打开所在文件夹。");
+            ShowDashboardNotice($"{label}不存在，已打开所在文件夹。");
             return;
         }
 
-        await ShowDashboardNoticeAsync($"找不到{label}所在位置。");
+        ShowDashboardNotice($"找不到{label}所在位置。");
     }
 
     protected override void OnLocationChanged(EventArgs e)
@@ -1040,6 +1085,7 @@ public sealed class MainForm : Form
             _host.LogReceived -= OnHostLogReceived;
             _host.IconCacheChanged -= OnHostIconCacheChanged;
             _host.NoticeRequested -= OnHostNoticeRequested;
+            _host.AppUpdateResultRequested -= OnAppUpdateResultRequested;
             DisposeDashboardView();
             _statePublisher.Dispose();
             _dashboardDisposeTimer.Dispose();

@@ -6,6 +6,7 @@
     :columns="providerColumns"
     sorting-key="config/rule-providers-table-sorting"
     :estimate-size="36"
+    :get-row-key="(provider: RuleProvider) => provider.name"
   />
   <VirtualTable
     v-else
@@ -15,6 +16,7 @@
     :column-visibility="ruleColumnVisibility"
     sorting-key="config/rules-table-sorting"
     :estimate-size="36"
+    :get-row-key="ruleRowKey"
     :row-class="ruleRowClass"
     @row-click="handlerRuleClick"
   />
@@ -43,6 +45,8 @@
 </template>
 
 <script setup lang="ts">
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession } from '@/helper/requestError'
 import { proxyGroupList } from '@/assembly/proxies'
 import {
   fetchRules,
@@ -81,6 +85,7 @@ const ruleColumnVisibility = computed(() => ({
   hitCount: hasRuleExtra.value,
   missCount: hasRuleExtra.value,
 }))
+const ruleRowKey = (rule: Rule) => rule.uuid || `${rule.type}:${rule.payload}:${rule.proxy}`
 const updatingProviders = ref<string[]>([])
 const togglingRules = ref<string[]>([])
 const selectedRule = ref<Rule | null>(null)
@@ -115,9 +120,12 @@ const updateProviderHandler = async (name: string) => {
   if (updatingProviders.value.includes(name)) return
 
   updatingProviders.value.push(name)
+  const session = captureBackendSession()
   try {
     await updateRuleProviderAPI(name)
-    await fetchRules()
+    if (session.isCurrent()) await fetchRules()
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     updatingProviders.value = updatingProviders.value.filter((item) => item !== name)
   }
@@ -128,8 +136,11 @@ const toggleRuleHandler = async (rule: Rule) => {
 
   if (togglingRules.value.includes(key)) return
   togglingRules.value.push(key)
+  const session = captureBackendSession()
   try {
     await toggleRuleDisabledWithSideEffects(rule)
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     togglingRules.value = togglingRules.value.filter((item) => item !== key)
   }

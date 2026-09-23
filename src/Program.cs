@@ -64,10 +64,12 @@ internal static class Program
 
             using (singleInstance!)
             {
-                WebViewDataMaintenance.PrepareForCurrentContent(
-                    AppSettings.AppDirectory,
-                    DashboardVersion.Current);
-                using var applicationContext = new DashboardApplicationContext(startMinimized, startCore);
+                var webViewContentUpdate = WebViewDataMaintenance.PlanForCurrentContent(
+                    AppSettings.AppDirectory);
+                using var applicationContext = new DashboardApplicationContext(
+                    startMinimized,
+                    startCore,
+                    webViewContentUpdate);
                 context = applicationContext;
                 if (Interlocked.Exchange(ref activationPending, 0) != 0)
                 {
@@ -76,6 +78,26 @@ internal static class Program
                 HostOperationLogger.Diagnostic("performance", $"host:applicationContextCreated durationMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0}");
                 Application.Run(applicationContext);
             }
+        }
+        catch (Exception exception) when (exception is AppSettingsLoadException or AppSettingsMigrationException)
+        {
+            HostOperationLogger.Critical("settings", "Settings could not be loaded or migrated; original retained.", exception);
+            MessageBox.Show(
+                "设置文件无法读取或完成安全迁移，原文件已保留，程序没有恢复默认设置或覆盖它。\n\n"
+                    + "请检查文件访问权限，并在恢复原文件或修复问题后重试。不要删除唯一副本。\n\n"
+                    + exception.Message,
+                "Dashboard 设置需要恢复",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        catch (DashboardOriginUnavailableException exception)
+        {
+            HostOperationLogger.Critical("startup", exception.Message, exception);
+            MessageBox.Show(
+                exception.Message,
+                "Dashboard 本地端口不可用",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
         catch (Exception exception)
         {

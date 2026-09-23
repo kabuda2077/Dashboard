@@ -13,7 +13,7 @@
     @mouseup="handleMouseUp"
     @mouseleave="handleMouseUp"
   >
-    <div :style="{ height: `${totalSize}px` }">
+    <div class="bg-base-100/80 min-w-min pb-6">
       <table
         :class="['table', sizeOfTable, isManualTable && 'table-fixed']"
         :style="
@@ -123,12 +123,13 @@
             </td>
           </tr>
           <tr
-            v-for="(virtualRow, index) in virtualRows"
+            v-if="paddingTop > 0"
+            :style="{ height: `${paddingTop}px` }"
+          ></tr>
+          <tr
+            v-for="virtualRow in virtualRows"
             :key="virtualRow.key.toString()"
-            :style="{
-              height: `${virtualRow.size}px`,
-              transform: `translateY(${virtualRow.start - index * virtualRow.size}px)`,
-            }"
+            :style="{ height: `${virtualRow.size}px` }"
             class="hover:bg-primary! hover:text-primary-content!"
             :class="[
               virtualRow.index % 2 === 0 ? 'bg-base-150' : 'bg-base-100',
@@ -201,6 +202,10 @@
               />
             </td>
           </tr>
+          <tr
+            v-if="paddingBottom > 0"
+            :style="{ height: `${paddingBottom}px` }"
+          ></tr>
         </tbody>
       </table>
     </div>
@@ -208,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import { normalizeConnectionFields, isSupportedConnectionField } from '@/helper/connectionFields'
 import {
   blockConnectionByIdAPI,
   disconnectByIdAPI,
@@ -230,6 +236,7 @@ import {
 } from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
+import { runManualRequest } from '@/helper/requestError'
 import {
   connectionFilter,
   connectionTabShow,
@@ -272,7 +279,7 @@ import {
   type SortingState,
 } from '@tanstack/vue-table'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import { useStorage } from '@vueuse/core'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
 import dayjs from 'dayjs'
 import { twMerge } from 'tailwind-merge'
 import { computed, h, ref, type VNode } from 'vue'
@@ -335,7 +342,7 @@ const columns: ColumnDef<Connection>[] = [
             const connection = row.original
 
             e.stopPropagation()
-            disconnectByIdAPI(connection.id)
+            void runManualRequest(() => disconnectByIdAPI(connection.id))
           },
         },
         [
@@ -354,7 +361,7 @@ const columns: ColumnDef<Connection>[] = [
               const connection = row.original
 
               e.stopPropagation()
-              blockConnectionByIdAPI(connection.id)
+              void runManualRequest(() => blockConnectionByIdAPI(connection.id))
             },
           },
           [
@@ -586,6 +593,7 @@ const tanstackTable = useVueTable({
     return renderConnections.value
   },
   columns,
+  getRowId: (row) => row.id,
   columnResizeMode: 'onChange',
   columnResizeDirection: 'ltr',
   state: {
@@ -609,19 +617,22 @@ const tanstackTable = useVueTable({
       }
     },
     get grouping() {
-      return grouping.value
+      return normalizeConnectionFields(grouping.value)
     },
     get expanded() {
       return expanded.value
     },
     get sorting() {
-      return sorting.value
+      return sorting.value.filter((entry) => isSupportedConnectionField(entry.id))
     },
     get columnSizing() {
       return columnWidthMap.value
     },
     get columnPinning() {
-      return columnPinning.value
+      return {
+        left: normalizeConnectionFields(columnPinning.value.left ?? []),
+        right: normalizeConnectionFields(columnPinning.value.right ?? []),
+      }
     },
   },
   onGroupingChange: (updater) => {
@@ -676,13 +687,18 @@ const rowVirtualizerOptions = computed(() => {
     count: rows.value.length,
     getScrollElement: () => parentRef.value,
     estimateSize: () => 36,
+    getItemKey: (index: number) => rows.value[index]?.id ?? index,
     overscan: 24,
   }
 })
 
 const rowVirtualizer = useVirtualizer(rowVirtualizerOptions)
 const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
-const totalSize = computed(() => rowVirtualizer.value.getTotalSize() + 24)
+const paddingTop = computed(() => virtualRows.value[0]?.start ?? 0)
+const paddingBottom = computed(() => {
+  const last = virtualRows.value[virtualRows.value.length - 1]
+  return last ? rowVirtualizer.value.getTotalSize() - last.end : 0
+})
 
 const classMap = {
   [TABLE_SIZE.SMALL]: 'table-xs',

@@ -4,6 +4,7 @@
     :columns="columns"
     sorting-key="config/logs-table-sorting"
     :estimate-size="36"
+    :get-row-key="(log: LogWithSeq) => log.seq"
     :row-class="rowClass"
     @row-click="handlerRowClick"
   />

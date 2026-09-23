@@ -111,12 +111,19 @@ describe('dashboard settings storage', () => {
 
   it('posts config settings to the desktop host bridge', async () => {
     vi.resetModules()
-    const postMessage = vi.fn()
+    const listeners = new Set<(event: MessageEvent) => void>()
+    const postMessage = vi.fn((message) => {
+      queueMicrotask(() => listeners.forEach((listener) => listener(new MessageEvent('message', {
+        data: { type: 'dashboardSettingsSaved', requestId: message.requestId, success: true },
+      }))))
+    })
     Object.defineProperty(window, 'chrome', {
       configurable: true,
       value: {
         webview: {
           postMessage,
+          addEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.add(listener),
+          removeEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.delete(listener),
         },
       },
     })
@@ -128,6 +135,7 @@ describe('dashboard settings storage', () => {
 
     expect(postMessage).toHaveBeenCalledWith({
       type: 'saveDashboardSettings',
+      requestId: expect.any(String),
       settings: {
         'config/default-theme': '"light"',
       },

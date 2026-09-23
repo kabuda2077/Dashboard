@@ -107,6 +107,7 @@
 <script setup lang="ts">
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, DETAILED_CARD_STYLE, SIMPLE_CARD_STYLE } from '@/constant'
 import { connectionCardLines } from '@/store/settings'
+import { connectionFieldOptions } from '@/helper/connectionFields'
 import { Bars2Icon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 import Draggable from 'vuedraggable'
@@ -114,7 +115,7 @@ import Draggable from 'vuedraggable'
 const restOfColumns = ref<CONNECTIONS_TABLE_ACCESSOR_KEY[]>([])
 
 const setRestOfColumns = () => {
-  restOfColumns.value = Object.values(CONNECTIONS_TABLE_ACCESSOR_KEY).filter(
+  restOfColumns.value = connectionFieldOptions.filter(
     (key) => !connectionCardLines.value.flat().includes(key),
   )
 }

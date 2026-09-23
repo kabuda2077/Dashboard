@@ -15,6 +15,8 @@ internal sealed class MihomoApiUpgradeException(string userMessage, string diagn
 internal static class MihomoApiUpdater
 {
     private static readonly TimeSpan UpgradeTimeout = TimeSpan.FromMinutes(10);
+    // Auth is set per request, so one shared client serves every core/secret.
+    private static readonly HttpClient SharedClient = new() { Timeout = UpgradeTimeout };
     private static readonly Regex VersionPattern = new(
         @"(?:version\s+)?(?<version>v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -24,11 +26,7 @@ internal static class MihomoApiUpdater
         string secret,
         CancellationToken cancellationToken = default)
     {
-        using var client = new HttpClient
-        {
-            Timeout = UpgradeTimeout
-        };
-        return await UpgradeAsync(client, apiUrl, secret, cancellationToken);
+        return await UpgradeAsync(SharedClient, apiUrl, secret, cancellationToken);
     }
 
     internal static async Task<MihomoApiUpgradeResult> UpgradeAsync(

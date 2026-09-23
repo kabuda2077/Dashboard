@@ -1,8 +1,48 @@
-/* Project-owned component styles. */
+/*
+ * 项目自有组件：不属于 daisyUI 也不属于第三方库的类。
+ * daisyUI 类的覆写请放 daisyui.css。
+ */
+
+/* ---------- 通用容器 ---------- */
 
 @utility base-container {
   @apply bg-base-100 overflow-hidden rounded-xl shadow-xs;
 }
+
+/* 页面包裹层的底色。刻意不用 bg-base-200 工具类：见 utilities/appearance.css 里的说明。 */
+.home-page {
+  @apply bg-base-200;
+}
+
+@utility floating-menu-panel {
+  @apply border-base-border bg-base-100 text-base-content fixed z-[100000] overflow-y-auto rounded-lg border p-1 shadow-lg;
+}
+
+@utility floating-menu-option {
+  @apply flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm transition-colors outline-none;
+}
+
+.floating-menu-enter-active,
+.floating-menu-leave-active {
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.floating-menu-enter-from,
+.floating-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-0.25rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-menu-enter-active,
+  .floating-menu-leave-active {
+    transition: none;
+  }
+}
+
+/* ---------- 底部 dock ---------- */
 
 .dock {
   @apply absolute right-2 left-2 z-30 rounded-3xl;
@@ -14,34 +54,9 @@
     inset 0 0 0 1px color-mix(in srgb, white 6%, transparent);
 }
 
-.settings-section-label {
-  @apply px-1 pt-5 pb-2 text-xs font-medium tracking-wider uppercase first:pt-2;
-  color: color-mix(in srgb, var(--color-base-content) 40%, transparent);
-}
-.settings-grid {
-  @apply bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl;
-}
-.setting-item {
-  @apply border-base-border flex min-h-11 items-center gap-3 border-b px-4;
-  &:last-child {
-    border-bottom: none;
-  }
-  .setting-item-label {
-    @apply shrink-0 grow text-sm;
-    svg {
-      @apply text-base-content/40 inline-block;
-    }
-  }
-}
+/* ---------- 侧栏 ---------- */
 
-/* 编辑模式下：已隐藏的设置项整体置灰，仅保留 +/- 控制可交互 */
-.setting-item:has(> .vis-toggle[data-hidden='true']) > :not(.vis-toggle) {
-  @apply pointer-events-none opacity-40;
-}
-.settings-category--hidden > .settings-category-body {
-  @apply pointer-events-none opacity-40;
-}
-
+/* 高亮完全交给滑动指示器（见 utilities/motion.css），因此清掉 daisyUI menu 自带的态背景 */
 .sidebar-route-menu > li > a:hover,
 .sidebar-route-menu > li > a:active,
 .sidebar-route-menu > li > a:focus-visible {
@@ -50,8 +65,38 @@
   box-shadow: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .loading-dots {
-    mask-image: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='4' cy='12' r='3'%3E%3Canimate attributeName='cy' values='12;6;12;12' keyTimes='0;0.286;0.571;1' dur='1.05s' repeatCount='indefinite' keySplines='.33,0,.66,.33;.33,.66,.66,1'/%3E%3C/circle%3E%3Ccircle cx='12' cy='12' r='3'%3E%3Canimate attributeName='cy' values='12;6;12;12' keyTimes='0;0.286;0.571;1' dur='1.05s' repeatCount='indefinite' keySplines='.33,0,.66,.33;.33,.66,.66,1' begin='0.1s'/%3E%3C/circle%3E%3Ccircle cx='20' cy='12' r='3'%3E%3Canimate attributeName='cy' values='12;6;12;12' keyTimes='0;0.286;0.571;1' dur='1.05s' repeatCount='indefinite' keySplines='.33,0,.66,.33;.33,.66,.66,1' begin='0.2s'/%3E%3C/circle%3E%3C/svg%3E");
+/* ---------- 设置页 ---------- */
+
+.settings-section-label {
+  @apply px-1 pt-5 pb-1.5 text-xs font-semibold tracking-wider uppercase first:pt-2;
+  color: color-mix(in srgb, var(--color-base-content) 60%, transparent);
+}
+.settings-grid {
+  @apply bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl;
+}
+.setting-item {
+  @apply border-base-border flex min-h-11 items-center gap-3 border-b px-4 py-2 outline-none;
+  &:last-child {
+    border-bottom: none;
   }
+  /*
+   * 允许收缩换行：控件（daisyUI 的 .toggle 等）自带 flex-shrink: 0，标签若也不收缩，
+   * 长文案会把整行撑成 max-content，控件被 .settings-grid 的 overflow-hidden 裁掉。
+   * 需要标签独占一行的场景（配合 flex-1 输入框）在用处显式写 shrink-0!。
+   */
+  .setting-item-label {
+    @apply min-w-0 flex-1 text-sm font-medium;
+    svg {
+      @apply text-base-content/40 inline-block;
+    }
+  }
+  .setting-item-summary {
+    @apply text-base-content/45 mt-0.5 block text-xs leading-4 font-normal;
+  }
+  &:focus-visible {
+    @apply ring-primary ring-2 ring-inset;
+  }
+}
+.settings-dependent-item {
+  @apply bg-base-200/25 pl-7;
 }

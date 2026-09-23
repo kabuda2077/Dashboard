@@ -29,6 +29,7 @@
 
 <script setup lang="ts">
 import { configs, updateConfigs } from '@/assembly/config'
+import { runManualRequest } from '@/helper/requestError'
 
 type PortKey = 'mixed-port' | 'port' | 'socks-port' | 'redir-port' | 'tproxy-port'
 
@@ -62,6 +63,6 @@ const ports: PortItem[] = [
 
 const handleChange = (key: PortKey, event: Event) => {
   const value = Number((event.target as HTMLInputElement).value)
-  updateConfigs({ [key]: Number.isNaN(value) ? 0 : value })
+  void runManualRequest(() => updateConfigs({ [key]: Number.isNaN(value) ? 0 : value }))
 }
 </script>

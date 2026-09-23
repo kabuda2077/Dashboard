@@ -1,0 +1,33 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        # Version comes from the packageManager field in dashboard-src/package.json.
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: dashboard-src/package.json
+
+      - name: Run checks
+        shell: powershell
+        run: .\tools\check.ps1 -Configuration Release

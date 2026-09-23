@@ -49,6 +49,11 @@
     </Content>
   </ItemGroup>
 
+  <Target Name="RequireDashboardAssets" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\resources\dashboard\index.html')"
+           Text="Dashboard UI is missing. Run tools/build-zashboard.ps1 before building or publishing .NET." />
+  </Target>
+
   <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />

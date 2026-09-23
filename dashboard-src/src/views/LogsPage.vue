@@ -8,6 +8,7 @@
       v-if="!isLogTable"
       :data="renderLogs"
       :size="44"
+      :get-item-key="getLogKey"
     >
       <template v-slot:before>
         <LogsCtrl />
@@ -121,4 +122,6 @@ const handlerConnectionClick = (connectionID: string) => {
   connectionLogID.value = connectionID
   connectionLogsDialogVisible.value = true
 }
+
+const getLogKey = (log: unknown) => (log as LogWithSeq).seq
 </script>

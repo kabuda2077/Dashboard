@@ -205,7 +205,6 @@
 
 <script setup lang="ts">
 import { deleteStorageAPI, setStorageAPI } from '@/assembly/storage'
-import { isSingBoxCore } from '@/assembly/version'
 import { hasHostBridge } from '@/composables/hostBridge'
 import {
   autoImportSettings,
@@ -220,6 +219,8 @@ import {
 import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { LOCAL_IMAGE } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
 import { useTooltip } from '@/helper/tooltip'
 import {
   applyDashboardSettingsToStorage,
@@ -227,7 +228,7 @@ import {
   exportSettings,
   getDashboardSettingsFromStorage,
 } from '@/helper/utils'
-import { customBackgroundURL, displayAllFeatures } from '@/store/settings'
+import { customBackgroundURL } from '@/store/settings'
 import {
   ArrowDownCircleIcon,
   ArrowDownTrayIcon,
@@ -254,9 +255,7 @@ withDefaults(
 const inputRef = ref<HTMLInputElement>()
 const dashboardSettingsDialogShow = ref(false)
 const isStorageSubmitting = ref(false)
-const showSyncSettings = computed(
-  () => !hasHostBridge && (!isSingBoxCore.value || displayAllFeatures.value),
-)
+const showSyncSettings = computed(() => !hasHostBridge)
 
 const { showTip } = useTooltip()
 const { t } = useI18n()
@@ -290,12 +289,13 @@ const importSettingsFromFile = () => {
 }
 const importSettingsFromUrlHandler = async () => {
   dashboardSettingsDialogShow.value = false
-  await importSettingsFromUrl({ force: true })
+  await runManualRequest(() => importSettingsFromUrl({ force: true }))
 }
 
 const handlerClickUploadSettings = async () => {
   if (isStorageSubmitting.value) return
 
+  const session = captureBackendSession()
   isStorageSubmitting.value = true
   try {
     dashboardSettingsDialogShow.value = false
@@ -312,6 +312,7 @@ const handlerClickUploadSettings = async () => {
     }
 
     await setStorageAPI(settings)
+    if (!session.isCurrent()) return
     showNotification({
       content: 'uploadSettingsSuccess',
       type: 'alert-success',
@@ -322,6 +323,8 @@ const handlerClickUploadSettings = async () => {
         type: 'alert-warning',
       })
     }
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     isStorageSubmitting.value = false
   }
@@ -330,6 +333,7 @@ const handlerClickUploadSettings = async () => {
 const handlerClickSyncSettings = async () => {
   if (isStorageSubmitting.value) return
 
+  const session = captureBackendSession()
   isStorageSubmitting.value = true
   try {
     dashboardSettingsDialogShow.value = false
@@ -337,6 +341,8 @@ const handlerClickSyncSettings = async () => {
       force: true,
       notify: true,
     })
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     isStorageSubmitting.value = false
   }
@@ -346,14 +352,18 @@ const handlerClickDeleteUploadedSettings = async () => {
   if (isStorageSubmitting.value) return
   if (!window.confirm(t('deleteUploadedSettingsConfirm'))) return
 
+  const session = captureBackendSession()
   isStorageSubmitting.value = true
   try {
     await deleteStorageAPI()
+    if (!session.isCurrent()) return
     dashboardSettingsDialogShow.value = false
     showNotification({
       content: 'deleteUploadedSettingsSuccess',
       type: 'alert-success',
     })
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     isStorageSubmitting.value = false
   }
@@ -365,7 +375,7 @@ watch(autoSyncSettings, async (value, oldValue) => {
   isStorageSubmitting.value = true
   try {
     dashboardSettingsDialogShow.value = false
-    await syncSettingsFromCore()
+    await runManualRequest(() => syncSettingsFromCore())
   } finally {
     isStorageSubmitting.value = false
   }
