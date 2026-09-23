@@ -62,10 +62,10 @@ foreach ($relativePath in $forbiddenFiles) {
     }
 }
 
-$mainTsPath = Join-Path $sourceRoot 'src\main.ts'
+$mainTsPath = Join-Path $sourceRoot 'src\appEntry.ts'
 $mainTs = Get-Content -LiteralPath $mainTsPath -Raw
-if ($mainTs -notmatch "import\s+['""]\./hostBootstrap['""]") {
-    throw "dashboard source check failed: src\main.ts must import ./hostBootstrap for desktop window drag/resize and host state"
+if ($mainTs -notmatch "import\s+['""]./hostBootstrap['""]") {
+    throw "dashboard source check failed: src\appEntry.ts must import ./hostBootstrap for desktop window drag/resize and host state"
 }
 
 $sidebarButtonsPath = Join-Path $sourceRoot 'src\components\sidebar\SidebarButtons.vue'
@@ -119,31 +119,8 @@ foreach ($pattern in @('OverviewCardSettingsDialog')) {
     }
 }
 
-$backendSettingsPath = Join-Path $sourceRoot 'src\components\settings\backend\BackendSettings.vue'
-$backendSettings = Get-Content -LiteralPath $backendSettingsPath -Raw
-$coreOperationMarkers = @(
-    '@click="handlerClickReloadConfigs"',
-    '@click="coreHostActions.restartCore"',
-    '@click="handleFlushDNSCache"',
-    '@click="handleFlushFakeIP"',
-    '@click="handlerClickUpdateGeo"',
-    '@click="coreHostActions.upgradeCore"'
-)
-$previousOperationIndex = -1
-foreach ($marker in $coreOperationMarkers) {
-    $operationIndex = $backendSettings.IndexOf($marker, [System.StringComparison]::Ordinal)
-    if ($operationIndex -lt 0 -or $operationIndex -le $previousOperationIndex) {
-        throw "dashboard source check failed: BackendSettings core operation buttons must keep the documented row-major order"
-    }
-    $previousOperationIndex = $operationIndex
-}
-$upgradeIndicatorPattern = '(?s)v-if="coreHostActions\?\.canUpgradeCore\.value".*?v-if="hostState\.coreUpdateAvailable".*?@click="coreHostActions\.upgradeCore"'
-if ($backendSettings -notmatch $upgradeIndicatorPattern) {
-    throw "dashboard source check failed: upgrade-core button must show the host core-update indicator"
-}
-if ($backendSettings -notmatch '<template v-if="!isSingBox">') {
-    throw "dashboard source check failed: sing-box must omit the update-GEO operation"
-}
+# Core operation order, sing-box GEO exclusion, and update indicators are
+# validated by mounted consumers in core-operation-controls.test.ts.
 
 $packageJson = Get-Content -LiteralPath (Join-Path $sourceRoot 'package.json') -Raw
 foreach ($pattern in @('@bufbuild/protobuf', '@connectrpc/connect', '@connectrpc/connect-web', '@xterm/xterm')) {
@@ -216,7 +193,7 @@ foreach ($pattern in @('upgradeUIAPI', 'handlerClickUpgradeUI', 'autoUpgradeDash
 }
 
 $runtimeFollowups = @{
-    'src\views\HomePage.vue' = @('stopConnections()', 'stopLogs()', 'stopSatistic()', 'if (!visible || !activeUuid.value) return')
+    'src\views\HomePage.vue' = @('stopConnections()', 'stopLogs()', 'stopSatistic()', 'if (!visible || !backendSessionReady.value) return')
     'src\api\clash.ts' = @('shallowRef<T>()')
     'src\assembly\connections\accessor.ts' = @('let lastKeys:', 'keys !== lastKeys')
     'src\assembly\logs\index.ts' = @('shallowRef<LogWithSeq[]>')
@@ -225,7 +202,6 @@ $runtimeFollowups = @{
     'src\helper\autoImportSettings.ts' = @('skipImportSettingsConfirm', 'skipSyncSettingsConfirm', 'dontAskAgainAlwaysApply')
     'src\components\common\ConfirmDialogHost.vue' = @('confirmDialogState.checkboxText', 'v-model="checked"')
     'src\assembly\connections\clash.ts' = @('shallowRef<ConnectionsSnapshot>()', 'metadata.processPath?.replace')
-    'src\components\proxies\ProxyNodeGrid.vue' = @('<TransitionGroup name="proxy-node">')
     'src\components\proxies\LatencyTag.vue' = @('<Transition name="latency-state">', 'shownLatency')
     'src\components\proxies\ProxyGroupHeader.vue' = @('showVisibilityTip', 'manageHiddenGroupShortcutTip')
     'src\components\rules\RuleCard.vue' = @('toggleRuleDisabledWithSideEffects', 'getRuleSize')
@@ -246,10 +222,17 @@ foreach ($entry in $runtimeFollowups.GetEnumerator()) {
 }
 
 $homePageRuntime = Get-Content -LiteralPath (Join-Path $sourceRoot 'src\views\HomePage.vue') -Raw
-foreach ($stopCall in @('stopConnections()', 'stopLogs()', 'stopSatistic()')) {
-    if ([regex]::Matches($homePageRuntime, [regex]::Escape($stopCall)).Count -lt 2) {
-        throw "dashboard source check failed: HomePage must stop '$stopCall' after backend removal and on unmount"
+if ($homePageRuntime -notmatch 'resetBackendRuntime\(\)') {
+    throw 'dashboard source check failed: HomePage must reset runtime data on session changes'
+}
+$runtimeReset = Get-Content -LiteralPath (Join-Path $sourceRoot 'src\helper\backendRuntime.ts') -Raw
+foreach ($resetCall in @('resetConnections()', 'resetLogs()', 'resetStatistics()', 'resetConfigs()', 'resetProxies()', 'resetRules()')) {
+    if ($runtimeReset -notmatch [regex]::Escape($resetCall)) {
+        throw "dashboard source check failed: backend runtime must include '$resetCall'"
     }
+}
+if ($homePageRuntime -notmatch '(?s)onUnmounted\(.*stopConnections\(\).*stopLogs\(\).*stopSatistic\(\)') {
+    throw 'dashboard source check failed: HomePage must stop all streams on unmount'
 }
 
 $textInputPath = Join-Path $sourceRoot 'src\components\common\TextInput.vue'
@@ -305,11 +288,17 @@ if (-not $imports -or $imports[-1] -ne './styles/dashboard-desktop.css') {
     throw "dashboard source check failed: dashboard-desktop.css must be the last import in src\assets\main.css"
 }
 
+# Shared settings primitives belong to components/app.css; desktop-specific
+# geometry and controls remain in the final override layer.
+$sharedCss = Get-Content -LiteralPath (Join-Path $sourceRoot 'src\assets\styles\components\app.css') -Raw
+foreach ($selector in @('.settings-section-label', '.settings-grid', '.setting-item')) {
+    if ($sharedCss -notmatch [regex]::Escape($selector)) {
+        throw "dashboard source check failed: missing shared selector: $selector"
+    }
+}
+
 $requiredSelectors = @(
-    '.settings-section-label',
     '.dashboard-section-title',
-    '.settings-grid',
-    '.setting-item',
     '.setting-panel-row',
     '.dashboard-input',
     '.dashboard-action-btn',

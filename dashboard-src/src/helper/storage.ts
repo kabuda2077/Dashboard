@@ -1,6 +1,28 @@
 import type { StorageLike, UseStorageOptions } from '@vueuse/core'
-import { useStorage as useVueUseStorage } from '@vueuse/core'
-import type { MaybeRefOrGetter } from 'vue'
+import { tryOnMounted, useStorage as useVueUseStorage } from '@vueuse/core'
+import { toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { notifyDashboardSettingsChanged } from './settingsChanges'
+
+// Keep native Storage identity: VueUse emits storage events for same-document
+// writes and also observes cross-document changes. A custom StorageLike wrapper
+// would switch it to document-local custom events and lose the latter.
+// Initialization/key changes can write defaults without an event, so notify
+// those paths explicitly. Normal writes are observed by dashboardSettingsSync.
+// Existing settings retain VueUse's writeDefaults behavior.
+export function useDashboardStorage<T>(
+  key: MaybeRefOrGetter<string>, defaults: MaybeRefOrGetter<T>,
+  storage?: StorageLike, options?: UseStorageOptions<T>,
+) {
+  const target = storage ?? localStorage
+  const value = useVueUseStorage(key, defaults, target, options)
+  if (target === localStorage) {
+    const notify = () => notifyDashboardSettingsChanged(toValue(key))
+    if (options?.initOnMounted) tryOnMounted(notify)
+    else notify()
+    if (typeof key !== 'string') watch(() => toValue(key), notify, { flush: 'post' })
+  }
+  return value
+}
 
 /**
  * vueuse 的 useStorage 默认 writeDefaults: true，初始化时会把默认值立刻写入
@@ -17,7 +39,7 @@ export function useStorage<T>(
   storage?: StorageLike,
   options?: UseStorageOptions<T>,
 ) {
-  return useVueUseStorage(key, defaults, storage, {
+  return useDashboardStorage(key, defaults, storage, {
     writeDefaults: false,
     ...options,
   })

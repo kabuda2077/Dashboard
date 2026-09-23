@@ -67,6 +67,7 @@
 <script setup lang="ts">
 import {
   getDefaultShortcutKey,
+  isShortcutActionAvailable,
   KEYBOARD_SHORTCUT_ACTION,
   KEYBOARD_SHORTCUTS,
   PAGE_SHORTCUT_ACTION_INDEX_MAP,
@@ -128,7 +129,7 @@ const shortcuts = computed(() => {
       key: getShortcutKey(action),
       label: KEYBOARD_SHORTCUTS[action].label,
     })),
-  ]
+  ].filter((item) => isShortcutActionAvailable(item.action))
 })
 
 const duplicateKeys = computed(() => {

@@ -1,5 +1,5 @@
 import type { Config } from '@/types'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
 const getConfigsAPIMock = vi.fn()
@@ -47,6 +47,11 @@ describe('backend runtime config switching', () => {
     vi.resetModules()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+    Reflect.deleteProperty(window, 'chrome')
+  })
+
   it('loads the new core immediately and ignores the old pending response', async () => {
     const oldRequest = deferred<{ data: Config }>()
     const newRequest = deferred<{ data: Config }>()
@@ -87,6 +92,78 @@ describe('backend runtime config switching', () => {
     await Promise.resolve()
     expect(runtimeConfig.configs.value['allow-lan']).toBe(true)
     expect(runtimeConfig.configsLoadedBackendUuid.value).toBe('desktop-core')
+
+    scope.stop()
+  })
+
+  it('stays idle without a backend and does not request config', async () => {
+    const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
+    const scope = effectScope()
+    const runtime = scope.run(() => useBackendRuntimeConfig())!
+
+    expect(runtime.configStatus.value).toBe('idle')
+    expect(runtime.tunState.value.visible).toBe(false)
+    expect(getConfigsAPIMock).not.toHaveBeenCalled()
+
+    scope.stop()
+  })
+
+  it('retries config loading while preserving a host-provided read-only TUN state', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(window, 'chrome', {
+      configurable: true,
+      value: { webview: { postMessage: vi.fn() } },
+    })
+    getConfigsAPIMock
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce({ data: config(false) })
+
+    const bridge = await import('@/composables/hostBridge')
+    bridge.applyHostState({
+      coreType: 'sing-box',
+      apiUrl: 'http://localhost:9090',
+      processId: 1,
+      isRunning: true,
+      readOnlyTunEnabled: true,
+    })
+    const setup = await import('@/store/setup')
+    setup.backendList.value = [
+      {
+        type: 'clash',
+        protocol: 'http',
+        host: 'localhost',
+        port: '9090',
+        secondaryPath: '',
+        password: '',
+        uuid: 'desktop-core',
+        disableTunMode: true,
+        readOnlyTunEnabled: true,
+      },
+    ]
+    setup.activeUuid.value = 'desktop-core'
+
+    const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
+    const scope = effectScope()
+    const runtime = scope.run(() => useBackendRuntimeConfig())!
+
+    await vi.waitFor(() => expect(getConfigsAPIMock).toHaveBeenCalledTimes(1))
+    expect(runtime.tunState.value).toMatchObject({
+      visible: true,
+      writable: false,
+      enabled: true,
+      source: 'host',
+    })
+
+    await vi.advanceTimersByTimeAsync(800)
+    await vi.waitFor(() => expect(getConfigsAPIMock).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(runtime.configStatus.value).toBe('ready'))
+    expect(runtime.tunState.value).toEqual({
+      visible: true,
+      writable: false,
+      loading: false,
+      enabled: true,
+      source: 'host',
+    })
 
     scope.stop()
   })

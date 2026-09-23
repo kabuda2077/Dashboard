@@ -4,6 +4,7 @@ import { omit } from 'lodash'
 import { v4 as uuid } from 'uuid'
 import { computed, ref } from 'vue'
 import { sourceIPLabelList } from './settings'
+import { hasHostBridge, hostState } from '@/composables/hostBridge'
 
 // 清理旧版本留下的 native 后端；桌面版只保留 Clash-compatible API。
 type LegacyBackend = Omit<Partial<Backend>, 'type'> & {
@@ -20,7 +21,24 @@ const migrateBackendList = (list: LegacyBackend[]): Backend[] => {
     }))
 }
 
-export const backendList = useStorage<Backend[]>('setup/api-list', [])
+// Desktop credentials live only in memory. Persist endpoint identity so history
+// and label scopes retain their UUID across WebView recreation and app upgrades.
+const desktopBackendSerializer = {
+  read: (raw: string): Backend[] => JSON.parse(raw).map((backend: Backend) => ({ ...backend, password: '' })),
+  write: (backends: Backend[]) => JSON.stringify(backends.map(({ password: _password, ...backend }) => backend)),
+}
+if (hasHostBridge) {
+  const legacy = localStorage.getItem('setup/api-list')
+  if (legacy) {
+    // No backup copy: the host settings file remains the credential authority.
+    // Malformed data is retained for recovery; it is never used as credentials.
+    try {
+      localStorage.setItem('setup/api-list', desktopBackendSerializer.write(desktopBackendSerializer.read(legacy)))
+    } catch { /* VueUse falls back to defaults if the old list is unreadable. */ }
+  }
+}
+export const backendList = useStorage<Backend[]>('setup/api-list', [], undefined,
+  hasHostBridge ? { serializer: desktopBackendSerializer } : undefined)
 export const activeUuid = useStorage<string>('setup/active-uuid', '')
 
 const storedBackends = backendList.value as LegacyBackend[]
@@ -36,9 +54,10 @@ export const showBackendSettingsDialog = ref(false)
 export const toggleBackendSettingsDialog = () => {
   showBackendSettingsDialog.value = !showBackendSettingsDialog.value
 }
-export const activeBackend = computed(() =>
-  backendList.value.find((backend) => backend.uuid === activeUuid.value),
-)
+export const activeBackend = computed(() => {
+  if (hasHostBridge && (!hostState.value.apiUrl || hostState.value.secretDecryptionFailed)) return undefined
+  return backendList.value.find((backend) => backend.uuid === activeUuid.value)
+})
 
 export const switchActiveBackend = (direction: 1 | -1) => {
   if (backendList.value.length < 2) {
@@ -77,7 +96,12 @@ export const addBackend = (
   },
 ) => {
   const matchingBackends = backendList.value.filter((end) => isSameBackendEndpoint(end, backend))
-  const currentEnd = matchingBackends[0]
+  const currentEnd = matchingBackends[0] ?? (options?.replaceExisting
+    ? backendList.value.find((saved) => (saved.uuid === activeUuid.value || hasHostBridge)
+      && saved.protocol === backend.protocol && saved.host === backend.host
+      && saved.port === backend.port && saved.secondaryPath === backend.secondaryPath
+      && saved.type === backend.type)
+    : undefined)
 
   if (currentEnd) {
     if (options?.replaceExisting) {

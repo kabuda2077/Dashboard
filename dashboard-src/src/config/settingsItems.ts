@@ -186,23 +186,6 @@ export function getItemKeysByCategory(categoryKey: SETTINGS_MENU_KEY): string[] 
   return category ? category.items.map((item) => item.key) : []
 }
 
-/**
- * Returns the category key plus all item keys for that category.
- * Use when you need both the top-level menu key and all sub-item keys (e.g. getAllSettingKeys).
- */
-export function getAllKeysForCategory(categoryKey: SETTINGS_MENU_KEY): string[] {
-  const category = SETTINGS_CATEGORIES.find((c) => c.key === categoryKey)
-  if (!category) return []
-  return [category.key, ...category.items.map((item) => item.key)]
-}
-
-/**
- * Returns all setting keys (category keys and item keys) across all categories.
- */
-export function getAllSettingKeys(): string[] {
-  return SETTINGS_CATEGORIES.flatMap((c) => getAllKeysForCategory(c.key))
-}
-
 /** Key map for general settings: label -> full key. Use with useIsSettingVisible(KEY_MAP.item). */
 export const GENERAL_ITEM_KEYS = keyMapByLabel(SETTINGS_MENU_KEY.general)
 /** Key map for overview settings. */

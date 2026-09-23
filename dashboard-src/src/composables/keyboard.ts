@@ -1,3 +1,5 @@
+import { hasHostBridge } from '@/composables/hostBridge'
+import { ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { showNotification } from '@/helper/notification'
 import { getLabelFromBackend } from '@/helper/utils'
@@ -86,6 +88,11 @@ export const KEYBOARD_SHORTCUTS = {
     label: 'keyboardShortcutPageName',
   },
 } as const
+
+export const isShortcutActionAvailable = (action: string) =>
+  !hasHostBridge ||
+  (action !== KEYBOARD_SHORTCUT_ACTION.BACKEND_PREVIOUS &&
+    action !== KEYBOARD_SHORTCUT_ACTION.BACKEND_NEXT)
 
 export const normalizeShortcutKey = (key: string) => {
   if (key === ' ') {
@@ -182,7 +189,7 @@ export const useKeyboard = () => {
 
   const shortcutActionMap = computed(() => {
     const entries = new Map<string, string>()
-    const actions = Object.keys(KEYBOARD_SHORTCUTS)
+    const actions = Object.keys(KEYBOARD_SHORTCUTS).filter(isShortcutActionAvailable)
 
     for (const action of actions) {
       const key = getShortcutKey(action)
@@ -199,8 +206,11 @@ export const useKeyboard = () => {
   const handleKeydown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null
     if (
+      event.defaultPrevented ||
+      event.isComposing ||
       target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
       target?.isContentEditable
     ) {
       return
@@ -249,7 +259,11 @@ export const useKeyboard = () => {
 
     if (action === KEYBOARD_SHORTCUT_ACTION.BACKEND_OPEN_SETTINGS) {
       event.preventDefault()
-      toggleBackendSettingsDialog()
+      if (hasHostBridge) {
+        void router.push({ name: ROUTE_NAME.core, query: { scrollTo: SETTINGS_MENU_KEY.backend } })
+      } else {
+        toggleBackendSettingsDialog()
+      }
       return
     }
 

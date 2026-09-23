@@ -1,6 +1,7 @@
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
-import { useStorage } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { computed, ref, watch } from 'vue'
+import { isSupportedConnectionField } from '@/helper/connectionFields'
 
 export type ConnectionCardGroupKey =
   | CONNECTIONS_TABLE_ACCESSOR_KEY.Type
@@ -34,15 +35,16 @@ export const CONNECTION_CARD_GROUPABLE_KEYS: ConnectionCardGroupKey[] = [
   CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP,
   CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress,
   CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser,
-  CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol,
-  CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType,
-  CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound,
 ]
 
 export const connectionCardGroupKey = useStorage<ConnectionCardGroupKey | null>(
   'config/connection-card-group-key',
   null,
 )
+
+watch(connectionCardGroupKey, (key) => {
+  if (key && !isSupportedConnectionField(key)) connectionCardGroupKey.value = null
+}, { immediate: true, flush: 'sync' })
 
 const groupIds = ref<string[]>([])
 const expandedGroupIds = ref(new Set<string>())

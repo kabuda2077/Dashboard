@@ -10,6 +10,7 @@ import {
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
+import { runManualRequest } from '@/helper/requestError'
 import {
   connectionFilter,
   connections,
@@ -48,10 +49,10 @@ import SourceIPFilter from './SourceIPFilter.vue'
 
 const handlerClickCloseAll = () => {
   if (renderConnections.value.length === connections.value.length) {
-    disconnectAllAPI()
+    void runManualRequest(() => disconnectAllAPI())
   } else {
     renderConnections.value.forEach((conn) => {
-      disconnectByIdAPI(conn.id)
+      void runManualRequest(() => disconnectByIdAPI(conn.id))
     })
   }
 }

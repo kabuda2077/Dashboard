@@ -107,7 +107,7 @@ import {
   type VisibilityState,
 } from '@tanstack/vue-table'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import { useStorage } from '@vueuse/core'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 

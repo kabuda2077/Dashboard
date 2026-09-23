@@ -36,6 +36,44 @@ public sealed class ProxyGroupIconCacheTests
     }
 
     [Fact]
+    public async Task StaleExistingCacheScanDoesNotPublishOrMutateMap()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var configPath = Path.Combine(root, "config.yaml");
+        const string iconUrl = "https://example.test/a.png";
+        await File.WriteAllTextAsync(configPath, $"proxy-groups:\n  - name: A\n    icon: {iconUrl}\n");
+        var cache = new ProxyGroupIconCache(Path.Combine(root, "icon-cache"));
+        var fileName = InvokeGetCacheFileName(new Uri(iconUrl));
+        await File.WriteAllTextAsync(Path.Combine(cache.CacheDirectory, fileName), "cached");
+        var published = false;
+        cache.CacheChanged += (_, _) => published = true;
+
+        await cache.LoadExistingAsync(configPath, isCurrent: () => false);
+
+        Assert.False(published);
+        Assert.Empty(GetCachedFileKeys(cache));
+    }
+
+    [Fact]
+    public async Task ExistingCacheScanHonorsCancellationWithoutPublishing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var configPath = Path.Combine(root, "config.yaml");
+        await File.WriteAllTextAsync(configPath, "proxy-groups:\n  - name: A\n    icon: https://example.test/a.png\n");
+        var cache = new ProxyGroupIconCache(Path.Combine(root, "icon-cache"));
+        var published = false;
+        cache.CacheChanged += (_, _) => published = true;
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => cache.LoadExistingAsync(configPath, cancellation.Token));
+        Assert.False(published);
+    }
+
+    [Fact]
     public void MissingConfigProducesNoIconUrls()
     {
         var icons = ExtractIconUrls(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.yaml"));
@@ -58,7 +96,7 @@ public sealed class ProxyGroupIconCacheTests
     [InlineData("https://Example.TEST/icon.png", 1)]
     public void NonNormalizedIconUrlsAreRecordedUnderBothForms(string iconUrl, int expectedKeyCount)
     {
-        var cache = new ProxyGroupIconCache();
+        var cache = CreateCache();
 
         var changed = InvokeTryRecordCacheFile(cache, iconUrl, "cached.png");
         var keys = GetCachedFileKeys(cache);
@@ -84,7 +122,7 @@ public sealed class ProxyGroupIconCacheTests
     [Fact]
     public void NormalizedHostCaseCannotBeStoredSeparately()
     {
-        var cache = new ProxyGroupIconCache();
+        var cache = CreateCache();
         const string iconUrl = "https://Example.TEST/icon.png";
 
         InvokeTryRecordCacheFile(cache, iconUrl, "cached.png");
@@ -98,12 +136,27 @@ public sealed class ProxyGroupIconCacheTests
     [Fact]
     public void RecordingTheSameIconTwiceReportsNoChange()
     {
-        var cache = new ProxyGroupIconCache();
+        var cache = CreateCache();
         const string iconUrl = "https://Example.TEST/icon.png";
 
         Assert.True(InvokeTryRecordCacheFile(cache, iconUrl, "cached.png"));
         Assert.False(InvokeTryRecordCacheFile(cache, iconUrl, "cached.png"));
         Assert.True(InvokeTryRecordCacheFile(cache, iconUrl, "different.png"));
+    }
+
+    private static ProxyGroupIconCache CreateCache()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"), "icon-cache");
+        return new ProxyGroupIconCache(directory);
+    }
+
+    private static string InvokeGetCacheFileName(Uri uri)
+    {
+        var method = typeof(ProxyGroupIconCache).GetMethod(
+            "GetCacheFileName",
+            BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new MissingMethodException(typeof(ProxyGroupIconCache).FullName, "GetCacheFileName");
+        return (string)method.Invoke(null, [uri])!;
     }
 
     private static bool InvokeTryRecordCacheFile(ProxyGroupIconCache cache, string iconUrl, string fileName)

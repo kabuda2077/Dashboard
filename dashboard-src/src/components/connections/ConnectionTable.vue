@@ -213,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import { normalizeConnectionFields, isSupportedConnectionField } from '@/helper/connectionFields'
 import {
   blockConnectionByIdAPI,
   disconnectByIdAPI,
@@ -235,6 +236,7 @@ import {
 } from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
+import { runManualRequest } from '@/helper/requestError'
 import {
   connectionFilter,
   connectionTabShow,
@@ -277,7 +279,7 @@ import {
   type SortingState,
 } from '@tanstack/vue-table'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import { useStorage } from '@vueuse/core'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
 import dayjs from 'dayjs'
 import { twMerge } from 'tailwind-merge'
 import { computed, h, ref, type VNode } from 'vue'
@@ -340,7 +342,7 @@ const columns: ColumnDef<Connection>[] = [
             const connection = row.original
 
             e.stopPropagation()
-            disconnectByIdAPI(connection.id)
+            void runManualRequest(() => disconnectByIdAPI(connection.id))
           },
         },
         [
@@ -359,7 +361,7 @@ const columns: ColumnDef<Connection>[] = [
               const connection = row.original
 
               e.stopPropagation()
-              blockConnectionByIdAPI(connection.id)
+              void runManualRequest(() => blockConnectionByIdAPI(connection.id))
             },
           },
           [
@@ -615,19 +617,22 @@ const tanstackTable = useVueTable({
       }
     },
     get grouping() {
-      return grouping.value
+      return normalizeConnectionFields(grouping.value)
     },
     get expanded() {
       return expanded.value
     },
     get sorting() {
-      return sorting.value
+      return sorting.value.filter((entry) => isSupportedConnectionField(entry.id))
     },
     get columnSizing() {
       return columnWidthMap.value
     },
     get columnPinning() {
-      return columnPinning.value
+      return {
+        left: normalizeConnectionFields(columnPinning.value.left ?? []),
+        right: normalizeConnectionFields(columnPinning.value.right ?? []),
+      }
     },
   },
   onGroupingChange: (updater) => {

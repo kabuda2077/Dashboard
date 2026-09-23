@@ -1,8 +1,6 @@
 // 组装层 · connection 字段访问器。
-// 每种后端(clash / sing-box native)各实现一份 ConnectionAccessor,直接从「原始数据」
-// 读取/派生 view 需要的字段 —— 不再把 sing-box 塑造成 clash 形状。
-// createGetConnectionDisplayValue 基于某一份 accessor 生成对应后端的 getConnectionDisplayValue,
-// 由 index.ts 门面按当前后端动态选用。
+// 当前两种核心均通过 Clash-compatible API 读取连接。
+// accessor 从快照读取/派生展示字段，历史 native 字段仅保留旧配置键兼容。
 import { getGeoIPInfoSync } from '@/api/geoip'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
 import { getIPLabelFromMap } from '@/helper/sourceip'
@@ -44,7 +42,7 @@ export interface ConnectionAccessor {
   inboundUser(connection: Connection): string
   sniffHost(connection: Connection): string
   remoteAddress(connection: Connection): string
-  // 以下三项为 sing-box 原生字段;clash 无对应数据,返回空串(展示为 '-')。
+  // 历史 native 字段：当前适配器返回空串，不再提供为列/卡片/分组选项。
   protocol(connection: Connection): string
   outboundType(connection: Connection): string
   fromOutbound(connection: Connection): string

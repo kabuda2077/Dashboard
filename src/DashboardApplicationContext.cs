@@ -12,6 +12,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private readonly Icon _trayIconImage;
     private readonly NotifyIcon _trayIcon;
     private readonly bool _startMinimized;
+    private readonly WebViewContentUpdate _webViewContentUpdate;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private MainForm? _mainForm;
     private TrayMenuForm? _trayMenu;
@@ -20,9 +21,13 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private bool _exiting;
     private bool _disposed;
 
-    public DashboardApplicationContext(bool startMinimized, bool startCoreAfterLaunch)
+    public DashboardApplicationContext(
+        bool startMinimized,
+        bool startCoreAfterLaunch,
+        WebViewContentUpdate webViewContentUpdate)
     {
         _startMinimized = startMinimized;
+        _webViewContentUpdate = webViewContentUpdate;
         _ = _dispatcher.Handle;
         _host = new DashboardHost();
         _host.ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch;
@@ -45,7 +50,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         var willRelaunchElevated = WillRelaunchElevated(shouldStartCore, isAdministrator);
         if (!willRelaunchElevated)
         {
-            _ = Task.Run(_host.ReconcileAutostartAsync);
+            _ = RunStartupOperationsAsync(shouldStartCore);
         }
 
         if (!startMinimized && !willRelaunchElevated)
@@ -53,15 +58,29 @@ internal sealed class DashboardApplicationContext : ApplicationContext
             ShowMainWindow();
         }
 
-        if (shouldStartCore)
+        if (willRelaunchElevated)
         {
-            _ = Task.Run(() => _host.StartCore());
+            _host.StartCore();
         }
 
         _ = RunAutomaticUpdateCheckAsync(_lifetimeCancellation.Token);
     }
 
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
+
+    private Task RunStartupOperationsAsync(bool shouldStartCore) =>
+        RunStartupOperationsAsync(shouldStartCore, () => _host.StartCore(), _host.ReconcileAutostartAsync);
+
+    internal static async Task RunStartupOperationsAsync(
+        bool shouldStartCore,
+        Action startCore,
+        Func<Task> reconcileAutostartAsync)
+    {
+        // Starting and autostart reconciliation share the core configuration gate.
+        // Keep their order explicit so reconciliation cannot reject launch startup.
+        if (shouldStartCore) startCore();
+        await reconcileAutostartAsync();
+    }
 
     internal static bool WillRelaunchElevated(bool shouldStartCore, bool isAdministrator)
     {
@@ -116,7 +135,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
         if (_mainForm is null || _mainForm.IsDisposed)
         {
-            var form = new MainForm(_host);
+            var form = new MainForm(_host, _webViewContentUpdate);
             form.FormClosed += OnMainFormClosed;
             _mainForm = form;
             form.Show();
@@ -452,22 +471,45 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         }
     }
 
-    private void ExitApplication()
+    private async void ExitApplication()
     {
-        if (_exiting)
-        {
-            return;
-        }
+        if (_exiting) return;
 
         _exiting = true;
-        HostOperationLogger.Diagnostic("window-lifecycle", "context exit requested.");
+        HostOperationLogger.Diagnostic("window-lifecycle", "context exit requested; awaiting host shutdown.");
         _trayMenu?.Close();
-        if (_mainForm is { IsDisposed: false } form)
+        _trayIcon.Visible = false;
+        await CompleteExitAsync(
+            _host.ShutdownAsync,
+            () =>
+            {
+                if (_mainForm is { IsDisposed: false } form)
+                    form.CloseForApplicationExit();
+                _mainForm = null;
+            },
+            ExitThread);
+    }
+
+    internal static async Task CompleteExitAsync(
+        Func<Task> shutdownAsync,
+        Action closeWindows,
+        Action exitThread)
+    {
+        try
         {
-            form.CloseForApplicationExit();
+            // Keep the WinForms message loop alive while host operations complete;
+            // their existing UI-context continuations must remain runnable.
+            await shutdownAsync();
         }
-        _mainForm = null;
-        ExitThread();
+        catch (Exception ex)
+        {
+            HostOperationLogger.Error("shutdown", "Asynchronous host shutdown failed.", ex);
+        }
+        finally
+        {
+            closeWindows();
+            exitThread();
+        }
     }
 
     protected override void ExitThreadCore()
@@ -505,13 +547,14 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _host.ShouldKeepMinimizedForRelaunch = null;
         _trayIcon.Visible = false;
-        _trayIcon.Dispose();
-        _trayMenu?.Dispose();
-        _trayIconImage.Dispose();
-        _appIcon.Dispose();
-        _host.Dispose();
-        _lifetimeCancellation.Dispose();
-        _dispatcher.Dispose();
+        ShutdownResourceDisposer.DisposeAll(
+            ("Tray icon", _trayIcon.Dispose),
+            ("Tray menu", () => _trayMenu?.Dispose()),
+            ("Tray icon image", _trayIconImage.Dispose),
+            ("Application icon", _appIcon.Dispose),
+            ("Dashboard host", _host.Dispose),
+            ("Application lifetime cancellation", _lifetimeCancellation.Dispose),
+            ("UI dispatcher", _dispatcher.Dispose));
     }
 
     private static Icon LoadAppIcon()

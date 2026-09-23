@@ -1,4 +1,6 @@
 import { configs, updateConfigs } from '@/assembly/config'
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
 import { disconnectByIdAPI } from '@/assembly/connections'
 import {
   allProxiesLatencyTest,
@@ -63,14 +65,16 @@ export default defineComponent({
     const handlerClickUpdateAllProviders = async () => {
       if (isUpgrading.value) return
       isUpgrading.value = true
+      const session = captureBackendSession()
       try {
         await Promise.all(
           proxyProviederList.value.map((provider) => updateProxyProviderAPI(provider.name)),
         )
-        await fetchProxies()
-        isUpgrading.value = false
-      } catch {
-        await fetchProxies()
+        if (session.isCurrent()) await fetchProxies().catch(() => {})
+      } catch (error) {
+        notifyRequestErrorForSession(error, session)
+        if (session.isCurrent()) await fetchProxies().catch(() => {})
+      } finally {
         isUpgrading.value = false
       }
     }
@@ -92,14 +96,18 @@ export default defineComponent({
     })
 
     const handlerModeChange = (mode: string) => {
-      updateConfigs({ mode })
-      if (isSingBoxCore.value && automaticDisconnection.value) {
-        activeConnections.value.forEach((connection) => {
-          if (connection.rule.includes('clash_mode')) {
-            disconnectByIdAPI(connection.id)
-          }
-        })
-      }
+      const session = captureBackendSession()
+      void runManualRequest(async () => {
+        await updateConfigs({ mode })
+        if (!session.isCurrent()) return
+        if (isSingBoxCore.value && automaticDisconnection.value) {
+          activeConnections.value.forEach((connection) => {
+            if (connection.rule.includes('clash_mode')) {
+              void disconnectByIdAPI(connection.id).catch(() => {})
+            }
+          })
+        }
+      })
     }
 
     const handlerClickLatencyTestAll = async () => {

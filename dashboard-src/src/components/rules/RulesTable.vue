@@ -45,6 +45,8 @@
 </template>
 
 <script setup lang="ts">
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession } from '@/helper/requestError'
 import { proxyGroupList } from '@/assembly/proxies'
 import {
   fetchRules,
@@ -118,9 +120,12 @@ const updateProviderHandler = async (name: string) => {
   if (updatingProviders.value.includes(name)) return
 
   updatingProviders.value.push(name)
+  const session = captureBackendSession()
   try {
     await updateRuleProviderAPI(name)
-    await fetchRules()
+    if (session.isCurrent()) await fetchRules()
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     updatingProviders.value = updatingProviders.value.filter((item) => item !== name)
   }
@@ -131,8 +136,11 @@ const toggleRuleHandler = async (rule: Rule) => {
 
   if (togglingRules.value.includes(key)) return
   togglingRules.value.push(key)
+  const session = captureBackendSession()
   try {
     await toggleRuleDisabledWithSideEffects(rule)
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
   } finally {
     togglingRules.value = togglingRules.value.filter((item) => item !== key)
   }

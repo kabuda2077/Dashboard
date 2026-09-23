@@ -17,7 +17,7 @@ public sealed class DashboardServerTests
 
         using var server = new DashboardServer(root, Path.Combine(tempRoot, "icons"));
         using var client = new HttpClient();
-        var baseUri = server.Start();
+        var baseUri = server.StartForTests();
 
         var body = await client.GetStringAsync($"{baseUri.AbsoluteUri}%2e%2e%2Fsecret.txt");
 
@@ -37,11 +37,31 @@ public sealed class DashboardServerTests
 
         using var server = new DashboardServer(dashboardRoot, iconRoot);
         using var client = new HttpClient();
-        var baseUri = server.Start();
+        var baseUri = server.StartForTests();
 
         using var response = await client.GetAsync($"{baseUri.AbsoluteUri}__mihomo/icon-cache/%2e%2e%2Fsecret.svg");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public void LocalPortConflictFailsInsteadOfChangingTheWebViewOrigin()
+    {
+        var attemptedPort = 0;
+        var bindFailure = new System.Net.Sockets.SocketException(
+            (int)System.Net.Sockets.SocketError.AddressAlreadyInUse);
+
+        var exception = Assert.Throws<DashboardOriginUnavailableException>(() =>
+            DashboardServer.StartListener(port =>
+            {
+                attemptedPort = port;
+                throw bindFailure;
+            }));
+
+        Assert.Equal(33291, attemptedPort);
+        Assert.Equal("http://127.0.0.1:33291/", DashboardServer.DashboardOrigin.AbsoluteUri);
+        Assert.Same(bindFailure, exception.InnerException);
+        Assert.Contains("saved preferences and history", exception.Message);
     }
 
     [Fact]
@@ -56,7 +76,7 @@ public sealed class DashboardServerTests
 
         using var server = new DashboardServer(dashboardRoot, Path.Combine(tempRoot, "icons"));
         using var client = new HttpClient();
-        var baseUri = server.Start();
+        var baseUri = server.StartForTests();
 
         using var response = await client.GetAsync($"{baseUri.AbsoluteUri}assets/index-abc123.js");
 
@@ -77,7 +97,7 @@ public sealed class DashboardServerTests
 
         using var server = new DashboardServer(dashboardRoot, Path.Combine(tempRoot, "icons"));
         using var client = new HttpClient();
-        var baseUri = server.Start();
+        var baseUri = server.StartForTests();
 
         using var first = await client.GetAsync($"{baseUri.AbsoluteUri}assets/index-abc123.js");
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUri.AbsoluteUri}assets/index-abc123.js");

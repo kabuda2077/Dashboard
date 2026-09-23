@@ -45,6 +45,8 @@
 </template>
 
 <script setup lang="ts">
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession } from '@/helper/requestError'
 import { updateRuleProviderAPI } from '@/assembly/rules'
 import HighlightText from '@/components/common/HighlightText.vue'
 import { useBounceOnVisible } from '@/composables/bouncein'
@@ -64,9 +66,15 @@ const updateRuleProviderClickHandler = async () => {
   if (isUpdating.value) return
 
   isUpdating.value = true
-  await updateRuleProviderAPI(props.ruleProvider.name)
-  fetchRules()
-  isUpdating.value = false
+  const session = captureBackendSession()
+  try {
+    await updateRuleProviderAPI(props.ruleProvider.name)
+    if (session.isCurrent()) await fetchRules()
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
+  } finally {
+    isUpdating.value = false
+  }
 }
 
 useBounceOnVisible()

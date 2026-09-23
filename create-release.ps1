@@ -22,11 +22,19 @@ if ($SkipDashboardBuild) {
 }
 
 powershell @buildArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "Dashboard build failed with exit code $LASTEXITCODE; release packaging cancelled."
+}
 
 $publishDir = Join-Path $repoRoot "artifacts\publish\Dashboard-$Configuration-$Runtime"
 if (-not (Test-Path $publishDir)) {
     throw "Publish directory not found: $publishDir"
 }
+
+if (-not (Test-Path -LiteralPath (Join-Path $publishDir 'Dashboard.exe') -PathType Leaf)) {
+    throw "Published Dashboard.exe is missing: $publishDir"
+}
+& (Join-Path $repoRoot 'tools\assert-dashboard-assets.ps1') -Path (Join-Path $publishDir 'resources\dashboard')
 
 $releaseDir = Join-Path $repoRoot 'artifacts\releases'
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
@@ -57,7 +65,7 @@ Install:
 4. Run Dashboard.exe.
 
 The package does not contain settings.json, mihomo, sing-box, or runtime logs.
-WebView data is cleared automatically when packaged content changes.
+Packaged content updates invalidate HTTP/cache storage and service workers while preserving WebView settings, labels, and connection history. The local origin remains http://127.0.0.1:33291/; a port conflict is reported instead of changing origins.
 "@ | Out-File -FilePath $releaseNotesPath -Encoding UTF8
 
 Write-Host "Release package created: $zipPath" -ForegroundColor Green

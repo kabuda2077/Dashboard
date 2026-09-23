@@ -1,4 +1,3 @@
-import { SETTINGS_CATEGORIES } from '@/config/settingsItems'
 import {
   ALL_THEME,
   CONNECTIONS_TABLE_ACCESSOR_KEY,
@@ -20,7 +19,6 @@ import {
   PROXY_PREVIEW_TYPE,
   PROXY_SEARCH_MODE,
   PROXY_SORT_TYPE,
-  SETTINGS_MENU_KEY,
   SPEEDTEST_MODE,
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
@@ -29,8 +27,9 @@ import {
 } from '@/constant'
 import { getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
-import { useStorage } from '@vueuse/core'
-import { computed } from 'vue'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { computed, watch } from 'vue'
+import { normalizeConnectionFields, normalizeConnectionCardLines } from '@/helper/connectionFields'
 
 const migrateLegacyStorageKey = (legacyKey: string, nextKey: string) => {
   if (typeof window === 'undefined') {
@@ -353,6 +352,18 @@ export const connectionCardLines = useStorage<CONNECTIONS_TABLE_ACCESSOR_KEY[][]
   DETAILED_CARD_STYLE,
 )
 
+// Normalize both stored preferences and later host/import updates before rendering.
+watch(connectionTableColumns, (fields) => {
+  const next = normalizeConnectionFields(fields)
+  if (next.length !== fields.length) {
+    connectionTableColumns.value = next.length ? next : [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]
+  }
+}, { immediate: true, deep: true, flush: 'sync' })
+watch(connectionCardLines, (lines) => {
+  const next = normalizeConnectionCardLines(lines)
+  if (JSON.stringify(next) !== JSON.stringify(lines)) connectionCardLines.value = next
+}, { immediate: true, deep: true, flush: 'sync' })
+
 export const sourceIPLabelList = useStorage<SourceIPLabel[]>('config/source-ip-label-list', [])
 
 // rules
@@ -379,13 +390,3 @@ export const hiddenSettingsItems = useStorage<Record<string, boolean>>(
   'config/hidden-settings-items',
   {},
 )
-
-// settings menu order
-// 存储设置菜单项的顺序
-export const settingsMenuOrder = useStorage<SETTINGS_MENU_KEY[]>(
-  'config/settings-menu-order',
-  SETTINGS_CATEGORIES.map((category) => category.key),
-)
-
-// settings page two columns mode
-export const settingsPageTwoColumns = useStorage<boolean>('config/settings-page-two-columns', true)

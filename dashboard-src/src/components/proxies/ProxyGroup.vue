@@ -27,7 +27,7 @@
         :nodes="renderProxies"
         :now="proxyGroup.now"
         :groupName="proxyGroup.name"
-        @nodeclick="handlerProxySelect(name, $event)"
+        @nodeclick="runManualRequest(() => handlerProxySelect(name, $event))"
       />
     </template>
     <template v-slot:content>
@@ -46,6 +46,7 @@ import { useBounceOnVisible } from '@/composables/bouncein'
 import { useRenderProxyList } from '@/composables/renderProxies'
 import { isMiddleScreen } from '@/helper/utils'
 import { handlerProxySelect, proxyGroupLatencyTest } from '@/assembly/proxies'
+import { runManualRequest } from '@/helper/requestError'
 import { proxyMap } from '@/assembly/proxies'
 import { groupProxiesByProvider } from '@/store/settings'
 import { computed, ref } from 'vue'
