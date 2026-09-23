@@ -1,4 +1,3 @@
-import { SETTINGS_CATEGORIES } from '@/config/settingsItems'
 import {
   ALL_THEME,
   CONNECTIONS_TABLE_ACCESSOR_KEY,
@@ -20,7 +19,6 @@ import {
   PROXY_PREVIEW_TYPE,
   PROXY_SEARCH_MODE,
   PROXY_SORT_TYPE,
-  SETTINGS_MENU_KEY,
   SPEEDTEST_MODE,
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
@@ -29,8 +27,9 @@ import {
 } from '@/constant'
 import { getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
-import { useStorage } from '@vueuse/core'
-import { computed } from 'vue'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { computed, watch } from 'vue'
+import { normalizeConnectionFields, normalizeConnectionCardLines } from '@/helper/connectionFields'
 
 const migrateLegacyStorageKey = (legacyKey: string, nextKey: string) => {
   if (typeof window === 'undefined') {
@@ -92,18 +91,28 @@ export const theme = computed(() => {
 })
 export const customThemes = useStorage<THEME[]>('config/custom-themes', [])
 
-const replaceLegacyTheme = (theme: string, defaultTheme: string) => {
-  if (theme === 'dark-apple') {
-    return 'dark'
+const replaceLegacyTheme = (selectedTheme: string, fallback: string) => {
+  const legacyThemeReplacements: Record<string, string> = {
+    'dark-apple': 'dark',
+    lofi: 'light',
+    wireframe: 'light',
+    black: 'dark-neutral',
+    business: 'dark-neutral',
   }
-  if ([...ALL_THEME, ...customThemes.value.map((theme) => theme.name)].includes(theme)) {
-    return theme
+
+  if (selectedTheme in legacyThemeReplacements) {
+    return legacyThemeReplacements[selectedTheme]
   }
-  return defaultTheme
+  if ([...ALL_THEME, ...customThemes.value.map((item) => item.name)].includes(selectedTheme)) {
+    return selectedTheme
+  }
+  return fallback
 }
 
-defaultTheme.value = replaceLegacyTheme(defaultTheme.value, 'light')
-darkTheme.value = replaceLegacyTheme(darkTheme.value, 'dark')
+const migratedDefaultTheme = replaceLegacyTheme(defaultTheme.value, 'light')
+if (migratedDefaultTheme !== defaultTheme.value) defaultTheme.value = migratedDefaultTheme
+const migratedDarkTheme = replaceLegacyTheme(darkTheme.value, 'dark')
+if (migratedDarkTheme !== darkTheme.value) darkTheme.value = migratedDarkTheme
 
 export const language = useStorage<LANG>(
   'config/language',
@@ -142,8 +151,8 @@ export const emoji = useStorage<EMOJIS>(
   IS_APPLE_DEVICE ? EMOJIS.TWEMOJI : EMOJIS.NOTO_COLOR_EMOJI,
 )
 export const customBackgroundURL = useStorage('config/custom-background-image', '')
+export const customCSS = useStorage('config/custom-css', '')
 export const dashboardTransparent = useStorage('config/dashboard-transparent', 90)
-export const autoUpgradeDashboard = useStorage('config/auto-upgrade', false)
 export const checkUpgradeCore = useStorage('config/check-upgrade-core', true)
 export const autoUpgradeCore = useStorage('config/auto-upgrade-core', false)
 export const swipeInPages = useStorage('config/swipe-in-pages', true)
@@ -343,6 +352,18 @@ export const connectionCardLines = useStorage<CONNECTIONS_TABLE_ACCESSOR_KEY[][]
   DETAILED_CARD_STYLE,
 )
 
+// Normalize both stored preferences and later host/import updates before rendering.
+watch(connectionTableColumns, (fields) => {
+  const next = normalizeConnectionFields(fields)
+  if (next.length !== fields.length) {
+    connectionTableColumns.value = next.length ? next : [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]
+  }
+}, { immediate: true, deep: true, flush: 'sync' })
+watch(connectionCardLines, (lines) => {
+  const next = normalizeConnectionCardLines(lines)
+  if (JSON.stringify(next) !== JSON.stringify(lines)) connectionCardLines.value = next
+}, { immediate: true, deep: true, flush: 'sync' })
+
 export const sourceIPLabelList = useStorage<SourceIPLabel[]>('config/source-ip-label-list', [])
 
 // rules
@@ -369,13 +390,3 @@ export const hiddenSettingsItems = useStorage<Record<string, boolean>>(
   'config/hidden-settings-items',
   {},
 )
-
-// settings menu order
-// 存储设置菜单项的顺序
-export const settingsMenuOrder = useStorage<SETTINGS_MENU_KEY[]>(
-  'config/settings-menu-order',
-  SETTINGS_CATEGORIES.map((category) => category.key),
-)
-
-// settings page two columns mode
-export const settingsPageTwoColumns = useStorage<boolean>('config/settings-page-two-columns', true)

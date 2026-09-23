@@ -4,8 +4,7 @@ namespace Dashboard;
 
 internal sealed class DashboardStatePublisher : IDisposable
 {
-    private const int MinRefreshIntervalMs = 150;
-    private const int MaxRefreshDelayMs = 1000;
+    private const int LogAppendIntervalMs = 150;
 
     private readonly Func<DashboardState> _buildState;
     private readonly Func<DashboardRuntimeState> _buildRuntimeState;
@@ -13,13 +12,10 @@ internal sealed class DashboardStatePublisher : IDisposable
     private readonly Func<bool> _hasDashboardWebView;
     private readonly Func<bool> _shouldHoldUpdates;
     private readonly Action<object> _postDashboardMessage;
-    private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = MinRefreshIntervalMs };
-    private readonly System.Windows.Forms.Timer _logAppendTimer = new() { Interval = MinRefreshIntervalMs };
+    private readonly System.Windows.Forms.Timer _logAppendTimer = new() { Interval = LogAppendIntervalMs };
     private readonly StringBuilder _pendingLogAppend = new();
-    private bool _stateRefreshPending;
     private bool _dashboardStateDirty;
     private string? _pendingNotice;
-    private DateTime _lastStateRefresh = DateTime.MinValue;
 
     public DashboardStatePublisher(
         Func<DashboardState> buildState,
@@ -35,54 +31,7 @@ internal sealed class DashboardStatePublisher : IDisposable
         _hasDashboardWebView = hasDashboardWebView;
         _shouldHoldUpdates = shouldHoldUpdates;
         _postDashboardMessage = postDashboardMessage;
-        _refreshTimer.Tick += (_, _) => RefreshNow();
         _logAppendTimer.Tick += (_, _) => FlushLogAppend();
-    }
-
-    public void QueueRefresh()
-    {
-        _stateRefreshPending = true;
-        if (_shouldHoldUpdates())
-        {
-            _dashboardStateDirty = true;
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        var elapsed = (now - _lastStateRefresh).TotalMilliseconds;
-
-        if (elapsed < MinRefreshIntervalMs)
-        {
-            if (!_refreshTimer.Enabled)
-            {
-                _refreshTimer.Interval = Math.Max(50, MinRefreshIntervalMs - (int)elapsed);
-                _refreshTimer.Start();
-            }
-        }
-        else if (elapsed > MaxRefreshDelayMs)
-        {
-            RefreshNow();
-        }
-        else if (!_refreshTimer.Enabled)
-        {
-            _refreshTimer.Interval = MinRefreshIntervalMs;
-            _refreshTimer.Start();
-        }
-    }
-
-    public void RefreshNow()
-    {
-        _refreshTimer.Stop();
-        _stateRefreshPending = false;
-        _lastStateRefresh = DateTime.UtcNow;
-
-        if (_shouldHoldUpdates())
-        {
-            _dashboardStateDirty = true;
-            return;
-        }
-
-        SendState();
     }
 
     public void SendState()
@@ -143,16 +92,15 @@ internal sealed class DashboardStatePublisher : IDisposable
         _postDashboardMessage(HostOutboundMessage.IconCacheUpdated(_buildIconCacheMap()));
     }
 
-    public Task ShowNoticeAsync(string message)
+    public void ShowNotice(string message)
     {
         if (_shouldHoldUpdates() || !_hasDashboardWebView())
         {
             _pendingNotice = message;
-            return Task.CompletedTask;
+            return;
         }
 
         _postDashboardMessage(HostOutboundMessage.Notice(message));
-        return Task.CompletedTask;
     }
 
     public void SendWindowChromeState(bool isMaximized)
@@ -167,14 +115,8 @@ internal sealed class DashboardStatePublisher : IDisposable
 
     public void MarkDirty()
     {
-        _dashboardStateDirty = true;
-    }
-
-    public void StopRefreshTimer()
-    {
-        _refreshTimer.Stop();
         _logAppendTimer.Stop();
-        _stateRefreshPending = false;
+        _dashboardStateDirty = true;
     }
 
     public void Flush()
@@ -184,9 +126,9 @@ internal sealed class DashboardStatePublisher : IDisposable
             return;
         }
 
-        if (_stateRefreshPending || _dashboardStateDirty)
+        if (_dashboardStateDirty)
         {
-            StopRefreshTimer();
+            _logAppendTimer.Stop();
             SendState();
             return;
         }
@@ -234,7 +176,6 @@ internal sealed class DashboardStatePublisher : IDisposable
 
     public void Dispose()
     {
-        _refreshTimer.Dispose();
         _logAppendTimer.Dispose();
     }
 }

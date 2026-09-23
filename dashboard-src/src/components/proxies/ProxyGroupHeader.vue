@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="relative flex w-full items-center gap-2.5 overflow-hidden">
     <ProxyName
       :name="name"
@@ -39,11 +39,10 @@
 
 <script setup lang="ts">
 import { KEYBOARD_SHORTCUT_ACTION, useKeyboardShortcuts } from '@/composables/keyboard'
+import { getDownloadSpeedByProxyGroup } from '@/composables/proxyGroupTraffic'
 import { isHiddenGroup } from '@/helper'
 import { checkTruncation, useTooltip } from '@/helper/tooltip'
 import { prettyBytesHelper } from '@/helper/utils'
-import { getConnectionChains } from '@/helper'
-import { activeConnections } from '@/store/connections'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { manageHiddenGroup, proxyGroupIconMargin, proxyGroupIconSize } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
@@ -70,11 +69,7 @@ const { getShortcutKey } = useKeyboardShortcuts()
 const { showTip } = useTooltip()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 
-const downloadTotal = computed(() => {
-  return activeConnections.value
-    .filter((conn) => getConnectionChains(conn).includes(props.name))
-    .reduce((total, conn) => total + conn.downloadSpeed, 0)
-})
+const downloadTotal = computed(() => getDownloadSpeedByProxyGroup(props.name))
 
 const hiddenGroup = computed({
   get: () => Boolean(isHiddenGroup(props.name)),
@@ -90,8 +85,8 @@ const visibilityToggleTip = computed(() => {
   return shortcut ? `${title}\n${t('manageHiddenGroupShortcutTip', { shortcut })}` : title
 })
 
-const showVisibilityTip = (event: Event) => {
-  showTip(event, visibilityToggleTip.value, {
+const showVisibilityTip = (e: Event) => {
+  showTip(e, visibilityToggleTip.value, {
     delay: [500, 0],
     trigger: 'mouseenter',
     touch: ['hold', 500],

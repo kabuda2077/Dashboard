@@ -56,6 +56,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.fonts`, label: 'fonts' },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.emoji`, label: 'emoji' },
+      { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.customCSS`, label: 'customCSS' },
       { key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.language`, label: 'language' },
       {
         key: `${SETTINGS_MENU_KEY.general}.autoDisconnectIdleUDP`,
@@ -87,10 +88,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: `${SETTINGS_MENU_KEY.general}.shortcuts`,
         label: 'keyboardShortcuts',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.general}.displayAllFeatures`,
-        label: 'displayAllFeatures',
       },
     ],
   },
@@ -187,23 +184,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
 export function getItemKeysByCategory(categoryKey: SETTINGS_MENU_KEY): string[] {
   const category = SETTINGS_CATEGORIES.find((c) => c.key === categoryKey)
   return category ? category.items.map((item) => item.key) : []
-}
-
-/**
- * Returns the category key plus all item keys for that category.
- * Use when you need both the top-level menu key and all sub-item keys (e.g. getAllSettingKeys).
- */
-export function getAllKeysForCategory(categoryKey: SETTINGS_MENU_KEY): string[] {
-  const category = SETTINGS_CATEGORIES.find((c) => c.key === categoryKey)
-  if (!category) return []
-  return [category.key, ...category.items.map((item) => item.key)]
-}
-
-/**
- * Returns all setting keys (category keys and item keys) across all categories.
- */
-export function getAllSettingKeys(): string[] {
-  return SETTINGS_CATEGORIES.flatMap((c) => getAllKeysForCategory(c.key))
 }
 
 /** Key map for general settings: label -> full key. Use with useIsSettingVisible(KEY_MAP.item). */

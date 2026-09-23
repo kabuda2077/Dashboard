@@ -48,6 +48,7 @@
       v-else
       :data="renderRules"
       :size="44"
+      :get-item-key="getRuleKey"
     >
       <template v-slot:before>
         <RulesCtrl />
@@ -93,4 +94,8 @@ const padding = computed(() =>
 const isVirtualScroller = computed(() => {
   return rulesTabShow.value === RULE_TAB_TYPE.RULES && renderRules.value.length > 200
 })
+const getRuleKey = (rule: unknown) => {
+  const item = rule as Rule
+  return item.uuid || `${item.type}:${item.payload}:${item.proxy}`
+}
 </script>

@@ -55,7 +55,7 @@ Dashboard 会在启动后自动检查 GitHub Release，也可以在内核页手�
 2. 解压新版 ZIP，将其中全部文件复制到原 Dashboard 目录并选择覆盖。
 3. 重新启动 `Dashboard.exe`。
 
-不要先删除整个 Dashboard 目录。发布包不包含 `settings.json`、`mihomo\`、`sing-box\` 和运行日志，直接覆盖会保留设置、内核及配置。程序检测到应用版本或内置前端资源变化后，会在创建 WebView2 前自动清理 `resources\EBWebView`，无需手动删除缓存。
+不要先删除整个 Dashboard 目录。发布包不包含 `settings.json`、`mihomo\`、`sing-box\` 和运行日志，直接覆盖会保留设置、内核及配置。内置前端更新会保留 WebView2 profile 中的偏好、标签和连接历史，只使可重建的 HTTP 缓存、Cache Storage 和旧 Service Worker 注册失效；前端版本化资源使用带 hash 的文件名，无需手动删除 profile 或缓存。桌面界面固定使用 `http://127.0.0.1:33291/` 以保持同一数据 origin；若该端口被其他程序占用，Dashboard 会明确报错而不会随机换端口隐藏已有数据。
 
 ## 内核配置
 
@@ -98,7 +98,8 @@ secret: ""
 - 支持启动后自动检查 Dashboard 更新，也可在内核页手动检查并打开 GitHub Release。
 - 支持当前用户开机自启，通过 `\Dashboard\Autostart` 计划任务在登录 5 秒后以最高权限静默启动托盘宿主。
 - 设置保存到便携目录旁的 `settings.json`。
-- Secret 使用 Windows DPAPI 保护。
+- 新保存的 Secret 仅以当前 Windows 用户的 DPAPI 密文保存；旧明文字段读取后经加密校验迁移，不再写回明文。迁移失败保留原设置文件并报告错误。
+- 桌面连接密码仅在内存中使用，浏览器存储只保留不含密码的连接标识；已知旧密码字段会迁移清理。这不保证抹除磁盘历史碎片，也不隐藏正常鉴权所需的内存凭证。
 
 ## 常见问题
 
@@ -110,6 +111,10 @@ secret: ""
 
 **内核已启动，但 Dashboard 无法连接 API。**  
 检查内核页面里的 API 地址是否和内核配置一致。大多数情况下是 `http://127.0.0.1:9090`。如果配置里设置了非空 `secret`，内核页面也要填同样的值。
+
+**移动到其他 Windows 用户或电脑后提示 Secret 无法解密。**
+
+DPAPI 凭证绑定当前 Windows 用户。到 Core 页面重新填写 Secret，确认替换后保存；确实没有 Secret 时可以明确确认留空。普通设置保存不会覆盖无法解密的原密文。设置文件损坏或迁移失败时不会自动恢复默认配置，请先保留原件并修复文件或权限。
 
 **TUN 启动失败或要求管理员权限。**  
 Windows 上 TUN 通常需要管理员权限。请以管理员身份启动 Dashboard，或允许应用弹出的 UAC 重启提示。
@@ -137,8 +142,8 @@ Dashboard 需要创建最高权限计划任务。任务创建并验证成功后�
 
 ```powershell
 pnpm --dir dashboard-src type-check
-powershell -ExecutionPolicy Bypass -File .\build.ps1 -Configuration Release -Runtime win-x64
-powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Configuration Release -Runtime win-x64
+powershell -ExecutionPolicy Bypass -File .\tools\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
 ```
 
 发布新版本前需要同步更新 `Dashboard.csproj` 中的 `Version` 和 `InformationalVersion`，并与 GitHub Release tag 保持一致。
@@ -147,9 +152,11 @@ powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboa
 
 - `src/`：Windows 桌面宿主。
 - `dashboard-src/`：基于 zashboard 的前端源码。
-- `resources/dashboard/`：构建后的前端静态资源。
-- `STYLE.md`：本项目 UI 规则。
-- `UPSTREAM_MERGE.md`：跟进 zashboard 上游时的检查清单。
+- `resources/dashboard/`：构建后的前端静态资源，由 `tools/build-zashboard.ps1` 生成，不纳入版本控制。新克隆的仓库需要先构建前端，再构建 .NET，否则产物里没有界面。`tools/build.ps1` 和 `tools/check.ps1` 已经按这个顺序执行。
+- [docs/architecture.md](docs/architecture.md)：当前职责、启动、会话和持久化边界。
+- [docs/style.md](docs/style.md)：本项目 UI 规则。
+- [docs/upstream-merge.md](docs/upstream-merge.md)：跟进 zashboard 上游的唯一操作入口。
+- [验证记录](docs/validation.md)：最终实施摘要与当前产物证据；[实机验收](docs/manual-acceptance.md)记录未完成项目，[性能记录](docs/performance.md)保留测量与优化取舍。
 
 ## 许可证
 

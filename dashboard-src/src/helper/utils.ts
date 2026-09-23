@@ -1,3 +1,4 @@
+import { notifyDashboardSettingsChanged } from './settingsChanges'
 import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
 import type { Backend } from '@/types'
 import { useMediaQuery } from '@vueuse/core'
@@ -42,6 +43,7 @@ export const applyDashboardSettingsToStorage = (settings: Record<string, unknown
   for (const key in settings) {
     if (isDashboardSettingKey(key) && typeof settings[key] === 'string') {
       localStorage.setItem(key, settings[key])
+      notifyDashboardSettingsChanged(key)
     }
   }
 }
@@ -55,6 +57,7 @@ export const clearDashboardSettingsFromStorage = () => {
     }
   }
   keysToReset.forEach((key) => localStorage.removeItem(key))
+  notifyDashboardSettingsChanged(null)
 }
 
 export const exportSettings = () => {

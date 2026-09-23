@@ -68,33 +68,19 @@ export default defineComponent({
       const types: string[] = []
       const levels: string[] = []
 
-      if (isSingBoxCore.value) {
-        for (const log of logs.value) {
+      for (const log of logs.value) {
+        let type: string
+        if (isSingBoxCore.value) {
           const startIndex = log.payload.startsWith('[') ? log.payload.indexOf(']') + 2 : 0
           const endIndex = log.payload.indexOf(':', startIndex)
-          const type = log.payload.slice(startIndex, endIndex + 1)
-
-          if (!types.includes(type)) {
-            types.push(type)
-          }
-
-          if (!levels.includes(log.type)) {
-            levels.push(log.type)
-          }
-        }
-      } else {
-        for (const log of logs.value) {
+          type = endIndex === -1 ? log.payload.slice(startIndex) : log.payload.slice(startIndex, endIndex + 1)
+        } else {
           const index = log.payload.indexOf(' ')
-          const type = index === -1 ? log.payload : log.payload.slice(0, index)
-
-          if (!types.includes(type)) {
-            types.push(type)
-          }
-
-          if (!levels.includes(log.type)) {
-            levels.push(log.type)
-          }
+          type = index === -1 ? log.payload : log.payload.slice(0, index)
         }
+
+        if (type && !types.includes(type)) types.push(type)
+        if (!levels.includes(log.type)) levels.push(log.type)
       }
 
       return {

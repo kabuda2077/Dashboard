@@ -1,17 +1,23 @@
 <template>
-  <div
-    class="input input-sm inline w-48 p-0"
-    @click="handlerDropdown"
+  <SelectInput
+    v-model="theme"
+    class="select select-sm w-48"
+    :options="themeOptions"
+    panel-class="p-0!"
+    option-class="rounded-none!"
   >
-    <div class="flex h-full w-full cursor-pointer items-center indent-4">
-      {{ theme }}
-    </div>
-  </div>
+    <template #option="{ option }">
+      <span class="flex items-center gap-2">
+        <span class="bg-primary rounded-field h-3 w-5 flex-none shadow"></span>
+        <span class="truncate">{{ option.label }}</span>
+      </span>
+    </template>
+  </SelectInput>
 </template>
 
 <script setup lang="ts">
+import SelectInput from '@/components/common/SelectInput.vue'
 import { ALL_THEME } from '@/constant'
-import { useTooltip } from '@/helper/tooltip'
 import { customThemes } from '@/store/settings'
 import { computed } from 'vue'
 
@@ -27,43 +33,11 @@ const themes = computed(() => {
 
   return ALL_THEME
 })
-
-const { showTip, hideTip } = useTooltip()
-const handlerDropdown = (e: Event) => {
-  const themeCotainer = document.createElement('div')
-
-  themeCotainer.className = 'base-container h-96 w-48 overflow-y-scroll overscroll-contain'
-
-  for (const themeName of themes.value) {
-    const item = document.createElement('div')
-    const primary = document.createElement('div')
-    const label = document.createElement('span')
-
-    item.dataset.theme = themeName
-
-    item.className = 'flex cursor-pointer items-center gap-2 p-2 bg-base-100 hover:bg-base-200'
-    primary.className = 'h-3 w-5 shadow rounded-field bg-primary'
-
-    label.textContent = themeName
-
-    item.append(primary)
-    item.append(label)
-
-    item.addEventListener('click', () => {
-      theme.value = themeName
-      hideTip()
-    })
-
-    themeCotainer.append(item)
-  }
-
-  showTip(e, themeCotainer, {
-    theme: 'transparent',
-    placement: 'bottom-start',
-    trigger: 'click',
-    appendTo: document.body,
-    interactive: true,
-    arrow: false,
-  })
-}
+const themeOptions = computed(() =>
+  themes.value.map((value) => ({
+    value,
+    label: value,
+    theme: value,
+  })),
+)
 </script>

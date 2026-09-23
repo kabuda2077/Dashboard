@@ -3,24 +3,20 @@
     <div class="setting-item-label">
       {{ $t('language') }}
     </div>
-    <select
+    <SelectInput
       class="select select-sm w-48"
       v-model="language"
-      @change="() => (locale = language)"
-    >
-      <option
-        v-for="opt in Object.values(LANG)"
-        :key="opt"
-        :value="opt"
-      >
-        {{ langLabelMap[opt] || opt }}
-      </option>
-    </select>
+      :options="
+        Object.values(LANG).map((value) => ({ value, label: langLabelMap[value] || value }))
+      "
+      @change="locale = language"
+    />
   </SettingItem>
 </template>
 
 <script setup lang="ts">
 import SettingItem from '@/components/settings/SettingItem.vue'
+import SelectInput from '@/components/common/SelectInput.vue'
 import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { LANG } from '@/constant'
 import { language } from '@/store/settings'

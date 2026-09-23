@@ -1,7 +1,16 @@
 import { disconnectAllAPI, disconnectByIdAPI } from '@/assembly/connections'
+import {
+  CONNECTION_CARD_GROUPABLE_KEYS,
+  connectionCardGroupKey,
+  hasConnectionCardGroups,
+  hasExpandedConnectionCardGroups,
+  toggleAllConnectionCardGroups,
+  type ConnectionCardGroupKey,
+} from '@/composables/connectionCardGroups'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
+import { runManualRequest } from '@/helper/requestError'
 import {
   connectionFilter,
   connections,
@@ -16,6 +25,8 @@ import { isConnectionCard } from '@/store/settings'
 import {
   BarsArrowDownIcon,
   BarsArrowUpIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   LinkIcon,
   LinkSlashIcon,
   PauseIcon,
@@ -38,10 +49,10 @@ import SourceIPFilter from './SourceIPFilter.vue'
 
 const handlerClickCloseAll = () => {
   if (renderConnections.value.length === connections.value.length) {
-    disconnectAllAPI()
+    void runManualRequest(() => disconnectAllAPI())
   } else {
     renderConnections.value.forEach((conn) => {
-      disconnectByIdAPI(conn.id)
+      void runManualRequest(() => disconnectByIdAPI(conn.id))
     })
   }
 }
@@ -90,6 +101,42 @@ export default defineComponent({
         </div>
       )
 
+      const groupForCards = (
+        <DropdownSelect
+          class="min-w-32 flex-1"
+          modelValue={connectionCardGroupKey.value}
+          onUpdate:modelValue={(value) =>
+            (connectionCardGroupKey.value = value as ConnectionCardGroupKey | null)
+          }
+          options={[
+            { value: null, label: t('noGrouping') },
+            ...CONNECTION_CARD_GROUPABLE_KEYS.map((value) => ({ value, label: t(value) })),
+          ]}
+        />
+      )
+
+      const toggleGroupsLabel = () =>
+        hasExpandedConnectionCardGroups.value ? t('collapseAllGroups') : t('expandAllGroups')
+      const toggleGroupsButton =
+        isConnectionCard.value && connectionCardGroupKey.value !== null ? (
+          <button
+            class="btn btn-circle btn-sm"
+            disabled={!hasConnectionCardGroups.value}
+            aria-label={toggleGroupsLabel()}
+            onClick={() => {
+              toggleAllConnectionCardGroups()
+              updateTip(toggleGroupsLabel())
+            }}
+            onMouseenter={(e) => showTip(e, toggleGroupsLabel(), { appendTo: 'parent' })}
+          >
+            {hasExpandedConnectionCardGroups.value ? (
+              <ChevronUpIcon class="h-4 w-4" />
+            ) : (
+              <ChevronDownIcon class="h-4 w-4" />
+            )}
+          </button>
+        ) : null
+
       const settingsModal = (
         <>
           <button
@@ -104,6 +151,12 @@ export default defineComponent({
           >
             <div class="flex flex-col gap-3 text-sm">
               <div class="settings-grid">
+                {isConnectionCard.value && (
+                  <div class="setting-item">
+                    <div class="setting-item-label">{t('groupBy')}</div>
+                    {groupForCards}
+                  </div>
+                )}
                 <div class="setting-item">
                   <div class="setting-item-label shrink-0!">{t('hideConnectionRegex')}</div>
                   <TextInput
@@ -210,6 +263,7 @@ export default defineComponent({
           {isConnectionCard.value && (
             <div class="flex w-full items-center gap-2">
               {sortForCards}
+              {toggleGroupsButton}
               {settingsModal}
               {buttons}
             </div>
@@ -223,6 +277,7 @@ export default defineComponent({
         <div class="flex items-center gap-2 p-2">
           <ConnectionTabs />
           {isConnectionCard.value && sortForCards}
+          {toggleGroupsButton}
           <SourceIPFilter class="w-40" />
           {searchInput}
           {settingsModal}

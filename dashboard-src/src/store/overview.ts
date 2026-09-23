@@ -1,5 +1,6 @@
 import { fetchMemoryAPI, fetchTrafficAPI } from '@/assembly/overview'
 import { ref, watch } from 'vue'
+import { captureBackendSession } from '@/helper/backendSession'
 import { activeConnectionCount, downloadTotal, uploadTotal } from './connections'
 
 export interface HistoryPoint {
@@ -33,6 +34,7 @@ let cancel: (() => void) | undefined
 
 export const initSatistic = () => {
   cancel?.()
+  const session = captureBackendSession()
 
   downloadSpeedHistory.value = makeInitValue()
   uploadSpeedHistory.value = makeInitValue()
@@ -45,7 +47,7 @@ export const initSatistic = () => {
   const unwatchMemory = watch(
     () => memoryWsData.value,
     (data) => {
-      if (!data) return
+      if (!data || !session.isCurrent()) return
       const timestamp = Date.now().valueOf()
 
       if (data.inuse === 0) {
@@ -76,7 +78,7 @@ export const initSatistic = () => {
   const unwatchTraffic = watch(
     () => trafficWsData.value,
     (data) => {
-      if (!data) return
+      if (!data || !session.isCurrent()) return
 
       const timestamp = Date.now().valueOf()
 
@@ -112,4 +114,15 @@ export const initSatistic = () => {
 export const stopSatistic = () => {
   cancel?.()
   cancel = undefined
+}
+
+export const resetStatistics = () => {
+  stopSatistic()
+  memory.value = 0
+  downloadSpeed.value = 0
+  uploadSpeed.value = 0
+  memoryHistory.value = makeInitValue()
+  connectionsHistory.value = makeInitValue()
+  downloadSpeedHistory.value = makeInitValue()
+  uploadSpeedHistory.value = makeInitValue()
 }

@@ -1,6 +1,7 @@
 // 组装层 · Clash-compatible rules 门面。
 import { toggleRuleDisabledAPI, toggleRuleDisabledSingBoxAPI } from '@/api/clash'
 import { RULE_TAB_TYPE } from '@/constant'
+import { captureBackendSession } from '@/helper/backendSession'
 import { toSearchRegex } from '@/helper/search'
 import type { Rule, RuleProvider } from '@/types'
 import { computed, ref } from 'vue'
@@ -37,7 +38,16 @@ export const renderRulesProvider = computed(() => {
 
 const load = () => import('./clash')
 
-export const fetchRules = async () => (await load()).fetchRules()
+export const fetchRules = async () => {
+  const session = captureBackendSession()
+  const backend = await load()
+  if (session.isCurrent()) return backend.fetchRules()
+}
+
+export const resetRules = () => {
+  rules.value = []
+  ruleProviderList.value = []
+}
 
 export const toggleRuleDisabled = (rule: Rule, disabled: boolean) =>
   rule.uuid

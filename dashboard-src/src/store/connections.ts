@@ -18,11 +18,13 @@ import {
 } from '@/helper'
 import { toSearchRegex } from '@/helper/search'
 import type { Connection } from '@/types'
-import { useStorage, watchOnce } from '@vueuse/core'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { watchOnce } from '@vueuse/core'
 import dayjs from 'dayjs'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { initAggregatedDataMap, saveConnectionHistory } from './connHistory'
 import { activeUuid } from './setup'
+import { captureBackendSession } from '@/helper/backendSession'
 import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
@@ -77,9 +79,10 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
   downloadTotal.value = 0
   uploadTotal.value = 0
   initAggregatedDataMap()
+  const session = captureBackendSession()
   const ws = fetchConnectionsAPI()
   const unwatch = watch(ws.data, (snapshot) => {
-    if (!snapshot) return
+    if (!snapshot || !session.isCurrent()) return
 
     if (snapshot.downloadTotal != null && snapshot.uploadTotal != null) {
       downloadTotal.value = snapshot.downloadTotal
@@ -104,8 +107,10 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
     }
   })
 
+  let stopIdleWatch: (() => void) | undefined
   if (autoDisconnectIdleUDP.value) {
-    watchOnce(activeConnections, () => {
+    stopIdleWatch = watchOnce(activeConnections, () => {
+      if (!session.isCurrent()) return
       activeConnections.value
         .filter((conn) => getConnectionNetwork(conn) !== 'tcp')
         .forEach((conn) => {
@@ -113,13 +118,14 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
           const start = dayjs(getConnectionStart(conn))
 
           if (now.diff(start, 'minute') > autoDisconnectIdleUDPTime.value) {
-            disconnectByIdAPI(conn.id)
+            void disconnectByIdAPI(conn.id).catch(() => {})
           }
         })
     })
   }
 
   cancel = () => {
+    stopIdleWatch?.()
     unwatch()
     ws.close()
   }
@@ -130,6 +136,15 @@ export const stopConnections = () => {
   cancel = undefined
   connectionMode = null
   connectionBackendUuid = null
+}
+
+export const resetConnections = () => {
+  stopConnections()
+  activeConnections.value = []
+  closedConnections.value = []
+  activeConnectionCount.value = 0
+  downloadTotal.value = 0
+  uploadTotal.value = 0
 }
 
 const isDesc = computed(() => {

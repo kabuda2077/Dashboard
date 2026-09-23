@@ -14,6 +14,7 @@ import axios from 'axios'
 import { debounce } from 'lodash'
 import ReconnectingWebSocket from 'reconnectingwebsocket'
 import { shallowRef } from 'vue'
+import { captureBackendSession } from '@/helper/backendSession'
 
 export const fetchClashVersion = () => axios.get<{ version: string }>('/version')
 
@@ -71,7 +72,11 @@ export const fetchSmartWeightsAPI = () => {
   return axios.get<{
     message: string
     weights: Record<string, NodeRank[]>
-  }>(`/group/weights`)
+  }>(`/group/weights`, {
+    // Smart cores predating the aggregate endpoint report it as not found.
+    // Keep every other transport/HTTP failure on Axios's rejection path.
+    validateStatus: (status) => status === 404 || (status >= 200 && status < 300),
+  })
 }
 
 // deprecated
@@ -111,9 +116,13 @@ export const toggleRuleDisabledAPI = (data: Record<number, boolean>) => {
   return axios.patch(`/rules/disable`, data)
 }
 
-export const toggleRuleDisabledSingBoxAPI = (uuid: string) => {
+// reFind-compatible rules expose stable UUIDs at PUT /rules/{uuid}.
+export const toggleRuleDisabledRefindAPI = (uuid: string) => {
   return axios.put(`/rules/${encodeURIComponent(uuid)}`)
 }
+
+// Compatibility alias for existing desktop callers; this is not sing-box native API.
+export const toggleRuleDisabledSingBoxAPI = toggleRuleDisabledRefindAPI
 
 export const fetchRuleProvidersAPI = () => {
   return axios.get<{ providers: Record<string, RuleProvider> }>('/providers/rules')
@@ -155,23 +164,10 @@ export const reloadConfigsAPI = () => {
   return axios.put('/configs?reload=true', { path: '', payload: '' })
 }
 
-export const updateConfigsAPI = (
-  config: { path?: string; payload?: string },
-  force: boolean = false,
-) => {
-  return axios.put(`/configs${force ? '?force=true' : ''}`, {
-    path: config.path || '',
-    payload: config.payload || '',
-  })
-}
-
-export const upgradeUIAPI = () => {
-  return axios.post('/upgrade/ui')
-}
-
 export const updateGeoDataAPI = () => {
   return axios.post('/configs/geo')
 }
+
 
 export const upgradeCoreAPI = (type: 'release' | 'alpha' | 'auto') => {
   const url = type === 'auto' ? '/upgrade' : `/upgrade?channel=${type}`
@@ -198,6 +194,8 @@ export const deleteStorageAPI = () => {
 export const createClashWebSocket = <T>(url: string, searchParams?: Record<string, string>) => {
   const startedAt = performance.now()
   let firstMessage = true
+  let closed = false
+  const session = captureBackendSession()
   const backend = activeBackend.value!
   const resurl = new URL(`${getUrlFromBackend(backend).replace('http', 'ws')}/${url}`)
 
@@ -212,11 +210,8 @@ export const createClashWebSocket = <T>(url: string, searchParams?: Record<strin
   const data = shallowRef<T>()
   const websocket = new ReconnectingWebSocket(resurl.toString())
 
-  const close = () => {
-    websocket.close()
-  }
-
   const messageHandler = ({ data: message }: { data: string }) => {
+    if (closed || !session.isCurrent()) return
     if (firstMessage) {
       firstMessage = false
       postHostMessage({
@@ -228,7 +223,14 @@ export const createClashWebSocket = <T>(url: string, searchParams?: Record<strin
     data.value = JSON.parse(message)
   }
 
-  websocket.onmessage = url === 'logs' ? messageHandler : debounce(messageHandler, 100)
+  const delayedMessage = debounce(messageHandler, 100)
+  websocket.onmessage = url === 'logs' ? messageHandler : delayedMessage
+  const close = () => {
+    closed = true
+    delayedMessage.cancel()
+    websocket.onmessage = () => {}
+    websocket.close()
+  }
 
   return {
     data,

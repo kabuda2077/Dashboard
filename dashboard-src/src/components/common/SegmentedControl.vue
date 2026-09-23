@@ -2,7 +2,7 @@
   <div
     role="tablist"
     :class="[
-      'ios-segment bg-base-300/50 inline-flex rounded-[0.625rem] p-[3px] align-middle',
+      'segment bg-base-300/50 inline-flex rounded-[0.625rem] p-[3px] align-middle',
       block && 'flex w-full',
     ]"
   >
@@ -11,8 +11,8 @@
       class="relative flex flex-1 gap-0"
     >
       <div
-        class="ios-segment-indicator bg-primary ring-base-content/5 pointer-events-none absolute top-0 bottom-0 left-0 rounded-[0.5rem] shadow-sm ring-1"
-        :class="ready ? 'ios-segment-indicator-ready' : 'opacity-0'"
+        class="segment-indicator bg-primary ring-base-content/5 pointer-events-none absolute top-0 bottom-0 left-0 rounded-[0.5rem] shadow-sm ring-1"
+        :class="ready ? 'segment-indicator-ready' : 'opacity-0'"
         :style="indicatorStyle"
       ></div>
       <button
@@ -23,7 +23,7 @@
         role="tab"
         type="button"
         :class="[
-          'ios-segment-item relative z-1 flex items-center justify-center gap-1 rounded-[0.5rem] px-3 py-1 text-sm whitespace-nowrap transition-colors duration-150',
+          'segment-item relative z-1 flex items-center justify-center gap-1 rounded-[0.5rem] px-3 py-1 text-sm whitespace-nowrap transition-colors duration-150',
           modelValue === opt.value
             ? 'text-primary-content'
             : 'text-base-content/55 hover:text-base-content/80',

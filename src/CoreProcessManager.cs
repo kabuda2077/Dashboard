@@ -7,13 +7,28 @@ public sealed class CoreProcessManager : IDisposable
 {
     private const int MaxLogLines = 500;
     private const int LogEventFlushIntervalMs = 125;
-    private readonly CircularBuffer<string> _logLines = new(MaxLogLines);
+    private readonly Queue<string> _logLines = new(MaxLogLines);
+    private readonly object _logLinesLock = new();
     private readonly object _processLock = new();
     private readonly object _logEventLock = new();
     private readonly HashSet<int> _stoppingProcessIds = new();
     private readonly StringBuilder _pendingLogEvents = new();
     private System.Threading.Timer? _logEventTimer;
+    private readonly object _operationLock = new();
+    private bool _disposed;
     private Process? _process;
+
+    private readonly Action<Process> _killProcess;
+    private readonly Func<Process, int, bool> _waitForExit;
+
+    public CoreProcessManager() : this(process => process.Kill(entireProcessTree: true),
+        (process, timeout) => process.WaitForExit(timeout)) { }
+
+    internal CoreProcessManager(Action<Process> killProcess, Func<Process, int, bool> waitForExit)
+    {
+        _killProcess = killProcess;
+        _waitForExit = waitForExit;
+    }
 
     public event EventHandler? StatusChanged;
     public event EventHandler<string>? LogReceived;
@@ -41,18 +56,14 @@ public sealed class CoreProcessManager : IDisposable
         }
     }
 
-    public string LogText
-    {
-        get
-        {
-            var lines = _logLines.GetAll();
-            return string.Join("", lines);
-        }
-    }
-
     public string GetLogTail(int maxLength)
     {
-        var lines = _logLines.GetAll();
+        List<string> lines;
+        lock (_logLinesLock)
+        {
+            lines = new List<string>(_logLines);
+        }
+
         var sb = new StringBuilder(maxLength);
 
         // 从后往前拼接，直到达到长度限制
@@ -70,6 +81,15 @@ public sealed class CoreProcessManager : IDisposable
     }
 
     public void Start(AppSettings settings)
+    {
+        lock (_operationLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            StartOwnedProcess(settings);
+        }
+    }
+
+    private void StartOwnedProcess(AppSettings settings)
     {
         DisposeExitedProcess();
 
@@ -130,7 +150,15 @@ public sealed class CoreProcessManager : IDisposable
             _process = process;
         }
 
-        if (!process.Start())
+        bool started;
+        try { started = process.Start(); }
+        catch
+        {
+            lock (_processLock) { if (ReferenceEquals(_process, process)) _process = null; }
+            process.Dispose();
+            throw;
+        }
+        if (!started)
         {
             process.Dispose();
             lock (_processLock)
@@ -157,6 +185,11 @@ public sealed class CoreProcessManager : IDisposable
 
     public void Stop(TimeSpan waitTimeout)
     {
+        lock (_operationLock) StopOwnedProcess(waitTimeout);
+    }
+
+    private void StopOwnedProcess(TimeSpan waitTimeout)
+    {
         if (!IsRunning)
         {
             DisposeExitedProcess();
@@ -173,8 +206,8 @@ public sealed class CoreProcessManager : IDisposable
         try
         {
             MarkStopping(process);
-            process.Kill(entireProcessTree: true);
-            if (!process.WaitForExit((int)waitTimeout.TotalMilliseconds))
+            _killProcess(process);
+            if (!_waitForExit(process, (int)waitTimeout.TotalMilliseconds))
             {
                 throw new TimeoutException("等待内核进程退出超时。");
             }
@@ -187,13 +220,14 @@ public sealed class CoreProcessManager : IDisposable
         }
         finally
         {
-            process.Dispose();
-            lock (_processLock)
+            // A failed kill/wait must not discard ownership of a live process.
+            if (!IsProcessRunning(process))
             {
-                if (ReferenceEquals(_process, process))
+                lock (_processLock)
                 {
-                    _process = null;
+                    if (ReferenceEquals(_process, process)) _process = null;
                 }
+                process.Dispose();
             }
             StatusChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -207,7 +241,15 @@ public sealed class CoreProcessManager : IDisposable
         }
 
         var entry = $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
-        _logLines.Add(entry);
+        lock (_logLinesLock)
+        {
+            _logLines.Enqueue(entry);
+            if (_logLines.Count > MaxLogLines)
+            {
+                _logLines.Dequeue();
+            }
+        }
+
         QueueLogReceived(entry);
     }
 
@@ -317,74 +359,43 @@ public sealed class CoreProcessManager : IDisposable
 
     public void Dispose()
     {
-        if (IsRunning)
+        lock (_operationLock)
         {
-            Stop();
+            _disposed = true;
+            DisposeOwnedProcess();
         }
-
-        Process? process;
-        lock (_processLock)
-        {
-            process = _process;
-            _process = null;
-        }
-
-        FlushPendingLogReceived();
-        lock (_logEventLock)
-        {
-            _logEventTimer?.Dispose();
-            _logEventTimer = null;
-        }
-
-        process?.Dispose();
     }
 
-    /// <summary>
-    /// 环形缓冲区，用于高效存储固定数量的日志行
-    /// </summary>
-    private sealed class CircularBuffer<T>
+    private void DisposeOwnedProcess()
     {
-        private readonly T[] _buffer;
-        private readonly object _lock = new();
-        private int _start;
-        private int _count;
-
-        public CircularBuffer(int capacity)
+        try
         {
-            if (capacity <= 0)
-            {
-                throw new ArgumentException("Capacity must be positive", nameof(capacity));
-            }
-            _buffer = new T[capacity];
+            if (IsRunning) Stop();
         }
-
-        public void Add(T item)
+        finally
         {
-            lock (_lock)
+            // A failed termination must retain ownership of a live process,
+            // while still releasing independent log/timer resources.
+            Process? exitedProcess = null;
+            lock (_processLock)
             {
-                if (_count < _buffer.Length)
+                if (!IsRunning)
                 {
-                    _buffer[_count++] = item;
-                }
-                else
-                {
-                    _buffer[_start] = item;
-                    _start = (_start + 1) % _buffer.Length;
+                    exitedProcess = _process;
+                    _process = null;
                 }
             }
-        }
-
-        public List<T> GetAll()
-        {
-            lock (_lock)
-            {
-                var result = new List<T>(_count);
-                for (int i = 0; i < _count; i++)
+            ShutdownResourceDisposer.DisposeAll(
+                ("Pending core log events", FlushPendingLogReceived),
+                ("Core log timer", () =>
                 {
-                    result.Add(_buffer[(_start + i) % _buffer.Length]);
-                }
-                return result;
-            }
+                    lock (_logEventLock)
+                    {
+                        _logEventTimer?.Dispose();
+                        _logEventTimer = null;
+                    }
+                }),
+                ("Exited core process", () => exitedProcess?.Dispose()));
         }
     }
 }

@@ -9,6 +9,7 @@
 
 @import './styles/components/daisyui.css';
 @import './styles/components/app.css';
+@import './styles/components/toast.css';
 @import './styles/components/tooltip.css';
 
 @import './styles/utilities/appearance.css';

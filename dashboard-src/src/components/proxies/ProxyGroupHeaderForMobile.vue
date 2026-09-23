@@ -1,7 +1,7 @@
-<template>
+﻿<template>
   <div class="relative flex h-18 shrink-0 flex-col justify-between">
     <div
-      class="text-md truncate font-medium"
+      class="text-md truncate"
       :class="proxyGroup.icon && 'pr-10'"
     >
       {{ proxyGroup.name }}
@@ -10,7 +10,7 @@
       class="text-base-content/40 flex min-w-0 items-center gap-2 truncate text-[11px]"
       :class="proxyGroup.icon && 'pr-12'"
     >
-      <span class="shrink-0 font-medium tracking-wider whitespace-nowrap uppercase tabular-nums">
+      <span class="shrink-0 tracking-wider whitespace-nowrap uppercase tabular-nums">
         {{ proxyGroup.type }} · {{ proxiesCount }}
       </span>
       <ProxyGroupFilter
@@ -58,12 +58,11 @@
 
 <script setup lang="ts">
 import { KEYBOARD_SHORTCUT_ACTION, useKeyboardShortcuts } from '@/composables/keyboard'
+import { getDownloadSpeedByProxyGroup } from '@/composables/proxyGroupTraffic'
 import { isHiddenGroup } from '@/helper'
-import { getConnectionChains } from '@/helper'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { useTooltip } from '@/helper/tooltip'
 import { prettyBytesHelper } from '@/helper/utils'
-import { activeConnections } from '@/store/connections'
 import { manageHiddenGroup, twoColumnProxyGroup } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
 import { computed } from 'vue'
@@ -90,11 +89,7 @@ const { getShortcutKey } = useKeyboardShortcuts()
 const { showTip } = useTooltip()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 
-const downloadTotal = computed(() => {
-  return activeConnections.value
-    .filter((conn) => getConnectionChains(conn).includes(props.name))
-    .reduce((total, conn) => total + conn.downloadSpeed, 0)
-})
+const downloadTotal = computed(() => getDownloadSpeedByProxyGroup(props.name))
 
 const hiddenGroup = computed({
   get: () => Boolean(isHiddenGroup(props.name)),
@@ -110,8 +105,8 @@ const visibilityToggleTip = computed(() => {
   return shortcut ? `${title}\n${t('manageHiddenGroupShortcutTip', { shortcut })}` : title
 })
 
-const showVisibilityTip = (event: Event) => {
-  showTip(event, visibilityToggleTip.value, {
+const showVisibilityTip = (e: Event) => {
+  showTip(e, visibilityToggleTip.value, {
     delay: [500, 0],
     trigger: 'mouseenter',
     touch: ['hold', 500],

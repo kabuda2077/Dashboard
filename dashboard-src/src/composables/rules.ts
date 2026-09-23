@@ -4,6 +4,7 @@ import { getConnectionRulePayload } from '@/helper'
 import { activeConnections } from '@/store/connections'
 import { disconnectOnRuleDisable } from '@/store/settings'
 import type { Rule } from '@/types'
+import { captureBackendSession } from '@/helper/backendSession'
 
 export const isRuleDisabled = (rule: Rule) => (rule.extra ? rule.extra.disabled : rule.disabled)
 
@@ -24,9 +25,11 @@ export const isUpdateableRuleSet = (rule: Rule) => {
 }
 
 export const toggleRuleDisabledWithSideEffects = async (rule: Rule) => {
+  const session = captureBackendSession()
   const willBeDisabled = !isRuleDisabled(rule)
 
   await toggleRuleDisabled(rule, willBeDisabled)
+  if (!session.isCurrent()) return
 
   if (willBeDisabled && disconnectOnRuleDisable.value) {
     activeConnections.value
@@ -35,7 +38,7 @@ export const toggleRuleDisabledWithSideEffects = async (rule: Rule) => {
           connection.rule === rule.type &&
           getConnectionRulePayload(connection) === (rule.payload || ''),
       )
-      .forEach((connection) => disconnectByIdAPI(connection.id))
+      .forEach((connection) => { void disconnectByIdAPI(connection.id).catch(() => {}) })
   }
 
   await fetchRules()

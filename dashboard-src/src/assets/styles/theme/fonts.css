@@ -1,4 +1,9 @@
-/* Font-family tokens and bundled emoji fonts. */
+/* Font-family tokens and bundled emoji fonts.
+ *
+ * Both emoji fonts only contain flag glyphs: regional indicators (U+1F1E6-1F1FF)
+ * plus the tag sequences used by subdivision flags. unicode-range keeps the
+ * browser from downloading them (the Noto one is ~890 KB) until a flag is
+ * actually rendered; without it they load for any text using these families. */
 
 @theme {
   --font-MiSans-NotoEmoji: 'MiSans-VF', 'NotoEmoji', system-ui;
@@ -18,6 +23,8 @@
   @font-face {
     font-family: 'NotoEmoji';
     src: url('/src/assets/fonts/NotoColorEmoji-flagsonly.ttf') format('truetype');
+    font-display: swap;
+    unicode-range: U+1F1E6-1F1FF, U+FE4E5-FE4EE;
   }
 }
 
@@ -25,5 +32,8 @@
   @font-face {
     font-family: 'Twemoji';
     src: url('/src/assets/fonts/TwemojiMozilla-flags.woff2') format('woff2');
+    font-display: swap;
+    unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E0063, U+E0065, U+E0067,
+      U+E006C, U+E006E, U+E0073-E0074, U+E0077, U+E007F;
   }
 }

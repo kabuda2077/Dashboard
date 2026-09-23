@@ -14,9 +14,9 @@
 </template>
 
 <script setup lang="ts">
-import { HOST_ICON_CACHE_UPDATED_EVENT, hostWindow } from '@/composables/hostBridge'
+import { hostIconCache } from '@/composables/hostBridge'
 import DOMPurify from 'dompurify'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -31,7 +31,6 @@ const props = withDefaults(
   },
 )
 
-const cacheVersion = ref(0)
 const style = computed(() => {
   return {
     width: `${props.size}px`,
@@ -42,16 +41,14 @@ const style = computed(() => {
 const DOM_STARTS_WITH = 'data:image/svg+xml,'
 
 const resolveCachedIcon = (icon: string) => {
-  cacheVersion.value
-  const cache = hostWindow.__mihomoIconCache
-  if (!cache || !icon) return icon
+  if (!icon) return icon
 
-  const cachedIcon = cache[icon]
+  const cachedIcon = hostIconCache.value[icon]
   if (cachedIcon) return cachedIcon
 
   try {
     const href = new URL(icon).href
-    return cache[href] || icon
+    return hostIconCache.value[href] || icon
   } catch {
     return icon
   }
@@ -65,17 +62,5 @@ const isDom = computed(() => {
 const pureDom = computed(() => {
   if (!isDom.value) return
   return DOMPurify.sanitize(resolvedIcon.value.replace(DOM_STARTS_WITH, ''))
-})
-
-const updateIconCache = () => {
-  cacheVersion.value++
-}
-
-onMounted(() => {
-  window.addEventListener(HOST_ICON_CACHE_UPDATED_EVENT, updateIconCache)
-})
-
-onUnmounted(() => {
-  window.removeEventListener(HOST_ICON_CACHE_UPDATED_EVENT, updateIconCache)
 })
 </script>

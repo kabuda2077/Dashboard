@@ -86,6 +86,30 @@ public sealed class CoreUpdateCheckerTests
         Assert.Equal("v1.14.0-beta.15-reF1nd", result.LatestVersion);
     }
 
+    [Fact]
+    public async Task ExternalCancellationTerminatesVersionProbeProcess()
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+            "/d /c ping -t 127.0.0.1 > nul")
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+        })!;
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var read = CoreUpdateChecker.ReadVersionProcessAsync(process, cancellation.Token);
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.True(process.HasExited);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+        }
+    }
+
     private sealed class StubHandler(string content) : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }

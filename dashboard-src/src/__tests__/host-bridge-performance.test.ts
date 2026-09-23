@@ -38,6 +38,14 @@ describe('host bridge incremental messages', () => {
     })
   })
 
+  it('publishes an asynchronously arriving host version through reactive state', async () => {
+    const { applyHostRuntimeState, hostState } = await import('@/composables/hostBridge')
+
+    applyHostRuntimeState({ coreVersion: 'sing-box 1.2.3' })
+
+    expect(hostState.value.coreVersion).toBe('sing-box 1.2.3')
+  })
+
   it('updates icon cache independently from full state', async () => {
     const { applyHostIconCache, hostIconCache } = await import('@/composables/hostBridge')
 

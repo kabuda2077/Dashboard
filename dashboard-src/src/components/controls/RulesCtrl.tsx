@@ -9,6 +9,8 @@ import {
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { LIST_DISPLAY_STYLE, RULE_TAB_TYPE } from '@/constant'
 import { showNotification } from '@/helper/notification'
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession } from '@/helper/requestError'
 import {
   disconnectOnRuleDisable,
   displayLatencyInRule,
@@ -37,12 +39,14 @@ export default defineComponent({
     const handlerClickUpgradeAllProviders = async () => {
       if (isUpgrading.value) return
       isUpgrading.value = true
+      const session = captureBackendSession()
       try {
         let updateCount = 0
 
         await Promise.all(
           ruleProviderList.value.map((provider) =>
             updateRuleProviderAPI(provider.name).then(() => {
+              if (!session.isCurrent()) return
               updateCount++
 
               const isFinished = updateCount === ruleProviderList.value.length
@@ -59,10 +63,11 @@ export default defineComponent({
             }),
           ),
         )
-        await fetchRules()
-        isUpgrading.value = false
-      } catch {
-        await fetchRules()
+        if (session.isCurrent()) await fetchRules().catch(() => {})
+      } catch (error) {
+        notifyRequestErrorForSession(error, session)
+        if (session.isCurrent()) await fetchRules().catch(() => {})
+      } finally {
         isUpgrading.value = false
       }
     }

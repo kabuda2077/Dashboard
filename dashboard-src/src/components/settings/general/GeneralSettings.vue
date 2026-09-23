@@ -47,18 +47,11 @@
             @mouseenter="showTip($event, $t('IPInfoAPITip'))"
           />
         </div>
-        <select
+        <SelectInput
           class="select select-sm min-w-24"
           v-model="IPInfoAPI"
-        >
-          <option
-            v-for="opt in Object.values(IP_INFO_API)"
-            :key="opt"
-            :value="opt"
-          >
-            {{ opt }}
-          </option>
-        </select>
+          :options="Object.values(IP_INFO_API).map((value) => ({ value, label: value }))"
+        />
       </SettingItem>
       <SettingItem :setting-key="k.geoipCountryDatabaseURL">
         <div class="setting-item-label">
@@ -146,30 +139,13 @@
         />
       </SettingItem>
       <KeyboardShortcutsSettings />
-      <SettingItem
-        :setting-key="k.displayAllFeatures"
-        :when="isSingBoxCore"
-      >
-        <div class="setting-item-label">
-          {{ $t('displayAllFeatures') }}
-          <QuestionMarkCircleIcon
-            class="h-4 w-4 cursor-pointer"
-            @mouseenter="showTip($event, $t('displayAllFeaturesTip'))"
-          />
-        </div>
-        <input
-          type="checkbox"
-          v-model="displayAllFeatures"
-          class="toggle"
-        />
-      </SettingItem>
     </div>
   </template>
 </template>
 
 <script setup lang="ts">
-import { isSingBoxCore } from '@/assembly/version'
 import DashboardSettings from '@/components/common/DashboardSettings.vue'
+import SelectInput from '@/components/common/SelectInput.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import KeyboardShortcutsSettings from '@/components/settings/general/KeyboardShortcutsSettings.vue'
 import LanguageSelect from '@/components/settings/general/LanguageSelect.vue'
@@ -183,7 +159,6 @@ import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
   disablePullToRefresh,
-  displayAllFeatures,
   geoipASNDatabaseURL,
   geoipCountryDatabaseURL,
   IPInfoAPI,
@@ -210,7 +185,6 @@ const isVisibleScrollAnimationEffect = useIsSettingVisible(k.scrollAnimationEffe
 const isVisibleSwipeInPages = useIsSettingVisible(k.swipeInPages)
 const isVisibleSwipeInTabs = useIsSettingVisible(k.swipeInTabs)
 const isVisibleDisablePullToRefresh = useIsSettingVisible(k.disablePullToRefresh)
-const isVisibleDisplayAllFeatures = useIsSettingVisible(k.displayAllFeatures)
 
 const hasVisibleGeneralItems = computed(() => {
   return (
@@ -225,8 +199,7 @@ const hasVisibleGeneralItems = computed(() => {
     isVisibleScrollAnimationEffect.value ||
     isVisibleSwipeInPages.value ||
     (swipeInPages.value && isVisibleSwipeInTabs.value) ||
-    isVisibleDisablePullToRefresh.value ||
-    (isSingBoxCore.value && isVisibleDisplayAllFeatures.value)
+    isVisibleDisablePullToRefresh.value
   )
 })
 </script>

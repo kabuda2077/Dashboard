@@ -64,6 +64,7 @@ import {
   postHostMessage,
   type HostMessage,
 } from '@/composables/hostBridge'
+import { getAppUpdateFeedback } from '@/components/settings/general/appUpdateFeedback'
 import { ArrowPathIcon, ArrowTopRightOnSquareIcon } from '@heroicons/vue/24/outline'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
@@ -86,16 +87,8 @@ const showUpdateFeedback = (message: string) => {
 }
 
 const handleHostMessage = (event: MessageEvent<HostMessage>) => {
-  const message = event.data?.message ?? ''
-  if (event.data?.type !== 'notice') {
-    return
-  }
-  if (message.startsWith('当前已是最新版本')) {
-    showUpdateFeedback('已是最新版本')
-  } else if (message.startsWith('发现 Dashboard 新版本')) {
-    const version = message.match(/v([^，]+)/)?.[1]
-    showUpdateFeedback(version ? `发现 v${version}` : '发现新版本')
-  }
+  const feedback = getAppUpdateFeedback(event.data)
+  if (feedback) showUpdateFeedback(feedback)
 }
 
 const checkAppUpdate = () => {

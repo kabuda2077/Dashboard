@@ -1,9 +1,10 @@
 // 组装层 · Clash-compatible proxies 门面。
 import { isSingBoxCore } from '@/assembly/version'
+import { captureBackendSession } from '@/helper/backendSession'
 import { NOT_CONNECTED, PROXY_TAB_TYPE, PROXY_TYPE, TEST_URL } from '@/constant'
+import { useStorage } from '@/helper/storage'
 import { groupTestUrls, independentLatencyTest, speedtestUrl } from '@/store/settings'
 import type { Proxy, ProxyProvider } from '@/types'
-import { useStorage } from '@vueuse/core'
 import { last } from 'lodash'
 import { computed, ref } from 'vue'
 
@@ -144,24 +145,35 @@ interface ProxiesBackend {
 
 const load = (): Promise<ProxiesBackend> => import('./clash')
 
-export const fetchProxies = async () => (await load()).fetchProxies()
+const withBackend = async (action: (backend: ProxiesBackend) => Promise<unknown>) => {
+  const session = captureBackendSession()
+  const backend = await load()
+  if (session.isCurrent()) return action(backend)
+}
 
-export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) =>
-  (await load()).handlerProxySelect(proxyGroupName, proxyName)
+export const fetchProxies = () => withBackend((backend) => backend.fetchProxies())
+
+export const handlerProxySelect = (proxyGroupName: string, proxyName: string) =>
+  withBackend((backend) => backend.handlerProxySelect(proxyGroupName, proxyName))
 
 export const proxyLatencyTest = async (
   proxyName: string,
   url?: string,
   timeout?: number,
   groupName?: string,
-) => (await load()).proxyLatencyTest(proxyName, url, timeout, groupName)
+) => withBackend((backend) => backend.proxyLatencyTest(proxyName, url, timeout, groupName))
 
-export const proxyGroupLatencyTest = async (proxyGroupName: string) =>
-  (await load()).proxyGroupLatencyTest(proxyGroupName)
+export const proxyGroupLatencyTest = (proxyGroupName: string) =>
+  withBackend((backend) => backend.proxyGroupLatencyTest(proxyGroupName))
 
-export const allProxiesLatencyTest = async () => (await load()).allProxiesLatencyTest()
+export const allProxiesLatencyTest = () => withBackend((backend) => backend.allProxiesLatencyTest())
 
-export const resetProxies = () => Promise.resolve()
+export const resetProxies = () => {
+  proxyMap.value = {}
+  proxyGroupList.value = []
+  proxyProviederList.value = []
+  IPv6Map.value = {}
+}
 
 // 代理集 / smart 权重动作(Clash 专属),经 proxies 域门面暴露给 view 与 store/smart。
 export {

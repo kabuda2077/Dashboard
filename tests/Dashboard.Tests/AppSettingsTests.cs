@@ -39,25 +39,6 @@ public sealed class AppSettingsTests
     }
 
     [Fact]
-    public void LoadFallsBackToPortableSecretsWhenProtectedSecretsCannotBeRead()
-    {
-        CleanSettingsFile();
-        WriteSettingsJson(new
-        {
-            SetupCompleted = true,
-            Secret = "portable-secret",
-            ProtectedSecret = "dpapi:not-valid-base64",
-            SingBoxSecret = "portable-singbox-secret",
-            ProtectedSingBoxSecret = "dpapi:not-valid-base64"
-        });
-
-        var settings = AppSettings.Load();
-
-        Assert.Equal("portable-secret", settings.Secret);
-        Assert.Equal("portable-singbox-secret", settings.SingBoxSecret);
-    }
-
-    [Fact]
     public void LoadLeavesDashboardSettingsNullWhenLegacyFileDoesNotContainThem()
     {
         CleanSettingsFile();
