@@ -142,8 +142,8 @@ Dashboard 需要创建最高权限计划任务。任务创建并验证成功后�
 
 ```powershell
 pnpm --dir dashboard-src type-check
-powershell -ExecutionPolicy Bypass -File .\build.ps1 -Configuration Release -Runtime win-x64
-powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Configuration Release -Runtime win-x64
+powershell -ExecutionPolicy Bypass -File .\tools\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
 ```
 
 发布新版本前需要同步更新 `Dashboard.csproj` 中的 `Version` 和 `InformationalVersion`，并与 GitHub Release tag 保持一致。
@@ -152,7 +152,7 @@ powershell -ExecutionPolicy Bypass -File .\create-release.ps1 -OutputZip Dashboa
 
 - `src/`：Windows 桌面宿主。
 - `dashboard-src/`：基于 zashboard 的前端源码。
-- `resources/dashboard/`：构建后的前端静态资源，由 `tools/build-zashboard.ps1` 生成，不纳入版本控制。新克隆的仓库需要先构建前端，再构建 .NET，否则产物里没有界面。`build.ps1` 和 `check.ps1` 已经按这个顺序执行。
+- `resources/dashboard/`：构建后的前端静态资源，由 `tools/build-zashboard.ps1` 生成，不纳入版本控制。新克隆的仓库需要先构建前端，再构建 .NET，否则产物里没有界面。`tools/build.ps1` 和 `tools/check.ps1` 已经按这个顺序执行。
 - [docs/architecture.md](docs/architecture.md)：当前职责、启动、会话和持久化边界。
 - [docs/style.md](docs/style.md)：本项目 UI 规则。
 - [docs/upstream-merge.md](docs/upstream-merge.md)：跟进 zashboard 上游的唯一操作入口。

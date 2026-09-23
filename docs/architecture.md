@@ -75,7 +75,7 @@ SettingsContent以实际容器宽度决定单双列，1000px为断点。旧双�
 
 ## 验证与后续维护
 
-完整自动入口是仓库根`check.ps1`，顺序覆盖源码契约、脚本回归、前端测试/类型/构建、资源验证和.NET构建/测试。`create-release.ps1`负责Release发布及ZIP；包审计还应核对发布集合、文件hash和不应包含的用户数据。实际操作方法以UPSTREAM_MERGE为唯一入口。
+完整自动入口是`tools/check.ps1`，顺序覆盖源码契约、脚本回归、前端测试/类型/构建、资源验证和.NET构建/测试。`tools/create-release.ps1`负责Release发布及ZIP；包审计还应核对发布集合、文件hash和不应包含的用户数据。实际操作方法以UPSTREAM_MERGE为唯一入口。
 
 行为测试优先覆盖真实消费者，例如Core拒绝后向导、按钮顺序、图标缓存和SettingsContent断点。必要构建边界继续保留文本检查，例如禁用native依赖、桌面入口和最后导入覆盖层；修改函数名不应迫使维护无行为意义的检查副本。
 
