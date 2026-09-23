@@ -1,3 +1,4 @@
+import { runManualRequest } from '@/helper/requestError'
 import {
   blockConnectionByIdAPI,
   disconnectByIdAPI,
@@ -200,7 +201,7 @@ export default defineComponent<{
               class="btn btn-circle btn-xs"
               onClick={(e) => {
                 e.stopPropagation()
-                disconnectByIdAPI(conn.id)
+                void runManualRequest(() => disconnectByIdAPI(conn.id))
               }}
             >
               <XMarkIcon class="h-4 w-4" />
@@ -213,7 +214,7 @@ export default defineComponent<{
                 class="btn btn-circle btn-xs"
                 onClick={(e) => {
                   e.stopPropagation()
-                  blockConnectionByIdAPI(conn.id)
+                  void runManualRequest(() => blockConnectionByIdAPI(conn.id))
                 }}
               >
                 <NoSymbolIcon class="h-4 w-4" />

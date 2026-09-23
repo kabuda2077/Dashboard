@@ -1,7 +1,4 @@
 import { readonly, ref } from 'vue'
-import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
-
-export const HOST_ICON_CACHE_UPDATED_EVENT = '__mihomoIconCacheUpdated'
 
 export type HostState = {
   isRunning?: boolean
@@ -13,6 +10,9 @@ export type HostState = {
   configPath?: string
   apiUrl?: string
   secret?: string
+  secretDecryptionFailed?: boolean
+  mihomoSecretDecryptionFailed?: boolean
+  singBoxSecretDecryptionFailed?: boolean
   mihomoCorePath?: string
   mihomoConfigPath?: string
   mihomoApiUrl?: string
@@ -59,6 +59,12 @@ export type HostRuntimeState = Pick<
 export type HostMessage = {
   type?:
     'state' | 'runtimeState' | 'logAppend' | 'iconCacheUpdated' | 'notice' | 'windowState' | string
+  requestId?: string
+  result?: 'available' | 'upToDate' | 'failed' | 'busy'
+  manual?: boolean
+  currentVersion?: string
+  latestVersion?: string
+  success?: boolean
   state?: HostState
   runtimeState?: HostRuntimeState
   message?: string
@@ -79,7 +85,7 @@ export type HostCommand =
   | { type: 'openAppRelease' }
   | { type: 'openCoreRepository' }
   | { type: 'performance'; name: string; durationMs?: number }
-  | { type: 'saveDashboardSettings'; settings: Record<string, string> }
+  | { type: 'saveDashboardSettings'; requestId?: string; settings: Record<string, string> }
   | ({ type: string } & Record<string, unknown>)
 
 export type HostWindow = Window & {
@@ -96,11 +102,6 @@ export type HostWindow = Window & {
       ) => void
     }
   }
-  __mihomoApplyBackend?: (state: HostState) => void
-  __mihomoControlSetState?: (state: HostState) => void
-  __mihomoControlNotice?: (message: string) => void
-  __mihomoHostCoreVersion?: string
-  __mihomoIconCache?: Record<string, string>
   __mihomoDashboardSettings?: Record<string, string>
   __mihomoHasDashboardSettings?: boolean
 }
@@ -108,6 +109,17 @@ export type HostWindow = Window & {
 export const hostWindow = window as HostWindow
 export const hasHostBridge = Boolean(hostWindow.chrome?.webview?.postMessage)
 
+const hostSessionGenerationRef = ref(0)
+export const hostSessionGeneration = readonly(hostSessionGenerationRef)
+let sessionSignature = ''
+const updateHostSession = () => {
+  const state = hostStateRef.value
+  const signature = JSON.stringify([state.coreType, state.apiUrl, state.secret, state.secretDecryptionFailed, state.processId, state.isRunning])
+  if (signature !== sessionSignature) {
+    sessionSignature = signature
+    hostSessionGenerationRef.value++
+  }
+}
 const hostStateRef = ref<HostState>({})
 const hostWindowMaximizedRef = ref(false)
 const hostIconCacheRef = ref<Record<string, string>>({})
@@ -120,22 +132,42 @@ export const postHostMessage = (message: HostCommand | Record<string, unknown>) 
   hostWindow.chrome?.webview?.postMessage?.(message)
 }
 
+const messageListeners = new Set<(event: MessageEvent<HostMessage>) => void>()
+let receiverInstalled = false
+const receiveHostMessage = (event: MessageEvent<HostMessage>) => {
+  applyHostMessage(event.data)
+  for (const listener of [...messageListeners]) {
+    try { listener(event) }
+    catch { console.error('Host message subscriber failed') }
+  }
+}
+
 export const addHostMessageListener = (listener: (event: MessageEvent<HostMessage>) => void) => {
-  hostWindow.chrome?.webview?.addEventListener?.('message', listener)
+  if (!receiverInstalled) {
+    hostWindow.chrome?.webview?.addEventListener?.('message', receiveHostMessage)
+    receiverInstalled = true
+  }
+  messageListeners.add(listener)
   return () => {
-    hostWindow.chrome?.webview?.removeEventListener?.('message', listener)
+    messageListeners.delete(listener)
+    if (messageListeners.size === 0) {
+      hostWindow.chrome?.webview?.removeEventListener?.('message', receiveHostMessage)
+      receiverInstalled = false
+    }
   }
 }
 
 export const applyHostIconCache = (iconCacheMap: Record<string, string> | undefined) => {
-  hostIconCacheRef.value = iconCacheMap || {}
-  hostWindow.__mihomoIconCache = hostIconCacheRef.value
-  window.dispatchEvent(new CustomEvent(HOST_ICON_CACHE_UPDATED_EVENT))
+  const next = iconCacheMap || {}
+  const previous = hostIconCacheRef.value
+  if (Object.keys(next).length === Object.keys(previous).length
+    && Object.entries(next).every(([key, value]) => previous[key] === value)) return
+  hostIconCacheRef.value = next
 }
 
 export const applyHostState = (state: HostState | undefined) => {
   hostStateRef.value = state || {}
-  hostWindow.__mihomoHostCoreVersion = state?.coreVersion || ''
+  updateHostSession()
   if (state && 'dashboardSettings' in state) {
     hostWindow.__mihomoDashboardSettings = state.dashboardSettings || {}
     hostWindow.__mihomoHasDashboardSettings = Boolean(state.dashboardSettings)
@@ -147,24 +179,13 @@ export const applyHostState = (state: HostState | undefined) => {
 export const applyHostRuntimeState = (runtimeState: HostRuntimeState | undefined) => {
   if (!runtimeState) return
 
-  const previousCoreVersion = hostWindow.__mihomoHostCoreVersion || ''
   hostStateRef.value = {
     ...hostStateRef.value,
     ...runtimeState,
   }
-  hostWindow.__mihomoHostCoreVersion =
-    runtimeState.coreVersion !== undefined
-      ? runtimeState.coreVersion
-      : hostWindow.__mihomoHostCoreVersion || ''
+  updateHostSession()
   if (typeof runtimeState.isWindowMaximized === 'boolean') {
     hostWindowMaximizedRef.value = runtimeState.isWindowMaximized
-  }
-
-  if (
-    runtimeState.coreVersion !== undefined &&
-    runtimeState.coreVersion !== previousCoreVersion
-  ) {
-    window.dispatchEvent(new CustomEvent(HOST_BACKEND_UPDATED_EVENT))
   }
 }
 

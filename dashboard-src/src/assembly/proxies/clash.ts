@@ -13,7 +13,7 @@ import { disconnectByIdAPI } from '@/assembly/connections'
 import { GLOBAL, IPV6_TEST_URL, NOT_CONNECTED, PROXY_TYPE, SPEEDTEST_MODE } from '@/constant'
 import { getConnectionChains, isProxyGroup } from '@/helper'
 import { showNotification } from '@/helper/notification'
-import { notifyRequestError } from '@/helper/requestError'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
 import { i18n } from '@/i18n'
 import { activeConnections } from '@/store/connections'
 import {
@@ -41,18 +41,19 @@ import {
   speedtestUrlWithDefault,
 } from './index'
 
+import { captureBackendSession } from '@/helper/backendSession'
+
 let fetchTime = 0
 
 export const fetchProxies = async () => {
-  const nowTime = Date.now()
-
-  fetchTime = nowTime
+  const session = captureBackendSession()
+  const nowTime = ++fetchTime
 
   const [proxyRes, providerRes] = await Promise.all([fetchProxiesAPI(), fetchProxyProviderAPI()])
   const proxyData = proxyRes.data
   const providerData = providerRes.data
 
-  if (fetchTime !== nowTime) {
+  if (!session.isCurrent() || fetchTime !== nowTime) {
     return
   }
 
@@ -113,20 +114,29 @@ export const fetchProxies = async () => {
   })
 
   if (smartGroups.length > 0) {
-    initSmartWeights(smartGroups)
+    try {
+      await initSmartWeights(smartGroups)
+    } catch {
+      // Smart ranking is optional metadata. A transport/server failure must not
+      // turn an otherwise successful proxy refresh into an unhandled rejection.
+    }
   }
 }
 
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {
+  const session = captureBackendSession()
   const proxyGroup = proxyMap.value[proxyGroupName]
+  if (!proxyGroup) return
 
   if (proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance) return
   if (proxyGroup.now === proxyName) {
     await fetchProxies()
+    if (!session.isCurrent()) return
     if (proxyGroup.now === proxyName) return
   }
 
   await selectProxyAPI(proxyGroupName, proxyName)
+  if (!session.isCurrent()) return
   proxyMap.value[proxyGroupName].now = proxyName
 
   if (automaticDisconnection.value) {
@@ -134,7 +144,7 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
       .filter((c) => getConnectionChains(c).includes(proxyGroupName))
       .forEach((c) => disconnectByIdAPI(c.id).catch(() => {}))
   }
-  fetchProxies()
+  void fetchProxies().catch(() => {})
 }
 
 const getProviderNameByProxy = (proxyName: string) => {
@@ -164,18 +174,21 @@ const fetchNodeLatency = (proxyName: string, url: string, timeout: number) => {
 }
 
 const latencyTestForSingle = async (proxyName: string, url: string, timeout: number) => {
+  const session = captureBackendSession()
   const now = getNowProxyNodeName(proxyName)
 
   if (IPv6test.value) {
     try {
       const { data: ipv6LatencyResult } = await fetchNodeLatency(now, IPV6_TEST_URL, 2000)
 
-      IPv6Map.value[now] = ipv6LatencyResult.delay > NOT_CONNECTED
-    } catch {
+      if (session.isCurrent()) IPv6Map.value[now] = ipv6LatencyResult.delay > NOT_CONNECTED
+    } catch (error) {
+      if (!session.isCurrent()) throw error
       IPv6Map.value[now] = false
     }
   }
 
+  if (!session.isCurrent()) throw new Error('Backend session changed')
   return await fetchNodeLatency(independentLatencyTest.value ? proxyName : now, url, timeout)
 }
 
@@ -192,9 +205,11 @@ export const proxyLatencyTest = async (
   url = speedtestUrlWithDefault.value,
   timeout = speedtestTimeout.value,
 ) => {
+  const session = captureBackendSession()
   try {
     await latencyTestForSingle(proxyName, url, timeout)
   } catch {
+    if (!session.isCurrent()) return
     showNotification({
       content: 'testFailedTip',
       params: {
@@ -203,7 +218,7 @@ export const proxyLatencyTest = async (
       type: 'alert-error',
     })
   } finally {
-    await fetchProxies().catch(() => {})
+    if (session.isCurrent()) await fetchProxies().catch(() => {})
   }
 }
 
@@ -232,6 +247,7 @@ const testLatencyOneByOneWithTip = async (
   url = speedtestUrlWithDefault.value,
   groupName?: string,
 ) => {
+  const session = captureBackendSession()
   const total = nodes.length
   let testDone = 0
   let testFailed = 0
@@ -239,6 +255,7 @@ const testLatencyOneByOneWithTip = async (
   await Promise.allSettled(
     nodes.map((name) =>
       limiter(async () => {
+        if (!session.isCurrent()) return
         try {
           const { data } = await latencyTestForSingle(
             name,
@@ -246,11 +263,13 @@ const testLatencyOneByOneWithTip = async (
             Math.min(2000, speedtestTimeout.value),
           )
 
-          setHistory(name, data.delay, groupName)
+          if (session.isCurrent()) setHistory(name, data.delay, groupName)
         } catch {
+          if (!session.isCurrent()) return
           testFailed++
           setHistory(name, NOT_CONNECTED, groupName)
         } finally {
+          if (!session.isCurrent()) return
           testDone++
           showNotification({
             content: 'testFinishedTip',
@@ -267,7 +286,9 @@ const testLatencyOneByOneWithTip = async (
       }),
     ),
   )
+  if (!session.isCurrent()) return
   await fetchProxies().catch(() => {})
+  if (!session.isCurrent()) return
 
   showNotification({
     content: 'testFinishedResultTip',
@@ -284,7 +305,9 @@ const testLatencyOneByOneWithTip = async (
 }
 
 export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
+  const session = captureBackendSession()
   const proxyNode = proxyMap.value[proxyGroupName]
+  if (!proxyNode) return
   const all = (proxyNode.all ?? []).filter(isLatencyTestable)
   const url = getTestUrl(proxyGroupName)
 
@@ -295,7 +318,7 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
     )
   ) {
     if (proxyNode.fixed) {
-      deleteFixedProxyAPI(proxyGroupName).catch(() => {})
+      void runManualRequest(() => deleteFixedProxyAPI(proxyGroupName))
     }
     return testLatencyOneByOneWithTip(proxyGroupName, all, url, proxyGroupName)
   }
@@ -310,23 +333,27 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
         timeout,
       )
 
+      if (!session.isCurrent()) return
       all?.forEach((name) => {
         IPv6Map.value[getNowProxyNodeName(name)] = ipv6LatencyResult[name] > NOT_CONNECTED
       })
     } catch {
+      if (!session.isCurrent()) return
       all?.forEach((name) => {
         IPv6Map.value[getNowProxyNodeName(name)] = false
       })
     }
   }
+  if (!session.isCurrent()) return
   try {
     await fetchProxyGroupLatencyAPI(proxyGroupName, url, timeout)
   } catch (error) {
-    notifyRequestError(error)
+    notifyRequestErrorForSession(error, session)
     return
   } finally {
-    await fetchProxies().catch(() => {})
+    if (session.isCurrent()) await fetchProxies().catch(() => {})
   }
+  if (!session.isCurrent()) return
 
   const total = all.length
   const testFailed = all.filter(
@@ -348,12 +375,14 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
 }
 
 export const allProxiesLatencyTest = async () => {
+  const session = captureBackendSession()
   if (independentLatencyTest.value) {
     const limit = pLimit(3)
 
     return await Promise.all(
       proxyGroupList.value.map((proxyGroupName) =>
         limit(async () => {
+          if (!session.isCurrent()) return
           await proxyGroupLatencyTest(proxyGroupName)
         }),
       ),

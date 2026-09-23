@@ -3,6 +3,7 @@
  * 节点网格按「行」虚拟化,只渲染视口附近的几行。
  */
 import { handlerProxySelect } from '@/assembly/proxies'
+import { runManualRequest } from '@/helper/requestError'
 import { PROXY_CARD_SIZE } from '@/constant'
 import { useCollapseTransition } from '@/composables/collapseTransition'
 import { scrollNodeIntoViewKey } from '@/composables/proxiesScroll'
@@ -298,7 +299,7 @@ onBeforeUnmount(cancelCorrect)
         :name="node"
         :group-name="name"
         :active="node === now"
-        @click.stop="name && handlerProxySelect(name, node)"
+        @click.stop="name && runManualRequest(() => handlerProxySelect(name!, node))"
       />
     </div>
     <div :style="{ height: `${bottomSpacer}px` }" />

@@ -1,11 +1,14 @@
 import { fetchSmartGroupWeightsAPI, fetchSmartWeightsAPI } from '@/assembly/proxies'
+import { captureBackendSession } from '@/helper/backendSession'
 import type { NodeRank } from '@/types'
 import { ref } from 'vue'
 
 export const smartWeightsMap = ref<Record<string, Record<string, string>>>({})
 export const smartOrderMap = ref<Record<string, Record<string, number>>>({})
 
-const restructWeights = (proxyName: string, weights: NodeRank[]) => {
+let smartWeightsRequest = 0
+
+const restructWeights = (weights: NodeRank[]) => {
   const smartWeights: Record<string, string> = {}
   const smartOrder: Record<string, number> = {}
 
@@ -14,36 +17,59 @@ const restructWeights = (proxyName: string, weights: NodeRank[]) => {
     smartOrder[weight.Name] = index
   })
 
-  smartWeightsMap.value[proxyName] = smartWeights
-  smartOrderMap.value[proxyName] = smartOrder
+  return { smartWeights, smartOrder }
 }
 
-// deprecated
-const fetchSmartGroupWeights = async (proxyName: string) => {
-  const { data } = await fetchSmartGroupWeightsAPI(proxyName)
+const applyWeights = (
+  weightsByGroup: Record<string, NodeRank[]>,
+  session: ReturnType<typeof captureBackendSession>,
+  request: number,
+) => {
+  if (!session.isCurrent() || request !== smartWeightsRequest) return
 
-  if (!data.weights?.length) return
+  const weightsMap: Record<string, Record<string, string>> = {}
+  const orderMap: Record<string, Record<string, number>> = {}
 
-  restructWeights(proxyName, data.weights)
+  for (const [group, weights] of Object.entries(weightsByGroup)) {
+    if (!weights?.length) continue
+
+    const { smartWeights, smartOrder } = restructWeights(weights)
+    weightsMap[group] = smartWeights
+    orderMap[group] = smartOrder
+  }
+
+  smartWeightsMap.value = weightsMap
+  smartOrderMap.value = orderMap
+}
+
+const fetchLegacySmartWeights = async (smartGroups: string[]) => {
+  const entries = await Promise.all(
+    smartGroups.map(async (group) => {
+      const { data } = await fetchSmartGroupWeightsAPI(group)
+      return [group, data.weights] as const
+    }),
+  )
+
+  return Object.fromEntries(entries)
 }
 
 export const initSmartWeights = async (smartGroups: string[]) => {
-  const { status, data: smartWeights } = await fetchSmartWeightsAPI()
+  const session = captureBackendSession()
+  const request = ++smartWeightsRequest
+  const { status, data } = await fetchSmartWeightsAPI()
 
-  smartWeightsMap.value = {}
-  smartOrderMap.value = {}
+  if (!session.isCurrent() || request !== smartWeightsRequest) return
 
-  if (status !== 200) {
-    // deprecated fallback
-    smartGroups.forEach((name) => {
-      fetchSmartGroupWeights(name)
-    })
+  if (status === 404) {
+    // Compatibility with Smart cores that only expose the deprecated per-group endpoint.
+    const legacyWeights = await fetchLegacySmartWeights(smartGroups)
+    applyWeights(legacyWeights, session, request)
     return
   }
 
-  for (const [group, weights] of Object.entries(smartWeights.weights)) {
-    if (!weights?.length) continue
-
-    restructWeights(group, weights)
+  if (status !== 200) {
+    throw new Error(`Unexpected Smart weights response: HTTP ${status}`)
   }
+
+  applyWeights(data.weights, session, request)
 }

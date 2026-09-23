@@ -3,9 +3,28 @@ using System.Text;
 
 namespace Dashboard;
 
+internal interface ISecretProtector
+{
+    string Protect(string secret);
+    string Unprotect(string protectedSecret);
+}
+
+internal sealed class DpapiSecretProtector : ISecretProtector
+{
+    public static DpapiSecretProtector Instance { get; } = new();
+
+    private DpapiSecretProtector()
+    {
+    }
+
+    public string Protect(string secret) => SecretProtector.Protect(secret);
+
+    public string Unprotect(string protectedSecret) => SecretProtector.Unprotect(protectedSecret);
+}
+
 internal static class SecretProtector
 {
-    private const string ProtectedPrefix = "dpapi:";
+    internal const string ProtectedPrefix = "dpapi:";
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("Dashboard.Secret.v1");
     private static readonly byte[] LegacyEntropy = Encoding.UTF8.GetBytes("MihomoDashboard.Secret.v1");
 
@@ -28,9 +47,9 @@ internal static class SecretProtector
             return "";
         }
 
-        if (!protectedSecret.StartsWith(ProtectedPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!protectedSecret.StartsWith(ProtectedPrefix, StringComparison.Ordinal))
         {
-            return protectedSecret;
+            throw new FormatException("The persisted secret is not a supported DPAPI value.");
         }
 
         var protectedBytes = Convert.FromBase64String(protectedSecret[ProtectedPrefix.Length..]);

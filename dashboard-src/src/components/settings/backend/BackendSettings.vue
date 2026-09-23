@@ -153,6 +153,7 @@
 </template>
 
 <script setup lang="ts">
+import { captureBackendSession } from '@/helper/backendSession'
 import {
   flushDNSCacheAPI,
   flushFakeIPAPI,
@@ -166,6 +167,7 @@ import { coreHostActionsKey } from '@/composables/coreHostActions'
 import { hostState } from '@/composables/hostBridge'
 import { useBackendRuntimeConfig } from '@/composables/useBackendRuntimeConfig'
 import { showNotification } from '@/helper/notification'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
 import { fetchConfigs } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
@@ -176,24 +178,26 @@ const { configs, isActiveConfigLoaded, tunState, updateAllowLan, updateTunEnable
   useBackendRuntimeConfig()
 
 const reloadAll = () => {
-  fetchConfigs()
-  fetchRules()
-  fetchProxies()
+  void Promise.allSettled([fetchConfigs(), fetchRules(), fetchProxies()])
 }
 
 const isConfigReloading = ref(false)
 const handlerClickReloadConfigs = async () => {
   if (isConfigReloading.value) return
   isConfigReloading.value = true
+  const session = captureBackendSession()
   try {
     await reloadConfigsAPI()
+    if (!session.isCurrent()) return
     reloadAll()
     isConfigReloading.value = false
     showNotification({
       content: 'reloadConfigsSuccess',
       type: 'alert-success',
     })
-  } catch {
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
+  } finally {
     isConfigReloading.value = false
   }
 }
@@ -202,31 +206,40 @@ const isGeoUpdating = ref(false)
 const handlerClickUpdateGeo = async () => {
   if (isGeoUpdating.value) return
   isGeoUpdating.value = true
+  const session = captureBackendSession()
   try {
     await updateGeoDataAPI()
+    if (!session.isCurrent()) return
     reloadAll()
     isGeoUpdating.value = false
     showNotification({
       content: 'updateGeoSuccess',
       type: 'alert-success',
     })
-  } catch {
+  } catch (error) {
+    notifyRequestErrorForSession(error, session)
+  } finally {
     isGeoUpdating.value = false
   }
 }
 
 const hanlderTunModeChange = async () => {
-  await updateTunEnabled(!configs.value?.tun?.enable)
+  await runManualRequest(() => updateTunEnabled(!configs.value?.tun?.enable))
 }
 const handlerAllowLanChange = async (event: Event) => {
   if (!isActiveConfigLoaded.value) return
   const checked =
     event.target instanceof HTMLInputElement ? event.target.checked : !!configs.value?.['allow-lan']
-  await updateAllowLan(checked)
+  await runManualRequest(() => updateAllowLan(checked))
 }
 
 const handleFlushDNSCache = async () => {
-  await flushDNSCacheAPI()
+  const session = captureBackendSession()
+  try { await flushDNSCacheAPI() } catch (error) {
+    notifyRequestErrorForSession(error, session)
+    return
+  }
+  if (!session.isCurrent()) return
   showNotification({
     content: 'flushDNSCacheSuccess',
     type: 'alert-success',
@@ -234,7 +247,12 @@ const handleFlushDNSCache = async () => {
 }
 
 const handleFlushFakeIP = async () => {
-  await flushFakeIPAPI()
+  const session = captureBackendSession()
+  try { await flushFakeIPAPI() } catch (error) {
+    notifyRequestErrorForSession(error, session)
+    return
+  }
+  if (!session.isCurrent()) return
   showNotification({
     content: 'flushFakeIPSuccess',
     type: 'alert-success',
@@ -242,7 +260,12 @@ const handleFlushFakeIP = async () => {
 }
 
 const handleFlushSmartWeights = async () => {
-  await flushSmartGroupWeightsAPI()
+  const session = captureBackendSession()
+  try { await flushSmartGroupWeightsAPI() } catch (error) {
+    notifyRequestErrorForSession(error, session)
+    return
+  }
+  if (!session.isCurrent()) return
   showNotification({
     content: 'flushSmartWeightsSuccess',
     type: 'alert-success',

@@ -68,14 +68,14 @@
 /* ---------- 设置页 ---------- */
 
 .settings-section-label {
-  @apply px-1 pt-5 pb-2 text-xs tracking-wider uppercase first:pt-2;
-  color: color-mix(in srgb, var(--color-base-content) 40%, transparent);
+  @apply px-1 pt-5 pb-1.5 text-xs font-semibold tracking-wider uppercase first:pt-2;
+  color: color-mix(in srgb, var(--color-base-content) 60%, transparent);
 }
 .settings-grid {
   @apply bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl;
 }
 .setting-item {
-  @apply border-base-border flex min-h-12 items-center gap-3 border-b px-4 py-2 outline-none;
+  @apply border-base-border flex min-h-11 items-center gap-3 border-b px-4 py-2 outline-none;
   &:last-child {
     border-bottom: none;
   }
@@ -85,7 +85,7 @@
    * 需要标签独占一行的场景（配合 flex-1 输入框）在用处显式写 shrink-0!。
    */
   .setting-item-label {
-    @apply min-w-0 grow text-sm;
+    @apply min-w-0 flex-1 text-sm font-medium;
     svg {
       @apply text-base-content/40 inline-block;
     }

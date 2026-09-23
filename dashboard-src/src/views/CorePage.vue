@@ -63,6 +63,32 @@
       class="mx-auto flex w-full max-w-7xl flex-col gap-3 p-3"
       :style="coreContentPadding"
     >
+      <div
+        v-if="activeSecretDecryptionFailed"
+        role="alert"
+        class="alert alert-error flex-col items-start text-sm"
+      >
+        <p>
+          当前内核的 Secret 无法解密，API 连接已暂停。请重新填写 Secret；若内核确实未设置
+          Secret，可留空。原密文会保留，直到你明确确认替换并成功保存。
+        </p>
+        <label class="flex items-center gap-2">
+          <input
+            v-model="replaceFailedSecret[settings.coreType]"
+            type="checkbox"
+            class="checkbox checkbox-sm"
+          />
+          确认用当前填写的 Secret 替换无法解密的凭证（包括留空）
+        </label>
+      </div>
+      <div
+        v-if="route.query.connection === 'unauthorized'"
+        role="alert"
+        class="alert alert-warning text-sm"
+      >
+        连接认证失败，请核对当前内核的 API 地址和
+        Secret，然后保存。保存后将使用宿主确认的配置重新连接。
+      </div>
       <div class="grid items-start gap-3 lg:grid-cols-2 lg:gap-8">
         <div class="rounded-lg p-2">
           <h2 class="dashboard-section-title">启动配置</h2>
@@ -212,7 +238,7 @@
       <div class="modal-box max-w-sm rounded-lg">
         <h3 class="text-lg font-semibold">切换内核</h3>
         <p class="text-base-content/60 mt-2 text-sm leading-6">
-          将停止当前内核，等待进程完全退出后启动 {{ nextCoreTitle }}。
+          将先保存当前编辑的配置，再停止当前内核，等待进程完全退出后启动 {{ nextCoreTitle }}。
         </p>
         <div class="modal-action">
           <button
@@ -338,8 +364,15 @@
             启动成功后会自动进入 Dashboard。
           </span>
           <button
+            v-if="runtime.isRunning"
             class="btn btn-primary btn-sm"
-            :disabled="runtime.isRunning"
+            @click="completeSetup"
+          >
+            完成设置
+          </button>
+          <button
+            v-else
+            class="btn btn-primary btn-sm"
             @click="startCore"
           >
             启动内核
@@ -356,17 +389,17 @@ import SettingsContent from '@/components/settings/SettingsContent.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
 import {
   addHostMessageListener,
-  hostWindow,
+  hostState,
   postHostMessage,
   type HostMessage,
   type HostRuntimeState,
   type HostState,
 } from '@/composables/hostBridge'
 import { usePaddingForViews } from '@/composables/paddingViews'
-import { showNotification } from '@/helper/notification'
 import { preloadSecondaryPages, scheduleAfterInitialPaint } from '@/router/pageLoaders'
 import { isSidebarCollapsed } from '@/store/settings'
 import { ArrowsRightLeftIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
+import { mergeHostDraft } from '@/helper/hostDraft'
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -506,6 +539,13 @@ const activeApiUrl = computed({
   },
 })
 
+const replaceFailedSecret = reactive<Record<string, boolean>>({ mihomo: false, 'sing-box': false })
+const activeSecretDecryptionFailed = computed(() =>
+  settings.coreType === 'sing-box'
+    ? hostState.value.singBoxSecretDecryptionFailed
+    : hostState.value.mihomoSecretDecryptionFailed,
+)
+
 const activeSecret = computed({
   get: () => (settings.coreType === 'sing-box' ? settings.singBoxSecret : settings.mihomoSecret),
   set: (value: string) => {
@@ -520,18 +560,17 @@ const activeSecret = computed({
 const collect = () => ({
   type: 'save',
   coreType: settings.coreType,
-  corePath: activeCorePath.value,
-  configPath: activeConfigPath.value,
-  apiUrl: activeApiUrl.value,
-  secret: activeSecret.value,
   mihomoCorePath: settings.mihomoCorePath,
   mihomoConfigPath: settings.mihomoConfigPath,
   mihomoApiUrl: settings.mihomoApiUrl,
   mihomoSecret: settings.mihomoSecret,
+  replaceMihomoSecret: !!hostState.value.mihomoSecretDecryptionFailed && replaceFailedSecret.mihomo,
   singBoxCorePath: settings.singBoxCorePath,
   singBoxConfigPath: settings.singBoxConfigPath,
   singBoxApiUrl: settings.singBoxApiUrl,
   singBoxSecret: settings.singBoxSecret,
+  replaceSingBoxSecret:
+    !!hostState.value.singBoxSecretDecryptionFailed && replaceFailedSecret['sing-box'],
   setupCompleted: setupCompleted.value,
   startCoreOnLaunch: settings.startCoreOnLaunch,
   minimizeToTray: settings.minimizeToTray,
@@ -551,13 +590,16 @@ const browseSetupConfig = () => {
   post({ ...collect(), type: 'browseConfig' })
 }
 
+let setupCompletionRequested = false
 const completeSetup = () => {
   if (!runtime.isRunning) {
     return
   }
 
-  setupCompleted.value = true
-  post({ ...collect(), setupCompleted: true, type: 'completeSetup' })
+  setupCompletionRequested = true
+  // The host may reject a busy/closing command. Keep the wizard until its
+  // authoritative state confirms that setup was persisted.
+  post({ ...collect(), type: 'completeSetup' })
 }
 
 const confirmSwitchCore = () => {
@@ -589,7 +631,11 @@ provide(coreHostActionsKey, {
   upgradeCore,
 })
 
+let previousHostSettings: Partial<typeof settings> = {}
 const setState = (state: HostState) => {
+  if (!state.mihomoSecretDecryptionFailed) replaceFailedSecret.mihomo = false
+  if (!state.singBoxSecretDecryptionFailed) replaceFailedSecret['sing-box'] = false
+  const draft = { ...settings }
   runtime.isRunning = !!state.isRunning
   runtime.processId = state.processId ?? null
   settings.coreType = normalizeCoreType(state.coreType)
@@ -619,9 +665,14 @@ const setState = (state: HostState) => {
   settings.minimizeToTray = !!state.minimizeToTray
   settings.lightweightMode = state.lightweightMode ?? true
   settings.autostart = !!state.autostart
+  const incoming = { ...settings }
+  Object.assign(settings, mergeHostDraft(draft, previousHostSettings, incoming))
+  settings.coreType = incoming.coreType // Core selection is owned by the host.
+  previousHostSettings = incoming
   isAutostartUpdating.value = !!state.isAutostartUpdating
   setupCompleted.value = state.setupCompleted ?? true
-  if (!setupCompleted.value && runtime.isRunning) {
+  if (setupCompleted.value || !runtime.isRunning) setupCompletionRequested = false
+  if (!setupCompleted.value && runtime.isRunning && !setupCompletionRequested) {
     completeSetup()
   }
   if (!runtime.isCoreSwitching) {
@@ -655,38 +706,6 @@ const setRuntimeState = (state: HostRuntimeState | undefined) => {
 const appendLogText = (value: string | undefined) => {
   if (!value) return
   runtime.logText = `${runtime.logText || ''}${value}`.slice(-8000)
-}
-
-const getNoticeType = (message: string) => {
-  if (message.startsWith('操作失败') || message.includes('失败')) {
-    return 'alert-error'
-  }
-
-  if (message.startsWith('正在') || message.includes('新版本')) {
-    return 'alert-info'
-  }
-
-  if (message.includes('管理员权限') || message.includes('UAC')) {
-    return 'alert-warning'
-  }
-
-  return 'alert-success'
-}
-
-const showNotice = (message: string) => {
-  if (!message) {
-    return
-  }
-
-  if (message.startsWith('当前已是最新版本') || message.startsWith('发现 Dashboard 新版本')) {
-    return
-  }
-
-  showNotification({
-    content: message,
-    key: `core-host-${message}`,
-    type: getNoticeType(message),
-  })
 }
 
 const syncLogHeight = () => {
@@ -737,15 +756,12 @@ const handleHostMessage = (event: MessageEvent<HostMessage>) => {
     setRuntimeState(event.data.runtimeState)
   } else if (event.data?.type === 'logAppend') {
     appendLogText(event.data.logText)
-  } else if (event.data?.type === 'notice') {
-    showNotice(event.data.message ?? '')
   }
 }
 
 onMounted(async () => {
   removeHostMessageListener = addHostMessageListener(handleHostMessage)
-  hostWindow.__mihomoControlSetState = setState
-  hostWindow.__mihomoControlNotice = showNotice
+  if (hostState.value.coreType) setState(hostState.value)
   await nextTick()
   syncLogHeight()
   window.addEventListener('resize', syncLogHeight)
@@ -761,12 +777,6 @@ onMounted(async () => {
 onUnmounted(() => {
   removeHostMessageListener?.()
   removeHostMessageListener = undefined
-  if (hostWindow.__mihomoControlSetState === setState) {
-    delete hostWindow.__mihomoControlSetState
-  }
-  if (hostWindow.__mihomoControlNotice === showNotice) {
-    delete hostWindow.__mihomoControlNotice
-  }
   window.removeEventListener('resize', syncLogHeight)
   stopSidebarWatch?.()
   stopSidebarWatch = undefined

@@ -149,21 +149,31 @@ internal static partial class CoreUpdateChecker
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("无法启动内核版本探测进程。");
+        return await ReadVersionProcessAsync(process, cancellationToken);
+    }
+
+    internal static async Task<string> ReadVersionProcessAsync(Process process, CancellationToken cancellationToken)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var outputTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var errorTask = process.StandardError.ReadToEndAsync(timeout.Token);
         try
         {
             await process.WaitForExitAsync(timeout.Token);
+            return $"{await outputTask} {await errorTask}".Trim();
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             TryKill(process);
+            try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch (Exception ex) { HostOperationLogger.Error("update", "Failed to reap version probe after cancellation.", ex); }
+            // Observe both redirected readers even if one was cancelled first.
+            try { await Task.WhenAll(outputTask, errorTask); }
+            catch (OperationCanceledException) { }
+            cancellationToken.ThrowIfCancellationRequested();
             throw new TimeoutException("读取内核版本超时。");
         }
-
-        return $"{await outputTask} {await errorTask}".Trim();
     }
 
     private static void TryKill(Process process)

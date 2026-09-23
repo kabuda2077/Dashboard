@@ -94,7 +94,8 @@ import { ROUTE_ICON_MAP } from '@/constant/routeIcons'
 import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
 import { scheduleAfterInitialPaint } from '@/router/pageLoaders'
-import { fetchConfigs, resetConfigs } from '@/assembly/config'
+import { fetchConfigs } from '@/assembly/config'
+import { resetBackendRuntime } from '@/helper/backendRuntime'
 import {
   initConnections,
   isPaused as connectionsPaused,
@@ -107,6 +108,7 @@ import { fetchRules, rulesTabShow } from '@/assembly/rules'
 import { isSidebarCollapsed } from '@/store/settings'
 import { activeUuid } from '@/store/setup'
 import { useDocumentVisibility, useElementBounding } from '@vueuse/core'
+import { backendSessionGeneration, backendSessionReady } from '@/helper/backendSession'
 import { onUnmounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
@@ -143,10 +145,15 @@ watch(
   { immediate: true },
 )
 
-const ensureTask = (key: string, task: () => void) => {
-  if (initializedTasks.has(key)) return
+const ensureTask = (key: string, task: () => unknown) => {
+  if (!backendSessionReady.value || initializedTasks.has(key)) return
   initializedTasks.add(key)
-  task()
+  const generation = backendSessionGeneration.value
+  void Promise.resolve().then(() => {
+    if (generation === backendSessionGeneration.value && backendSessionReady.value) return task()
+  }).catch(() => {
+    if (generation === backendSessionGeneration.value) initializedTasks.delete(key)
+  })
 }
 
 const initializePriorityData = () => {
@@ -227,18 +234,13 @@ const initializeRouteData = () => {
 }
 
 watch(
-  activeUuid,
+  [backendSessionGeneration, backendSessionReady],
   () => {
     cancelDeferredDataSchedule()
     initializedTasks.clear()
-    resetConfigs()
+    resetBackendRuntime()
 
-    if (!activeUuid.value) {
-      stopConnections()
-      stopLogs()
-      stopSatistic()
-      return
-    }
+    if (!backendSessionReady.value) return
 
     rulesTabShow.value = RULE_TAB_TYPE.RULES
     proxiesTabShow.value = PROXY_TAB_TYPE.PROXIES
@@ -267,10 +269,10 @@ watch(documentVisible, () => {
   const visible = documentVisible.value === 'visible'
   connectionsPaused.value = !visible
   logsPaused.value = !visible
-  if (!visible || !activeUuid.value) return
+  if (!visible || !backendSessionReady.value) return
 
   if (initializedTasks.has('proxies')) {
-    fetchProxies()
+    void fetchProxies().catch(() => {})
   }
   initializeRouteData()
   scheduleDeferredDataAfterInitialPaint()

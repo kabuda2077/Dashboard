@@ -1,10 +1,8 @@
+import { showHostNotice } from '@/helper/hostNotice'
 import { getBackendFromUrl } from '@/helper/utils'
-import { addBackend } from '@/store/setup'
-import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
+import { addBackend, activeUuid } from '@/store/setup'
 import {
-  applyHostIconCache,
-  applyHostRuntimeState,
-  applyHostState as applyBridgeHostState,
+  addHostMessageListener,
   hostWindow,
   postHostMessage,
   type HostMessage,
@@ -54,28 +52,18 @@ const applyBackend = (backend: Omit<Backend, 'uuid'> | null, replaceExisting = f
   addBackend(backend, { replaceExisting })
 }
 
-const applyBackendFromState = (state: HostState | undefined, replaceExisting = false) => {
-  const backend = backendFromApiUrl(
-    state?.apiUrl,
-    state?.secret,
-    state?.coreType,
-    state?.readOnlyTunEnabled,
-  )
-  applyBackend(backend, replaceExisting)
-  return backend
-}
-
 let backendSignature = ''
 const applyHostState = (state: HostState | undefined) => {
-  applyBridgeHostState(state)
-  const backend = applyBackendFromState(state, true)
+  const backend = state?.secretDecryptionFailed ? null
+    : backendFromApiUrl(state?.apiUrl, state?.secret, state?.coreType, state?.readOnlyTunEnabled)
   const nextSignature = backend
-    ? `${backend.protocol}://${backend.host}:${backend.port}${backend.secondaryPath}|${backend.password}|${state?.coreType ?? ''}|${state?.coreVersion ?? ''}`
+    ? `${backend.protocol}://${backend.host}:${backend.port}${backend.secondaryPath}|${backend.password}|${state?.coreType ?? ''}|${state?.readOnlyTunEnabled ?? ''}`
     : ''
 
-  if (nextSignature && nextSignature !== backendSignature) {
+  if (!backend) activeUuid.value = null
+  if (nextSignature !== backendSignature) {
+    if (backend) applyBackend(backend, true)
     backendSignature = nextSignature
-    window.dispatchEvent(new CustomEvent(HOST_BACKEND_UPDATED_EVENT))
   }
 }
 
@@ -276,15 +264,10 @@ if (!hostWindow.chrome?.webview) {
 }
 
 installWindowChromeBridge()
-hostWindow.__mihomoApplyBackend = (state) => {
-  applyHostState(state)
-}
-hostWindow.chrome?.webview?.addEventListener?.('message', (event: MessageEvent<HostMessage>) => {
+addHostMessageListener((event: MessageEvent<HostMessage>) => {
   if (event.data?.type === 'state') {
     applyHostState(event.data.state)
-  } else if (event.data?.type === 'runtimeState') {
-    applyHostRuntimeState(event.data.runtimeState)
-  } else if (event.data?.type === 'iconCacheUpdated') {
-    applyHostIconCache(event.data.iconCacheMap)
+  } else if (event.data?.type === 'notice') {
+    showHostNotice(event.data.message ?? '')
   }
 })

@@ -14,16 +14,25 @@ public sealed class ProxyGroupIconCache
     private readonly object _sync = new();
 
     public ProxyGroupIconCache()
+        : this(Path.Combine(AppSettings.ResourceDirectory, "icon-cache"), migrateExistingData: true)
     {
-        AppSettings.MigratePortableDataDirectory("icon-cache", CacheDirectory);
-        AppSettings.MigrateResourceDataDirectory("cache", "icon-cache", CacheDirectory);
-        AppSettings.MigrateLegacyDataDirectory("icon-cache", CacheDirectory);
+    }
+
+    internal ProxyGroupIconCache(string cacheDirectory, bool migrateExistingData = false)
+    {
+        CacheDirectory = cacheDirectory;
+        if (migrateExistingData)
+        {
+            AppSettings.MigratePortableDataDirectory("icon-cache", CacheDirectory);
+            AppSettings.MigrateResourceDataDirectory("cache", "icon-cache", CacheDirectory);
+            AppSettings.MigrateLegacyDataDirectory("icon-cache", CacheDirectory);
+        }
         Directory.CreateDirectory(CacheDirectory);
     }
 
     public event EventHandler? CacheChanged;
 
-    public string CacheDirectory { get; } = Path.Combine(AppSettings.ResourceDirectory, "icon-cache");
+    public string CacheDirectory { get; }
 
     public IReadOnlyDictionary<string, string> GetDashboardMap(Uri dashboardUri)
     {
@@ -36,13 +45,19 @@ public sealed class ProxyGroupIconCache
         }
     }
 
-    public void LoadExisting(string configPath)
+    public Task LoadExistingAsync(
+        string configPath,
+        CancellationToken cancellationToken = default,
+        Func<bool>? isCurrent = null)
     {
-        // 异步加载图标缓存，不阻塞主线程
-        _ = Task.Run(() => ScanExistingCacheFiles(configPath));
+        // Keep disk scanning off the UI thread, but return ownership to the host.
+        return Task.Run(() => ScanExistingCacheFiles(configPath, cancellationToken, isCurrent), cancellationToken);
     }
 
-    private void ScanExistingCacheFiles(string configPath)
+    private void ScanExistingCacheFiles(
+        string configPath,
+        CancellationToken cancellationToken,
+        Func<bool>? isCurrent)
     {
         var iconUrls = ExtractProxyGroupIconUrls(configPath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -56,6 +71,7 @@ public sealed class ProxyGroupIconCache
         var changed = false;
         foreach (var iconUrl in iconUrls)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
                 || uri.Scheme is not ("http" or "https"))
             {
@@ -68,9 +84,12 @@ public sealed class ProxyGroupIconCache
                 continue;
             }
 
+            if (isCurrent?.Invoke() == false) return;
             changed |= TryRecordCacheFile(iconUrl, fileName);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        if (isCurrent?.Invoke() == false) return;
         if (changed)
         {
             CacheChanged?.Invoke(this, EventArgs.Empty);
@@ -117,13 +136,12 @@ public sealed class ProxyGroupIconCache
         return true;
     }
 
-    public async Task RefreshAsync(string configPath, CancellationToken cancellationToken = default)
+    public async Task RefreshAsync(
+        string configPath,
+        CancellationToken cancellationToken = default,
+        Func<bool>? isCurrent = null)
     {
-        if (!await _refreshLock.WaitAsync(0, cancellationToken))
-        {
-            return;
-        }
-
+        await _refreshLock.WaitAsync(cancellationToken);
         try
         {
             var iconUrls = ExtractProxyGroupIconUrls(configPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -138,9 +156,11 @@ public sealed class ProxyGroupIconCache
                     continue;
                 }
 
+                if (isCurrent?.Invoke() == false) return;
                 changed |= TryRecordCacheFile(iconUrl, fileName);
             }
 
+            if (isCurrent?.Invoke() == false) return;
             if (changed)
             {
                 CacheChanged?.Invoke(this, EventArgs.Empty);

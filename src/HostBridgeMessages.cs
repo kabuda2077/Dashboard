@@ -37,7 +37,16 @@ internal static class HostBridgeMessageType
     public const string LogAppend = "logAppend";
     public const string IconCacheUpdated = "iconCacheUpdated";
     public const string Notice = "notice";
+    public const string AppUpdateResult = "appUpdateResult";
     public const string WindowState = "windowState";
+}
+
+internal static class AppUpdateResultKind
+{
+    public const string Available = "available";
+    public const string UpToDate = "upToDate";
+    public const string Failed = "failed";
+    public const string Busy = "busy";
 }
 
 internal static class HostBridgeJson
@@ -84,6 +93,10 @@ internal sealed record HostOutboundMessage
     public DashboardState? State { get; init; }
     public DashboardRuntimeState? RuntimeState { get; init; }
     public string? Message { get; init; }
+    public string? Result { get; init; }
+    public bool? Manual { get; init; }
+    public string? CurrentVersion { get; init; }
+    public string? LatestVersion { get; init; }
     public string? LogText { get; init; }
     public IReadOnlyDictionary<string, string>? IconCacheMap { get; init; }
     public bool? IsMaximized { get; init; }
@@ -98,6 +111,19 @@ internal sealed record HostOutboundMessage
     {
         Type = HostBridgeMessageType.Notice,
         Message = message
+    };
+
+    public static HostOutboundMessage AppUpdateResult(
+        string result,
+        bool manual,
+        string? currentVersion = null,
+        string? latestVersion = null) => new()
+    {
+        Type = HostBridgeMessageType.AppUpdateResult,
+        Result = result,
+        Manual = manual,
+        CurrentVersion = currentVersion,
+        LatestVersion = latestVersion
     };
 
     public static HostOutboundMessage WindowState(bool isMaximized) => new()
@@ -148,6 +174,9 @@ internal sealed record DashboardState
     public required string ConfigPath { get; init; }
     public required string ApiUrl { get; init; }
     public required string Secret { get; init; }
+    public bool SecretDecryptionFailed { get; init; }
+    public bool MihomoSecretDecryptionFailed { get; init; }
+    public bool SingBoxSecretDecryptionFailed { get; init; }
     public required string MihomoCorePath { get; init; }
     public required string MihomoConfigPath { get; init; }
     public required string MihomoApiUrl { get; init; }

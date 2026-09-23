@@ -3,6 +3,8 @@ import { computed, onMounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import ConfirmDialogHost from './components/common/ConfirmDialogHost.vue'
 import { useAppearanceVars } from './composables/useAppearanceVars'
+import { useKeyboard } from './composables/keyboard'
+import { importStartupSettings } from './helper/appStartup'
 import { EMOJIS, FONTS } from './constant'
 import { backgroundImage } from './helper/indexeddb'
 import { initNotification } from './helper/notification'
@@ -14,6 +16,7 @@ const toast = ref<HTMLElement>()
 
 initNotification(toast as Ref<HTMLElement>)
 useAppearanceVars()
+useKeyboard()
 
 const FONT_CLASS_MAP = {
   [EMOJIS.TWEMOJI]: {
@@ -54,7 +57,10 @@ watch(
   { immediate: true },
 )
 
-onMounted(setThemeColor)
+onMounted(() => {
+  setThemeColor()
+  void importStartupSettings()
+})
 </script>
 
 <template>

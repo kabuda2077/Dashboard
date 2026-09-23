@@ -9,6 +9,8 @@ import {
 } from '@/assembly/config'
 import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { activeBackend } from '@/store/setup'
+import { hasHostBridge } from '@/composables/hostBridge'
+import { backendSessionGeneration, backendSessionReady } from '@/helper/backendSession'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
 type ConfigStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -29,7 +31,7 @@ let retryTimer: ReturnType<typeof window.setTimeout> | undefined
 let readyRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
 const readyRefreshedRequestKeys = new Set<string>()
 
-const getConfigRequestKey = (backendUuid: string) => `${backendUuid}:${getConfigsGeneration()}`
+const getConfigRequestKey = (backendUuid: string) => `${backendUuid}:${getConfigsGeneration()}:${backendSessionGeneration.value}`
 
 const clearRetryTimer = () => {
   if (!retryTimer) return
@@ -111,7 +113,7 @@ export const useBackendRuntimeConfig = () => {
   })
 
   const scheduleConfigRetry = () => {
-    if (retryTimer || !activeBackend.value || isActiveConfigLoaded.value) return
+    if (retryTimer || !backendSessionReady.value || isActiveConfigLoaded.value) return
     retryTimer = window.setTimeout(() => {
       retryTimer = undefined
       void ensureConfigLoaded()
@@ -120,7 +122,7 @@ export const useBackendRuntimeConfig = () => {
 
   const scheduleReadyRefresh = () => {
     const backendUuid = activeBackendUuid.value
-    if (!backendUuid) return
+    if (!backendUuid || !backendSessionReady.value) return
     const requestKey = getConfigRequestKey(backendUuid)
     if (readyRefreshTimer || readyRefreshedRequestKeys.has(requestKey)) return
 
@@ -137,7 +139,7 @@ export const useBackendRuntimeConfig = () => {
   }
 
   const ensureConfigLoaded = async () => {
-    if (!activeBackend.value || isActiveConfigLoaded.value) return
+    if (!backendSessionReady.value || isActiveConfigLoaded.value) return
     const requestedBackendUuid = activeBackendUuid.value
     const requestKey = getConfigRequestKey(requestedBackendUuid)
     if (loadingRequestKey === requestKey) return
@@ -164,6 +166,7 @@ export const useBackendRuntimeConfig = () => {
   // cores, preserving its UUID. Reset the cached config so the new core is
   // queried even though activeBackendUuid itself did not change.
   const handleHostBackendUpdated = () => {
+    if (hasHostBridge) return // Desktop sessions are coordinated by the runtime owner.
     clearRetryTimer()
     clearReadyRefreshTimer()
     resetConfigs()
@@ -182,7 +185,7 @@ export const useBackendRuntimeConfig = () => {
   }
 
   watch(
-    activeBackendUuid,
+    [activeBackendUuid, backendSessionGeneration, backendSessionReady],
     () => {
       configError.value = null
       clearRetryTimer()

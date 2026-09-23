@@ -78,6 +78,13 @@ Invoke-Step 'Dashboard desktop source contract' {
     }
 }
 
+Invoke-Step 'Build/release script regression tests' {
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\BuildScripts.Tests.ps1
+    if ($LASTEXITCODE -ne 0) {
+        throw "build/release script tests failed with exit code $LASTEXITCODE"
+    }
+}
+
 if (-not $SkipFrontendTypeCheck -or -not $SkipFrontendTests -or -not $SkipFrontendBuild) {
     Invoke-Step 'Frontend dependencies' {
         $pnpmPath = Get-PnpmPath
@@ -152,10 +159,7 @@ if (-not $SkipFrontendBuild) {
 if ($SkipFrontendBuild -and (-not $SkipDotnetBuild -or -not $SkipDotnetTests)) {
     # Skipping the UI build is only safe when a previous build left the assets in
     # place. Fail with the real reason instead of shipping a UI-less binary.
-    $dashboardAssets = Join-Path $repoRoot 'resources\dashboard\index.html'
-    if (-not (Test-Path -LiteralPath $dashboardAssets)) {
-        throw "resources\dashboard is empty and -SkipFrontendBuild was passed. Run without -SkipFrontendBuild, or build once with .\tools\build-zashboard.ps1, otherwise the .NET build produces an app with no UI."
-    }
+    & (Join-Path $repoRoot 'tools\assert-dashboard-assets.ps1') -Path (Join-Path $repoRoot 'resources\dashboard')
 }
 
 if (-not $SkipDotnetBuild) {
