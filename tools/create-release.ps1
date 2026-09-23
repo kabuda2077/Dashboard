@@ -7,12 +7,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location $repoRoot
 
 $buildArgs = @(
     '-ExecutionPolicy', 'Bypass',
-    '-File', '.\build.ps1',
+    '-File', (Join-Path $PSScriptRoot 'build.ps1'),
     '-Configuration', $Configuration,
     '-Runtime', $Runtime
 )

@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 # Invoke-Step drops to 'Continue' around each step, so native stderr stays
 # informational and every step is judged by $LASTEXITCODE alone.
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $dashboardRoot = Join-Path $repoRoot 'dashboard-src'
 $pnpmStoreDir = Join-Path $repoRoot '.tmp\pnpm-store'
 

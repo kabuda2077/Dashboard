@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location $repoRoot
 
 Write-Host "==> Building Dashboard" -ForegroundColor Cyan

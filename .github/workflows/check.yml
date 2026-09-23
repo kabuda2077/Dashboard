@@ -30,4 +30,4 @@ jobs:
 
       - name: Run checks
         shell: powershell
-        run: .\check.ps1 -Configuration Release
+        run: .\tools\check.ps1 -Configuration Release

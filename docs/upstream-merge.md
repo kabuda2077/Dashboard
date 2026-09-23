@@ -76,7 +76,7 @@ The desktop app is not pure zashboard. It consists of:
 - C# desktop host in `src/`
 - customized zashboard copy in `dashboard-src/`
 - built frontend resources in `resources/dashboard/` (generated, not tracked in git)
-- build/release scripts in `tools/`, `build.ps1`, and `create-release.ps1`
+- build/release scripts in `tools/`
 - local UI rules in `docs/style.md`
 
 ## Product Contract
@@ -322,7 +322,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\build-zashboard.ps1 -SkipBuild
 Run full build:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
 For a normal local replacement, preserve `resources/EBWebView`. Start the replacement build and verify that the host content marker applies targeted HTTP-cache/service-worker invalidation and that profile-backed data remains available. If a full profile reset is genuinely required for diagnosis, stop and obtain explicit user approval for the exact isolated directory; do not put a broad `Remove-Item` command in this workflow.
@@ -361,7 +361,7 @@ Merge:
 - [ ] Manual-Merge files were reviewed for both upstream behavior and local product constraints.
 - [ ] `src/main.ts` remains storage-neutral and starts `dashboardStartup`; `src/appEntry.ts` still imports `./hostBootstrap` after fresh settings restoration.
 - [ ] `dashboard-desktop.css` still exists and remains imported last in `dashboard-src/src/assets/main.css`.
-- [ ] `resources/dashboard/` was rebuilt after frontend changes. It is generated and untracked, so there is nothing to commit; `check.ps1` and `build.ps1` regenerate it before the .NET build.
+- [ ] `resources/dashboard/` was rebuilt after frontend changes. It is generated and untracked, so there is nothing to commit; `tools/check.ps1` and `tools/build.ps1` regenerate it before the .NET build.
 
 UI:
 
@@ -393,7 +393,7 @@ Build and review:
 
 - [ ] `pnpm --dir dashboard-src type-check` passed.
 - [ ] `tools/build-zashboard.ps1 -SkipBuild` passed.
-- [ ] Full `build.ps1` passed.
+- [ ] Full `tools/build.ps1` passed.
 - [ ] Manual inspection checklist completed.
 - [ ] Local replacement, if performed, preserved `resources/EBWebView`, invalidated stale HTTP cache/service workers through the host content marker, and retained profile data.
 

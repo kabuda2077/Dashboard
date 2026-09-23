@@ -24,7 +24,7 @@ P1–P9 实现及自动化边界已落地，R4 架构收敛完成，R5 自动化
 
 记录日期：2026-09-23。完整检查和发布使用Node **24.21.0**、pnpm **11.20.0**、.NET SDK **9.0.318**，基于当时未提交工作区的隔离源码副本`.tmp/r4-validation`；不能仅用HEAD复现该候选。源码清单为`.tmp/architecture-consolidation/r4-validation-manifest.csv`，检查/发布日志及包审计位于同目录的`r4-check.*`、`r5-release.*`和`r5-package-audit.json`。这些临时证据不随仓库自动分发。
 
-- 架构收敛阶段完整 `check.ps1`：前端 **54 文件 / 145 项**、后端 **224 项**、构建/发布脚本 **9 场景**通过；vue-tsc、源码契约、生产构建、资源检查和 .NET 构建通过。
+- 架构收敛阶段完整 `tools/check.ps1`：前端 **54 文件 / 145 项**、后端 **224 项**、构建/发布脚本 **9 场景**通过；vue-tsc、源码契约、生产构建、资源检查和 .NET 构建通过。
 - 隔离 fixture：5 个页面 × 明暗主题 × 2 个宽度，共 **20 张截图**最终哈希一致；Core 中 **504 个设置元素**的计算样式和矩形无差异。fixture 不覆盖原生窗口、WebView2 profile、DPI、真实网络或核心。
 - R5 在完整检查后新增 **1 个**延迟轮次测试；聚焦复跑为 **3 文件 / 7 项**，并通过 vue-tsc。未重跑完整套件，7 项不计入 145 项。
 - R5 ZIP（早于下述源码残留清理，未重新打包）：`artifacts/releases/Dashboard-R5-20260923-171509.zip`，**4,436,486 字节**，SHA256 **`A4FD035768F88AE3F1AB69E51CF1CF1F524A3DB9EABE68A6C84EF08D94D3EAEA`**。166 个条目与 Release publish 集合及逐文件哈希一致；无设置、核心、日志、WebView profile、PDB、依赖目录或 service worker。该包未启动、部署或签署发布结论。
@@ -37,6 +37,12 @@ P1–P9 实现及自动化边界已落地，R4 架构收敛完成，R5 自动化
 删除无消费者的UpgradeCoreModal、UpdateConfigModal、DataLine、SignalStrength、ProxyNodeGrid及public/icon.svg；同时清除ProxyNodeGrid失效构建断言、旧弹窗独占helper/API导出和四语文案。删除未接通的.lintstagedrc.yaml、prepare/husky、lint-staged及sort-package-json依赖，锁文件仅删除相关依赖项，未升级保留依赖。移除tsconfig中不存在的Cypress/Nightwatch/Playwright配置匹配项。
 
 使用Node24.21.0和pnpm11.20.0，在系统临时目录隔离副本执行frozen-lockfile安装、前端全套**55文件146项通过**、vue-tsc、桌面Vite生产构建、源码契约及**9个脚本场景通过**。后端未改，不重复运行旧224项后端测试，也不将此次前端验证称为重跑完整check.ps1。原候选ZIP未更新。没有启动实际Dashboard或执行系统操作。
+
+## 构建入口整理（2026-09-23）
+
+根目录build.ps1、check.ps1、create-release.ps1移至tools/，不保留转发副本。三个脚本从自身目录的上一级定位仓库根，发布脚本使用明确的同目录build入口；CI、文档及脚本测试均更新。脚本回归额外核对外部工作目录调用和子脚本定位。
+
+在系统临时隔离副本中，从仓库外目录运行完整`tools/check.ps1 -Configuration Release`（无跳过参数）与完整`tools/create-release.ps1`：**前端55文件146项、后端224项、9个脚本场景、类型检查、前端构建、资源检查、.NET Release构建及ZIP生成全部通过**。Node24.21.0/pnpm11.20.0；未运行Dashboard或实机核心。迁移不改变应用逻辑，现有交付ZIP未覆盖。
 
 ## 必须保留的行为语义
 
