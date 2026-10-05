@@ -53,6 +53,8 @@ import { proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import type { Connection } from '@/types'
 import { ArrowDownCircleIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
+import { selectTopDownloads } from '@/helper/topConnections'
+import { backendSessionGeneration } from '@/helper/backendSession'
 
 const displayOptions = computed(() => ({
   mode: 'card' as const,
@@ -61,36 +63,17 @@ const displayOptions = computed(() => ({
 }))
 
 const displayConnections = ref<Connection[]>([])
-const displayLimit = 4
-
-const cloneConnection = (connection: Connection, downloadSpeed = connection.downloadSpeed) => ({
-  ...connection,
-  downloadSpeed,
-})
-
+watch(
+  backendSessionGeneration,
+  () => {
+    displayConnections.value = []
+  },
+  { flush: 'sync' },
+)
 watch(
   activeConnections,
   (connections) => {
-    const downloadingConnections = connections
-      .filter((connection) => connection.downloadSpeed > 0)
-      .slice()
-      .sort((a, b) => b.downloadSpeed - a.downloadSpeed)
-      .slice(0, displayLimit)
-
-    const retainedConnections = displayConnections.value.map((connection) => {
-      const currentConnection = connections.find((item) => item.id === connection.id)
-
-      return cloneConnection(currentConnection ?? connection, 0)
-    })
-
-    displayConnections.value = Array.from({ length: displayLimit }, (_, index) => {
-      const downloadingConnection = downloadingConnections[index]
-      if (downloadingConnection) {
-        return cloneConnection(downloadingConnection)
-      }
-
-      return retainedConnections[index]
-    }).filter((connection): connection is Connection => !!connection)
+    displayConnections.value = selectTopDownloads(connections, displayConnections.value)
   },
   { immediate: true },
 )

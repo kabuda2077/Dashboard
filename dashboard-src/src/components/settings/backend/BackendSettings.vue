@@ -1,8 +1,8 @@
 <template>
   <!-- backend -->
-  <div class="rounded-lg p-2 text-sm">
-    <div class="grid items-stretch gap-3 lg:grid-cols-2 lg:gap-8">
-      <div class="rounded-lg p-2">
+  <div class="text-sm" :class="embedded ? '' : 'rounded-lg p-2'">
+    <div :class="embedded ? 'core-layout' : 'grid items-stretch gap-3 lg:grid-cols-2 lg:gap-8'">
+      <div class="min-w-0" :class="embedded ? '' : 'rounded-lg p-2'">
         <div class="dashboard-section-title">
           <span class="indicator">
             <span
@@ -57,7 +57,7 @@
           </div>
         </div>
 
-        <div class="settings-section-label">操作</div>
+        <div class="settings-section-label">{{ $t('desktop.actions') }}</div>
         <div class="settings-grid">
           <div class="setting-panel-row">
             <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -79,7 +79,7 @@
                 "
                 @click="coreHostActions.restartCore"
               >
-                重启内核
+                {{ $t('desktop.restart') }}
               </button>
               <button
                 class="btn btn-sm dashboard-action-btn"
@@ -118,14 +118,16 @@
                 </span>
                 <button
                   class="btn btn-sm dashboard-action-btn w-full"
-                  :disabled="coreHostActions.isCoreUpgrading.value"
+                  :disabled="
+                    coreHostActions.isCoreUpgrading.value || !coreHostActions.canUpgradeCore.value
+                  "
                   @click="coreHostActions.upgradeCore"
                 >
                   <span
                     v-if="coreHostActions.isCoreUpgrading.value"
                     class="loading loading-spinner loading-xs"
                   />
-                  {{ coreHostActions.isCoreUpgrading.value ? '升级中' : '升级内核' }}
+                  {{ $t(coreHostActions.isCoreUpgrading.value ? 'desktop.upgrading' : 'desktop.upgrade') }}
                 </button>
               </span>
               <button
@@ -140,8 +142,8 @@
         </div>
       </div>
 
-      <div class="flex min-h-0 flex-col rounded-lg p-2">
-        <div class="dashboard-section-title">当前下载</div>
+      <div class="flex min-h-0 min-w-0 flex-col" :class="embedded ? '' : 'rounded-lg p-2'">
+        <div class="dashboard-section-title">{{ $t('desktop.currentDownloads') }}</div>
         <div class="settings-grid min-h-[232px] flex-1">
           <div class="setting-panel-row h-full">
             <TopDownloadConnections />
@@ -173,12 +175,14 @@ import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assemb
 import { fetchRules } from '@/assembly/rules'
 import { inject, ref } from 'vue'
 
+defineProps<{ embedded?: boolean }>()
+
 const coreHostActions = inject(coreHostActionsKey, null)
 const { configs, isActiveConfigLoaded, tunState, updateAllowLan, updateTunEnabled } =
   useBackendRuntimeConfig()
 
 const reloadAll = () => {
-  void Promise.allSettled([fetchConfigs(), fetchRules(), fetchProxies()])
+  void Promise.allSettled([fetchConfigs(true), fetchRules(), fetchProxies()])
 }
 
 const isConfigReloading = ref(false)
@@ -235,7 +239,9 @@ const handlerAllowLanChange = async (event: Event) => {
 
 const handleFlushDNSCache = async () => {
   const session = captureBackendSession()
-  try { await flushDNSCacheAPI() } catch (error) {
+  try {
+    await flushDNSCacheAPI()
+  } catch (error) {
     notifyRequestErrorForSession(error, session)
     return
   }
@@ -248,7 +254,9 @@ const handleFlushDNSCache = async () => {
 
 const handleFlushFakeIP = async () => {
   const session = captureBackendSession()
-  try { await flushFakeIPAPI() } catch (error) {
+  try {
+    await flushFakeIPAPI()
+  } catch (error) {
     notifyRequestErrorForSession(error, session)
     return
   }
@@ -261,7 +269,9 @@ const handleFlushFakeIP = async () => {
 
 const handleFlushSmartWeights = async () => {
   const session = captureBackendSession()
-  try { await flushSmartGroupWeightsAPI() } catch (error) {
+  try {
+    await flushSmartGroupWeightsAPI()
+  } catch (error) {
     notifyRequestErrorForSession(error, session)
     return
   }

@@ -28,7 +28,6 @@ import { FolderIcon, FolderOpenIcon, InboxIcon, Squares2X2Icon } from '@heroicon
 import { computed } from 'vue'
 
 const props = defineProps<{
-  id: string
   label: string
   count?: number
   isActive?: boolean

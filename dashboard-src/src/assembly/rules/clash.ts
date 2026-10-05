@@ -1,14 +1,16 @@
 // Clash REST 后端的 rules 组装:拉取 /rules 与 /providers/rules,写入门面状态。
 import { fetchRuleProvidersAPI, fetchRulesAPI } from '@/api/clash'
-import { ruleProviderList, rules } from './index'
 import { captureBackendSession } from '@/helper/backendSession'
+import { beginRuleRequest, isRuleRequestCurrent, ruleProviderList, rules } from './index'
 
 export const fetchRules = async () => {
   const session = captureBackendSession()
+  const request = beginRuleRequest()
   const [{ data: ruleData }, { data: providerData }] = await Promise.all([
-    fetchRulesAPI(), fetchRuleProvidersAPI(),
+    fetchRulesAPI(),
+    fetchRuleProvidersAPI(),
   ])
-  if (!session.isCurrent()) return
+  if (!session.isCurrent() || !isRuleRequestCurrent(request)) return
 
   rules.value = ruleData.rules.map((rule) => {
     const proxy = rule.proxy

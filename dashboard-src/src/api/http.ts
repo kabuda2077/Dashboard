@@ -1,37 +1,81 @@
-// api 层 · axios 实例的全局拦截器。
-// 这是 api 层唯一允许依赖 store/setup 的地方:请求需要从 activeBackend 取得
-// 当前连接目标(baseURL / 鉴权)。其余 api 文件不得依赖上层。
-import { ROUTE_NAME } from '@/constant'
+// Axios transport boundary: capture the active connection and its epoch before dispatch.
+// Router/page initialization must not be a static dependency of this module.
 import { hasHostBridge } from '@/composables/hostBridge'
-import { backendSessionGeneration, captureBackendSession } from '@/helper/backendSession'
+import { ROUTE_NAME } from '@/constant'
+import {
+  backendSessionGeneration,
+  backendSessionReady,
+  captureBackendSession,
+  markBackendUnauthorized,
+} from '@/helper/backendSession'
 import { showNotification } from '@/helper/notification'
 import { markRequestErrorHandled } from '@/helper/requestError'
 import { getUrlFromBackend } from '@/helper/utils'
-import router from '@/router'
 import { activeBackend, activeUuid } from '@/store/setup'
 import axios, { AxiosError, CanceledError } from 'axios'
+import { nextTick, watch } from 'vue'
+import type { RouteLocationRaw } from 'vue-router'
 
 declare module 'axios' {
   interface InternalAxiosRequestConfig {
     backendSession?: ReturnType<typeof captureBackendSession>
+    releaseBackendRequest?: () => void
   }
 }
-import { nextTick } from 'vue'
 
-axios.interceptors.request.use((config) => {
-  if (activeBackend.value && config.url?.startsWith('/')) {
-    config.backendSession = captureBackendSession()
-    config.baseURL = getUrlFromBackend(activeBackend.value)
-    config.headers['Authorization'] = 'Bearer ' + activeBackend.value.password
-  }
-  return config
-}, undefined, { synchronous: true })
+const requests = new Set<AbortController>()
+watch(
+  [backendSessionGeneration, backendSessionReady],
+  () => {
+    for (const controller of requests) controller.abort()
+    requests.clear()
+  },
+  { flush: 'sync' },
+)
+
+axios.interceptors.request.use(
+  (config) => {
+    if (activeBackend.value && config.url?.startsWith('/')) {
+      config.backendSession = captureBackendSession()
+      const controller = new AbortController()
+      const originalSignal = config.signal
+      const abort = () => controller.abort()
+      if (originalSignal?.aborted) controller.abort()
+      else originalSignal?.addEventListener?.('abort', abort, { once: true })
+      config.signal = controller.signal
+      requests.add(controller)
+      config.releaseBackendRequest = () => {
+        requests.delete(controller)
+        originalSignal?.removeEventListener?.('abort', abort)
+      }
+      if (!config.timeout || !Number.isFinite(config.timeout) || config.timeout < 0) config.timeout = 30000
+      config.baseURL = getUrlFromBackend(activeBackend.value)
+      config.headers['Authorization'] = 'Bearer ' + activeBackend.value.password
+    }
+    return config
+  },
+  undefined,
+  { synchronous: true },
+)
 
 let unauthorizedNotificationGeneration = -1
+const navigateAfterAuthFailure = (target: RouteLocationRaw) => {
+  const generation = backendSessionGeneration.value
+  // Do not pull the router (and its page/assembly imports) into interceptor initialization.
+  void import('@/router')
+    .then(({ default: router }) => {
+      if (generation === backendSessionGeneration.value) return router.push(target)
+    })
+    .catch(() => {})
+}
 
 axios.interceptors.response.use(
   (response) => {
-    if (response.config.backendSession && !response.config.backendSession.isCurrent()) {
+    response.config.releaseBackendRequest?.()
+    if (
+      response.config.backendSession &&
+      (!response.config.backendSession.isCurrent() || response.config.signal?.aborted)
+    ) {
       throw new CanceledError('Backend session changed', response.config)
     }
     return response
@@ -41,21 +85,26 @@ axios.interceptors.response.use(
       message: string
     }>,
   ) => {
+    error.config?.releaseBackendRequest?.()
     if (axios.isCancel(error)) return Promise.reject(error)
-    if (error.config?.backendSession && !error.config.backendSession.isCurrent()) {
+    if (
+      error.config?.backendSession &&
+      (!error.config.backendSession.isCurrent() || error.config.signal?.aborted)
+    ) {
       return Promise.reject(new CanceledError('Backend session changed', error.config))
     }
     if (error.status === 401 && error.config?.backendSession && activeUuid.value) {
       markRequestErrorHandled(error)
+      markBackendUnauthorized()
       const generation = backendSessionGeneration.value
       if (unauthorizedNotificationGeneration !== generation) {
         unauthorizedNotificationGeneration = generation
         const currentBackendUuid = activeUuid.value
         if (hasHostBridge) {
-          void router.push({ name: ROUTE_NAME.core, query: { connection: 'unauthorized' } })
+          navigateAfterAuthFailure({ name: ROUTE_NAME.core, query: { connection: 'unauthorized' } })
         } else {
           activeUuid.value = null
-          void router.push({
+          navigateAfterAuthFailure({
             name: ROUTE_NAME.setup,
             query: { editBackend: currentBackendUuid },
           })

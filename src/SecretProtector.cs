@@ -12,60 +12,36 @@ internal interface ISecretProtector
 internal sealed class DpapiSecretProtector : ISecretProtector
 {
     public static DpapiSecretProtector Instance { get; } = new();
-
-    private DpapiSecretProtector()
-    {
-    }
-
+    private DpapiSecretProtector() { }
     public string Protect(string secret) => SecretProtector.Protect(secret);
-
     public string Unprotect(string protectedSecret) => SecretProtector.Unprotect(protectedSecret);
 }
 
 internal static class SecretProtector
 {
-    internal const string ProtectedPrefix = "dpapi:";
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("Dashboard.Secret.v1");
-    private static readonly byte[] LegacyEntropy = Encoding.UTF8.GetBytes("MihomoDashboard.Secret.v1");
+    internal const string ProtectedPrefix = "dpapi:v2:";
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("Dashboard.Secret.v2");
 
     public static string Protect(string secret)
     {
-        if (string.IsNullOrEmpty(secret))
-        {
-            return "";
-        }
-
-        var plainBytes = Encoding.UTF8.GetBytes(secret);
-        var protectedBytes = ProtectedData.Protect(plainBytes, Entropy, DataProtectionScope.CurrentUser);
-        return ProtectedPrefix + Convert.ToBase64String(protectedBytes);
-    }
-
-    public static string Unprotect(string protectedSecret)
-    {
-        if (string.IsNullOrEmpty(protectedSecret))
-        {
-            return "";
-        }
-
-        if (!protectedSecret.StartsWith(ProtectedPrefix, StringComparison.Ordinal))
-        {
-            throw new FormatException("The persisted secret is not a supported DPAPI value.");
-        }
-
-        var protectedBytes = Convert.FromBase64String(protectedSecret[ProtectedPrefix.Length..]);
-        var plainBytes = UnprotectBytes(protectedBytes);
-        return Encoding.UTF8.GetString(plainBytes);
-    }
-
-    private static byte[] UnprotectBytes(byte[] protectedBytes)
-    {
+        if (string.IsNullOrEmpty(secret)) return "";
+        var bytes = Encoding.UTF8.GetBytes(secret);
         try
         {
-            return ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser);
+            return ProtectedPrefix + Convert.ToBase64String(
+                ProtectedData.Protect(bytes, Entropy, DataProtectionScope.CurrentUser));
         }
-        catch (CryptographicException)
-        {
-            return ProtectedData.Unprotect(protectedBytes, LegacyEntropy, DataProtectionScope.CurrentUser);
-        }
+        finally { CryptographicOperations.ZeroMemory(bytes); }
+    }
+
+    public static string Unprotect(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (!value.StartsWith(ProtectedPrefix, StringComparison.Ordinal))
+            throw new FormatException("Unsupported credential format.");
+        var bytes = ProtectedData.Unprotect(Convert.FromBase64String(value[ProtectedPrefix.Length..]),
+            Entropy, DataProtectionScope.CurrentUser);
+        try { return Encoding.UTF8.GetString(bytes); }
+        finally { CryptographicOperations.ZeroMemory(bytes); }
     }
 }

@@ -1,266 +1,117 @@
 namespace Dashboard.Tests;
 
-public sealed class CoreLifecycleBoundaryTests
+public sealed class CoreLifecycleBoundaryTests : IDisposable
 {
-    private static CoreLifecycleController Create(
-        CoreProcessManager process,
-        List<string> calls,
-        AppSettings? settings = null,
-        Func<string, Action?, CancellationToken, Task<CoreUpgradeResult>>? upgradeSingBox = null) => new(
-        settings ?? new AppSettings(), process, new CoreLifecycleServices
-        {
-            IsRunningAsAdministrator = () => { calls.Add("elevationCheck"); return true; },
-            ShouldKeepMinimizedForRelaunch = () => false,
-            RelaunchAsAdministrator = (_, _, _) => calls.Add("relaunch"),
-            ShowNotice = message => calls.Add("notice:" + message), PublishState = () => calls.Add("state"),
-            RefreshIconCache = () => calls.Add("icons"), ShowTrayNotification = _ => calls.Add("tray"),
-            ShowMessage = (_, _, _) => calls.Add("dialog"), RunOnUiThread = action => action(),
-            UpgradeSingBoxAsync = upgradeSingBox ?? DefaultUpgradeSingBoxAsync
-        });
-
-    private static Task<CoreUpgradeResult> DefaultUpgradeSingBoxAsync(string _, Action? __, CancellationToken ___) =>
-        Task.FromResult(new CoreUpgradeResult("1.0.0", "test.zip", "backup", IsAlreadyLatest: false));
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+    private static HostRequest Save(CoreProfile profile, long revision = 0) => new()
+    {
+        Type = "saveProfile", CoreType = CoreKind.Mihomo, ExpectedRevision = revision,
+        Draft = new() { ExePath = profile.ExePath, ConfigPath = profile.ConfigPath, ApiUrl = profile.ApiUrl }
+    };
 
     [Fact]
-    public async Task UnreadableCredentialBlocksUpgradeBeforeNetworkOrProcessOperations()
+    public async Task BusyGateRejectsInsteadOfQueueingAnotherCoreCommand()
     {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var settings = new AppSettings { CoreType = AppSettings.CoreTypeSingBox };
-        settings.RestoreSecretPersistenceState(true, "", "dpapi:original", true);
-        var upgraded = false;
-        using var lifecycle = Create(process, calls, settings, (_, _, _) =>
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var block = false;
+        var store = new SettingsStore(_directory, persist: (path, json) =>
         {
-            upgraded = true;
-            return DefaultUpgradeSingBoxAsync("", null, CancellationToken.None);
+            if (block) { entered.Set(); if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException(); }
+            SettingsStore.WriteAtomically(path, json);
         });
-        await lifecycle.UpgradeAsync();
-        Assert.False(upgraded);
-        Assert.Contains(calls, call => call.Contains("Secret 无法解密"));
-        Assert.True(await lifecycle.WaitForShutdownAsync(TimeSpan.FromSeconds(2)));
-    }
-
-    [Fact]
-    public async Task ConfigurationEditAndEveryCoreOperationShareTheSameGate()
-    {
         using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var lifecycle = Create(process, calls);
-        using (var configuration = lifecycle.TryEnterConfigurationChange())
+        using var lifecycle = new CoreLifecycleController(store, process, () => true);
+        block = true;
+        var first = lifecycle.ExecuteAsync(Save(store.Current.ActiveProfile));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        try
         {
-            Assert.NotNull(configuration);
-            lifecycle.Start();
-            lifecycle.Stop();
-            Assert.False(lifecycle.Restart());
-            await lifecycle.SwitchAsync("sing-box");
-            await lifecycle.UpgradeAsync();
-            Assert.Equal(5, calls.Count(call => call.StartsWith("notice:", StringComparison.Ordinal)));
-            Assert.Null(lifecycle.TryEnterConfigurationChange());
+            var rejected = await lifecycle.ExecuteAsync(new() { Type = "stop", CoreType = CoreKind.Mihomo });
+            Assert.Equal("busy", rejected.Code);
+            Assert.False(first.IsCompleted);
         }
-        using var retry = lifecycle.TryEnterConfigurationChange();
-        Assert.NotNull(retry);
+        finally { release.Set(); }
+        Assert.Equal("completed", (await first).Status);
+        Assert.True(await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2)));
     }
 
     [Fact]
-    public async Task CombinedSaveAndStartHoldOneLeaseWithoutReentry()
+    public async Task FailedSavePreventsCoreActionAndLeavesProfileUnchanged()
     {
+        var fail = false;
+        var store = new SettingsStore(_directory, persist: (path, json) =>
+        { if (fail) throw new IOException("test persistence failure"); SettingsStore.WriteAtomically(path, json); });
         using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var saveEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var lifecycle = Create(process, calls);
-
-        var combined = lifecycle.ExecuteConfigurationCommandAsync(async () =>
-        {
-            calls.Add("save:begin");
-            saveEntered.SetResult();
-            await releaseSave.Task;
-            calls.Add("save:end");
-        }, CoreConfigurationCommand.Start);
-        await saveEntered.Task;
-
-        Assert.Null(lifecycle.TryEnterConfigurationChange());
-        lifecycle.Stop();
-        Assert.Contains(calls, call => call.Contains("正在进行", StringComparison.Ordinal));
-        releaseSave.SetResult();
-        Assert.Equal(ConfigurationCommandResult.Executed, await combined);
-
-        Assert.True(calls.IndexOf("save:end") < calls.IndexOf("elevationCheck"));
-    }
-
-    [Fact]
-    public async Task CombinedCommandReturnsRejectedWithoutSavingWhenGateIsBusy()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        using var lifecycle = Create(process, calls);
-        using var lease = lifecycle.TryEnterConfigurationChange();
-        var saved = false;
-
-        var result = await lifecycle.ExecuteConfigurationCommandAsync(
-            () => { saved = true; return Task.CompletedTask; },
-            CoreConfigurationCommand.SaveOnly);
-
-        Assert.Equal(ConfigurationCommandResult.Rejected, result);
-        Assert.False(saved);
-    }
-
-    [Fact]
-    public async Task CombinedCommandReturnsRejectedWithoutSavingAfterTrackerCloses()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var lifecycle = Create(process, calls);
-        Assert.True(await lifecycle.WaitForShutdownAsync(TimeSpan.FromSeconds(2)));
-        var saved = false;
-
-        var result = await lifecycle.ExecuteConfigurationCommandAsync(
-            () => { saved = true; return Task.CompletedTask; },
-            CoreConfigurationCommand.SaveOnly);
-
-        Assert.Equal(ConfigurationCommandResult.Rejected, result);
-        Assert.False(saved);
-    }
-
-    [Fact]
-    public async Task ShutdownCancelsUpgradeAndWaitsForOwnedTask()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var settings = new AppSettings { CoreType = AppSettings.CoreTypeSingBox, SingBoxCorePath = "captured.exe" };
-        var lifecycle = Create(process, calls, settings, async (path, _, token) =>
-        {
-            Assert.Equal("captured.exe", path);
-            entered.SetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-            throw new InvalidOperationException("unreachable");
-        });
-
-        var upgrade = lifecycle.UpgradeAsync();
-        await entered.Task;
-        lifecycle.BeginShutdown();
-
-        Assert.True(await lifecycle.WaitForShutdownAsync(TimeSpan.FromSeconds(2)));
-        await upgrade;
-        Assert.False(lifecycle.IsUpgradeInProgress);
-        Assert.Null(lifecycle.TryEnterConfigurationChange());
-    }
-
-    [Fact]
-    public async Task LateUpgradeResultAfterShutdownCannotPublishOrRestart()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var result = new TaskCompletionSource<CoreUpgradeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var settings = new AppSettings { CoreType = AppSettings.CoreTypeSingBox, SingBoxCorePath = "captured.exe" };
-        var lifecycle = Create(process, calls, settings, (_, _, _) => result.Task);
-
-        var upgrade = lifecycle.UpgradeAsync();
-        while (!lifecycle.IsUpgradeInProgress) await Task.Yield();
-        lifecycle.BeginShutdown();
-        var countAtShutdown = calls.Count;
-        Assert.False(await lifecycle.WaitForShutdownAsync(TimeSpan.FromMilliseconds(50)));
-
-        result.SetResult(new CoreUpgradeResult("2.0.0", "test.zip", "backup", IsAlreadyLatest: false));
-        await upgrade;
-        Assert.Equal(countAtShutdown, calls.Count);
+        using var lifecycle = new CoreLifecycleController(store, process, () => true);
+        fail = true;
+        var result = await lifecycle.ExecuteAsync(Save(store.Current.ActiveProfile) with { Type = "start" });
+        Assert.Equal("failed", result.Status);
+        Assert.False(result.Saved);
+        Assert.Equal(0, store.Current.ActiveProfile.Revision);
         Assert.False(process.IsRunning);
+        Assert.True(await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2)));
     }
 
     [Fact]
-    public async Task SuccessfulDrainDisposesShutdownTokenBeforeReturning()
+    public async Task ClosingRejectsNewWorkAndSetupCannotCompleteBeforeReady()
     {
+        var store = new SettingsStore(_directory);
         using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource<CoreUpgradeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var settings = new AppSettings { CoreType = AppSettings.CoreTypeSingBox };
-        CancellationToken ownedToken = default;
-        var lifecycle = Create(process, calls, settings, (_, _, token) =>
+        using var lifecycle = new CoreLifecycleController(store, process, () => true);
+        Assert.Equal("apiNotReady", (await lifecycle.ExecuteAsync(new() { Type = "completeSetup", CoreType = CoreKind.Mihomo })).Code);
+        Assert.False(store.Current.SetupCompleted);
+        await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("closing", (await lifecycle.ExecuteAsync(Save(store.Current.ActiveProfile))).Code);
+    }
+
+    [Fact]
+    public async Task ElevationIsAnExplicitResultNotAFalseStartedState()
+    {
+        var store = new SettingsStore(_directory);
+        var profile = store.Current.ActiveProfile;
+        Directory.CreateDirectory(Path.GetDirectoryName(profile.ExePath)!);
+        File.WriteAllText(profile.ExePath, "fixture, not executed");
+        File.WriteAllText(profile.ConfigPath, "fixture");
+        using var process = new CoreProcessManager();
+        using var lifecycle = new CoreLifecycleController(store, process, () => false);
+        var result = await lifecycle.ExecuteAsync(new() { Type = "start", CoreType = CoreKind.Mihomo });
+        Assert.Equal("elevationRequired", result.Status);
+        Assert.False(process.IsRunning);
+        await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task SwitchPersistsOnlyTargetDraftAndStaleRevisionHasNoSideEffects()
+    {
+        var store = new SettingsStore(_directory);
+        var source = store.Current.ActiveProfile;
+        var target = store.Current.Profile(CoreKind.SingBox);
+        using var process = new CoreProcessManager();
+        using var lifecycle = new CoreLifecycleController(store, process, () => false);
+        var edit = new CoreProfileEdit
         {
-            ownedToken = token;
-            entered.SetResult();
-            return release.Task;
-        });
-
-        var upgrade = lifecycle.UpgradeAsync();
-        await entered.Task;
-        lifecycle.BeginShutdown();
-        var shutdown = lifecycle.WaitForShutdownAsync(TimeSpan.FromSeconds(2));
-        release.SetResult(new CoreUpgradeResult("2.0.0", "test.zip", "backup", IsAlreadyLatest: false));
-
-        Assert.True(await shutdown);
-        await upgrade;
-        Assert.Throws<ObjectDisposedException>(() => { _ = ownedToken.WaitHandle; });
-        lifecycle.BeginShutdown();
-        lifecycle.Dispose();
-        lifecycle.Dispose();
+            ExePath = Path.Combine(_directory, "target.exe"), ConfigPath = target.ConfigPath,
+            ApiUrl = target.ApiUrl
+        };
+        Directory.CreateDirectory(Path.GetDirectoryName(edit.ConfigPath)!);
+        File.WriteAllText(edit.ExePath, "fixture, never executed without elevation");
+        File.WriteAllText(edit.ConfigPath, "{}");
+        var request = new HostRequest { Type = "switchCore", CoreType = CoreKind.SingBox, ExpectedRevision = target.Revision, Draft = edit };
+        var stale = await lifecycle.ExecuteAsync(request with { ExpectedRevision = target.Revision + 1 });
+        Assert.Equal("staleRevision", stale.Code);
+        Assert.False(stale.Saved);
+        Assert.Equal(target, store.Current.Profile(CoreKind.SingBox));
+        Assert.Equal(CoreKind.Mihomo, store.Current.ActiveCoreKind);
+        var switched = await lifecycle.ExecuteAsync(request);
+        Assert.True(switched.Saved);
+        Assert.Equal("elevationRequired", switched.Status);
+        Assert.Equal(edit.ExePath, store.Current.Profile(CoreKind.SingBox).ExePath);
+        Assert.Equal(target.Revision + 1, store.Current.Profile(CoreKind.SingBox).Revision);
+        Assert.Equal(source, store.Current.Profile(CoreKind.Mihomo));
+        Assert.False(process.IsRunning);
+        await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
     }
 
-    [Fact]
-    public async Task TimedOutDrainKeepsTokenAliveUntilOwnedTaskCompletes()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource<CoreUpgradeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var settings = new AppSettings { CoreType = AppSettings.CoreTypeSingBox };
-        CancellationToken ownedToken = default;
-        var lifecycle = Create(process, calls, settings, (_, _, token) =>
-        {
-            ownedToken = token;
-            entered.SetResult();
-            return release.Task;
-        });
-
-        var upgrade = lifecycle.UpgradeAsync();
-        await entered.Task;
-        lifecycle.BeginShutdown();
-
-        Assert.False(await lifecycle.WaitForShutdownAsync(TimeSpan.FromMilliseconds(50)));
-        lifecycle.Dispose();
-        lifecycle.BeginShutdown();
-        lifecycle.Dispose();
-        _ = ownedToken.WaitHandle;
-
-        release.SetResult(new CoreUpgradeResult("2.0.0", "test.zip", "backup", IsAlreadyLatest: false));
-        await upgrade;
-        Assert.True(await lifecycle.WaitForShutdownAsync(TimeSpan.FromSeconds(2)));
-        Assert.Throws<ObjectDisposedException>(() => { _ = ownedToken.WaitHandle; });
-    }
-
-    [Fact]
-    public async Task UpgradeAndSwitchCannotInterleave()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var result = new TaskCompletionSource<CoreUpgradeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var settings = new AppSettings { CoreType = AppSettings.CoreTypeSingBox };
-        var lifecycle = Create(process, calls, settings, (_, _, _) => result.Task);
-
-        var upgrade = lifecycle.UpgradeAsync();
-        while (!lifecycle.IsUpgradeInProgress) await Task.Yield();
-        await lifecycle.SwitchAsync(AppSettings.CoreTypeMihomo);
-        Assert.Equal(AppSettings.CoreTypeSingBox, settings.CoreType);
-        Assert.Contains(calls, call => call.Contains("正在进行", StringComparison.Ordinal));
-        result.SetResult(new CoreUpgradeResult("2.0.0", "test.zip", "backup", IsAlreadyLatest: false));
-        await upgrade;
-    }
-
-    [Fact]
-    public async Task ShutdownRejectsOperationsWithoutElevationOrStatePublication()
-    {
-        using var process = new CoreProcessManager();
-        var calls = new List<string>();
-        var lifecycle = Create(process, calls);
-        lifecycle.BeginShutdown();
-        lifecycle.Start();
-        lifecycle.Stop();
-        Assert.False(lifecycle.Restart());
-        await lifecycle.SwitchAsync("sing-box");
-        await lifecycle.UpgradeAsync();
-        Assert.Null(lifecycle.TryEnterConfigurationChange());
-        Assert.Empty(calls);
-    }
+    public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 }

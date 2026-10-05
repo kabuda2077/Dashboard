@@ -1,9 +1,12 @@
 import { showNotification } from '@/helper/notification'
+import { i18n } from '@/i18n'
 
-export const showHostNotice = (message: string) => {
+export const showHostNotice = (
+  message: string,
+  severity: 'info' | 'warning' | 'error' | 'success' = 'info',
+) => {
   if (!message) return
-  const type = message.includes('失败') ? 'alert-error'
-    : message.startsWith('正在') || message.includes('新版本') ? 'alert-info'
-      : message.includes('管理员权限') || message.includes('UAC') ? 'alert-warning' : 'alert-success'
-  showNotification({ content: message, key: `core-host-${message}`, type })
+  const key = `desktop.result.${message}`
+  const content = i18n.global.te(key) ? i18n.global.t(key) : message
+  showNotification({ content, key: `core-host-${message}`, type: `alert-${severity}` })
 }

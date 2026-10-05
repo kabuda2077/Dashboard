@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /*
  * 按订阅分段,每段各挂一个 ProxiesContent —— 段与段之间节点数差很多,合成一个虚拟列表
  * 就得把标题也当成行、行号跨段累加;分开挂则每段自己算自己的,列数一样、共用外面同一个

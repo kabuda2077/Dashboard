@@ -44,7 +44,11 @@ export const fetchRules = async () => {
   if (session.isCurrent()) return backend.fetchRules()
 }
 
+let ruleRequest = 0
+export const beginRuleRequest = () => ++ruleRequest
+export const isRuleRequestCurrent = (request: number) => request === ruleRequest
 export const resetRules = () => {
+  ruleRequest++
   rules.value = []
   ruleProviderList.value = []
 }

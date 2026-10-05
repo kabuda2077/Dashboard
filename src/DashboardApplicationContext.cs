@@ -18,6 +18,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private TrayMenuForm? _trayMenu;
     private DateTime _lastTrayIconToggleAt = DateTime.MinValue;
     private bool _mihomoTunWasUpBeforeSuspend;
+    private long _suspendedCoreEpoch;
     private bool _exiting;
     private bool _disposed;
 
@@ -30,7 +31,6 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _webViewContentUpdate = webViewContentUpdate;
         _ = _dispatcher.Handle;
         _host = new DashboardHost();
-        _host.ShouldKeepMinimizedForRelaunch = ShouldKeepMinimizedForRelaunch;
         _host.StateChanged += OnHostStateChanged;
         _host.RuntimeStateChanged += OnHostStateChanged;
         _host.NoticeRequested += OnNoticeRequested;
@@ -43,42 +43,88 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _trayIconImage = LoadTrayIcon(_appIcon);
         _trayIcon = CreateTrayIcon();
         UpdateTrayStatus();
-        var shouldStartCore = _host.Settings.StartCoreOnLaunch || startCoreAfterLaunch;
+        var shouldStartCore = _host.Settings.DesktopOptions.StartCoreOnLaunch || startCoreAfterLaunch;
         var isAdministrator = DashboardHost.IsRunningAsAdministrator();
         // Starting the core without elevation always ends in an elevated relaunch,
         // so both the window and the autostart reconcile wait for that restart.
         var willRelaunchElevated = WillRelaunchElevated(shouldStartCore, isAdministrator);
-        if (!willRelaunchElevated)
-        {
+        var resumeSetup = startCoreAfterLaunch && !_host.Settings.SetupCompleted && !willRelaunchElevated;
+        if (resumeSetup)
+            _ = ResumeSetupAsync();
+        else if (!willRelaunchElevated)
             _ = RunStartupOperationsAsync(shouldStartCore);
-        }
 
-        if (!startMinimized && !willRelaunchElevated)
+        if (!startMinimized && !willRelaunchElevated && !resumeSetup)
         {
             ShowMainWindow();
         }
 
         if (willRelaunchElevated)
         {
-            _host.StartCore();
+            _ = _host.StartCoreAsync();
         }
 
         _ = RunAutomaticUpdateCheckAsync(_lifetimeCancellation.Token);
     }
 
+    private async Task ResumeSetupAsync()
+    {
+        try
+        {
+            var result = await ResumeSetupCoreAsync(
+                () => _host.StartCoreAsync(), () => _host.IsRunning,
+                () => _host.BuildRuntimeState(false).ApiStatus,
+                () => _host.ExecuteAsync(new() { ProtocolVersion = 2, Type = "completeSetup" }),
+                _lifetimeCancellation.Token);
+            if (!_exiting)
+            {
+                ShowMainWindow();
+                if (result.Status != "completed")
+                    MessageBox.Show(_mainForm, result.Message ?? result.Code, "首次启动未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            await _host.ReconcileAutostartAsync();
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("host", "Failed to resume first-time setup.", error);
+            if (!_exiting)
+            {
+                ShowMainWindow();
+                MessageBox.Show(_mainForm, error.Message, "首次启动未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+    }
+
+    internal static async Task<CommandResult> ResumeSetupCoreAsync(
+        Func<Task<CommandResult>> start, Func<bool> isRunning, Func<string> apiStatus,
+        Func<Task<CommandResult>> complete, CancellationToken token, TimeSpan? timeout = null)
+    {
+        token.ThrowIfCancellationRequested();
+        var result = await start();
+        if (result.Status != "completed") return result;
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(20));
+        while (isRunning() && apiStatus() != "ready" && DateTime.UtcNow < deadline)
+            await Task.Delay(100, token);
+        token.ThrowIfCancellationRequested();
+        if (!isRunning() || apiStatus() != "ready")
+            return CommandResult.Failed("apiNotReady", "内核 API 尚未就绪，请检查 API 地址和 Secret。");
+        return await complete();
+    }
+
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
 
     private Task RunStartupOperationsAsync(bool shouldStartCore) =>
-        RunStartupOperationsAsync(shouldStartCore, () => _host.StartCore(), _host.ReconcileAutostartAsync);
+        RunStartupOperationsAsync(shouldStartCore, async () => { await _host.StartCoreAsync(); }, _host.ReconcileAutostartAsync);
 
     internal static async Task RunStartupOperationsAsync(
         bool shouldStartCore,
-        Action startCore,
+        Func<Task> startCore,
         Func<Task> reconcileAutostartAsync)
     {
         // Starting and autostart reconciliation share the core configuration gate.
         // Keep their order explicit so reconciliation cannot reject launch startup.
-        if (shouldStartCore) startCore();
+        if (shouldStartCore) await startCore();
         await reconcileAutostartAsync();
     }
 
@@ -137,6 +183,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         {
             var form = new MainForm(_host, _webViewContentUpdate);
             form.FormClosed += OnMainFormClosed;
+            form.ExitRequested += OnWindowExitRequested;
             _mainForm = form;
             form.Show();
             HostOperationLogger.Diagnostic("performance", "host:mainFormCreatedOnDemand");
@@ -182,17 +229,18 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     private void ShowTrayMenu(Point location)
     {
+        if (_disposed || _exiting) return;
         _trayMenu?.Close();
         _trayMenu = new TrayMenuForm(new[]
         {
             new TrayMenuItem("显示窗口", ShowMainWindow),
             new TrayMenuItem(
                 "重启内核",
-                () => _ = Task.Run(() => _host.RestartCore(showTrayNotification: true)),
+                () => _ = _host.RestartCoreAsync(showTrayNotification: true),
                 Enabled: _host.IsRunning && !_host.IsUpgradeInProgress),
             new TrayMenuItem(
                 "停止内核",
-                () => _ = Task.Run(() => _host.StopCore(showTrayNotification: true)),
+                () => _ = _host.StopCoreAsync(showTrayNotification: true),
                 Enabled: _host.IsRunning && !_host.IsUpgradeInProgress),
             TrayMenuItem.Separator(),
             new TrayMenuItem("退出", ExitApplication)
@@ -208,12 +256,15 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _trayMenu.ShowNear(location);
     }
 
+    private void OnWindowExitRequested(object? sender, EventArgs e) => ExitApplication();
+
     private void OnMainFormClosed(object? sender, FormClosedEventArgs e)
     {
         HostOperationLogger.Diagnostic("window-lifecycle", $"context observed formClosed reason={e.CloseReason} exiting={_exiting}");
         if (sender is MainForm form)
         {
             form.FormClosed -= OnMainFormClosed;
+            form.ExitRequested -= OnWindowExitRequested;
         }
 
         _mainForm = null;
@@ -265,7 +316,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
     private void OnRelaunchRequested(object? sender, HostRelaunchRequest request)
     {
-        RunOnUiThread(() => RelaunchAsAdministrator(request));
+        RunOnUiThread(() => RelaunchAsAdministrator(request with { StartMinimized = ShouldKeepMinimizedForRelaunch() }));
     }
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
@@ -277,6 +328,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
         if (e.Mode == PowerModes.Suspend)
         {
+            _suspendedCoreEpoch = _host.RuntimeEpoch;
             _mihomoTunWasUpBeforeSuspend = NetworkInterface.GetAllNetworkInterfaces()
                 .Any(networkInterface =>
                     IsMihomoTun(networkInterface)
@@ -299,6 +351,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
             for (var attempt = 0; attempt < 6; attempt++)
             {
+                if (_host.RuntimeEpoch != _suspendedCoreEpoch) return;
                 var interfaces = NetworkInterface.GetAllNetworkInterfaces();
                 var physicalNetworkUp = interfaces.Any(networkInterface =>
                     !IsMihomoTun(networkInterface)
@@ -320,7 +373,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
                     HostOperationLogger.Info(
                         "power",
                         $"Attempting mihomo recovery after resume: tunStatus={tun?.OperationalStatus.ToString() ?? "missing"}, previousPid={previousPid?.ToString() ?? "none"}, dashboardAdmin={DashboardHost.IsRunningAsAdministrator()}.");
-                    var restartRequested = _host.RestartCore(showTrayNotification: true);
+                    var restartRequested = await _host.RestartCoreAsync(showTrayNotification: true);
                     if (!restartRequested)
                     {
                         HostOperationLogger.Info(
@@ -357,7 +410,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
                 {
                     HostOperationLogger.Diagnostic(
                         "power",
-                        $"No resume recovery needed: coreRunning={_host.IsRunning}, core={_host.Settings.CoreType}, tunStatus={tun?.OperationalStatus.ToString() ?? "missing"}.");
+                        $"No resume recovery needed: coreRunning={_host.IsRunning}, core={_host.Settings.ActiveCoreKind}, tunStatus={tun?.OperationalStatus.ToString() ?? "missing"}.");
                     _mihomoTunWasUpBeforeSuspend = false;
                     return;
                 }
@@ -399,8 +452,10 @@ internal sealed class DashboardApplicationContext : ApplicationContext
             || _mainForm.WindowState == FormWindowState.Minimized;
     }
 
-    private void RelaunchAsAdministrator(HostRelaunchRequest request)
+    private async void RelaunchAsAdministrator(HostRelaunchRequest request)
     {
+        if (_exiting) return;
+        _exiting = true;
         try
         {
             var arguments = new List<string>();
@@ -421,16 +476,23 @@ internal sealed class DashboardApplicationContext : ApplicationContext
                 arguments.Add("--diagnostic-log");
             }
 
-            Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
-            {
-                WorkingDirectory = AppSettings.AppDirectory,
-                UseShellExecute = true,
-                Verb = "runas"
-            });
-            ExitApplication();
+            var handedOff = await RelaunchAfterConfirmationAsync(
+                ConfirmCurrentWindowExitAsync,
+                () =>
+                {
+                    using var replacement = Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
+                    {
+                        WorkingDirectory = AppSettings.AppDirectory,
+                        UseShellExecute = true,
+                        Verb = "runas"
+                    }) ?? throw new InvalidOperationException("未能创建管理员进程。");
+                },
+                FinishExitAsync);
+            if (!handedOff) _exiting = false;
         }
         catch (Exception ex)
         {
+            _exiting = false;
             HostOperationLogger.Error("host", "Failed to restart as administrator.", ex);
             if (!request.StartMinimized)
             {
@@ -476,6 +538,31 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         if (_exiting) return;
 
         _exiting = true;
+        if (!await ConfirmCurrentWindowExitAsync())
+        {
+            _exiting = false;
+            return;
+        }
+        await FinishExitAsync();
+    }
+
+    private Task<bool> ConfirmCurrentWindowExitAsync() =>
+        _mainForm is { IsDisposed: false } form
+            ? ConfirmExitAsync(form.FlushPreferencesAsync,
+                () => MessageBox.Show(form, "存在未保存修改或保存尚未确认。仍然退出并放弃未保存修改？", "修改尚未保存", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            : Task.FromResult(true);
+
+    internal static async Task<bool> RelaunchAfterConfirmationAsync(
+        Func<Task<bool>> confirmExit, Action startReplacement, Func<Task> finishExit)
+    {
+        if (!await confirmExit()) return false;
+        startReplacement(); // cancellation/failure must leave the old host alive
+        await finishExit();
+        return true;
+    }
+
+    private async Task FinishExitAsync()
+    {
         HostOperationLogger.Diagnostic("window-lifecycle", "context exit requested; awaiting host shutdown.");
         _trayMenu?.Close();
         _trayIcon.Visible = false;
@@ -489,6 +576,9 @@ internal sealed class DashboardApplicationContext : ApplicationContext
             },
             ExitThread);
     }
+
+    internal static async Task<bool> ConfirmExitAsync(Func<Task<bool>> flushAsync, Func<bool> confirmDiscard) =>
+        await flushAsync() || confirmDiscard();
 
     internal static async Task CompleteExitAsync(
         Func<Task> shutdownAsync,
@@ -545,7 +635,6 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _host.MessageRequested -= OnMessageRequested;
         _host.RelaunchRequested -= OnRelaunchRequested;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
-        _host.ShouldKeepMinimizedForRelaunch = null;
         _trayIcon.Visible = false;
         ShutdownResourceDisposer.DisposeAll(
             ("Tray icon", _trayIcon.Dispose),

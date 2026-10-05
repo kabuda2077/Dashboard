@@ -1,72 +1,54 @@
+#requires -Version 7.0
 param(
-    [string]$Configuration = 'Release',
-    [string]$Runtime = 'win-x64',
-    [string]$OutputZip = "Dashboard-Release-$(Get-Date -Format 'yyyyMMdd-HHmmss').zip",
-    [switch]$SkipDashboardBuild
+    [string]$OutputZip = '',
+    [switch]$IncludeWebViewIntegration,
+    [switch]$IncludeRealCoreIntegration,
+    [switch]$IncludePerformanceIntegration,
+    [switch]$IncludeSlowIntegration
 )
-
 $ErrorActionPreference = 'Stop'
-
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-Set-Location $repoRoot
-
-$buildArgs = @(
-    '-ExecutionPolicy', 'Bypass',
-    '-File', (Join-Path $PSScriptRoot 'build.ps1'),
-    '-Configuration', $Configuration,
-    '-Runtime', $Runtime
-)
-
-if ($SkipDashboardBuild) {
-    $buildArgs += '-SkipDashboardBuild'
+. (Join-Path $PSScriptRoot 'internal\pipeline.ps1')
+try {
+    # A release invocation verifies its own inputs; it never trusts a previous check or a stale publish folder.
+    Invoke-Verification -Configuration Release -IncludeWebViewIntegration ([bool]$IncludeWebViewIntegration) -IncludeRealCoreIntegration ([bool]$IncludeRealCoreIntegration) -IncludePerformanceIntegration ([bool]$IncludePerformanceIntegration) -IncludeSlowIntegration ([bool]$IncludeSlowIntegration)
+    $publish = Publish-Dashboard -Configuration Release
+    $project = [xml][IO.File]::ReadAllText((Join-Path $script:RepositoryRoot 'Dashboard.csproj'))
+    $version = $project.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+    if (-not $OutputZip) { $OutputZip = "Dashboard-v$version-win-x64.zip" }
+    $archive = Write-ReleaseArchive -PublishDirectory $publish -OutputZip $OutputZip
+    $manifest = @()
+    Push-Location $script:RepositoryRoot
+    try {
+        $head = git rev-parse HEAD
+        $dirty = @(git status --porcelain).Count -gt 0
+        $files = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard | Sort-Object -Unique)
+        foreach ($file in $files) {
+            $hash = if (Test-Path -LiteralPath $file -PathType Leaf) { (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() } else { 'MISSING' }
+            $manifest += "$file`t$hash"
+        }
+    }
+    finally { Pop-Location }
+    $evidenceDirectory = Join-Path $script:RepositoryRoot ('artifacts\verification\' + [IO.Path]::GetFileNameWithoutExtension($archive))
+    New-Item -ItemType Directory -Force $evidenceDirectory | Out-Null
+    $manifestPath = Join-Path $evidenceDirectory 'inputs.tsv'
+    [IO.File]::WriteAllLines($manifestPath, $manifest, [Text.UTF8Encoding]::new($false))
+    $record = [ordered]@{
+        version = $version; configuration = 'Release'; runtime = 'win-x64'
+        sourceHead = $head; uncommittedChanges = $dirty
+        inputsSha256 = (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        zipSha256 = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        automatedChecks = 'passed'; webViewIntegration = [bool]$IncludeWebViewIntegration
+        realCoreIntegration = [bool]$IncludeRealCoreIntegration
+        performanceIntegration = [bool]$IncludePerformanceIntegration
+        slowIntegration = [bool]$IncludeSlowIntegration
+        manualSystemAcceptance = 'not implied by this command'
+        schemaVersion = 2; oldSettingsMigration = $false
+    }
+    $record | ConvertTo-Json | Out-File (Join-Path $evidenceDirectory 'verification.json') -Encoding utf8
+    Write-Host "Verified release candidate: $archive" -ForegroundColor Green
+    Write-Host "Verification records: $evidenceDirectory"
 }
-
-powershell @buildArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "Dashboard build failed with exit code $LASTEXITCODE; release packaging cancelled."
+catch {
+    Write-Error $_ -ErrorAction Continue
+    exit 1
 }
-
-$publishDir = Join-Path $repoRoot "artifacts\publish\Dashboard-$Configuration-$Runtime"
-if (-not (Test-Path $publishDir)) {
-    throw "Publish directory not found: $publishDir"
-}
-
-if (-not (Test-Path -LiteralPath (Join-Path $publishDir 'Dashboard.exe') -PathType Leaf)) {
-    throw "Published Dashboard.exe is missing: $publishDir"
-}
-& (Join-Path $repoRoot 'tools\assert-dashboard-assets.ps1') -Path (Join-Path $publishDir 'resources\dashboard')
-
-$releaseDir = Join-Path $repoRoot 'artifacts\releases'
-New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-
-$zipPath = Join-Path $releaseDir $OutputZip
-if (Test-Path $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
-}
-
-Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -CompressionLevel Optimal
-
-$zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 2)
-$releaseNotesPath = Join-Path $releaseDir "RELEASE_NOTES_$(Get-Date -Format 'yyyyMMdd').txt"
-
-@"
-Dashboard Release Package
-
-Build Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-Configuration: $Configuration
-Runtime: $Runtime
-Archive: $OutputZip
-Size: $zipSize MB
-
-Install:
-1. Close Dashboard.
-2. Extract the archive and copy all files to the existing Dashboard folder.
-3. Confirm replacement. Do not delete the existing folder first.
-4. Run Dashboard.exe.
-
-The package does not contain settings.json, mihomo, sing-box, or runtime logs.
-Packaged content updates invalidate HTTP/cache storage and service workers while preserving WebView settings, labels, and connection history. The local origin remains http://127.0.0.1:33291/; a port conflict is reported instead of changing origins.
-"@ | Out-File -FilePath $releaseNotesPath -Encoding UTF8
-
-Write-Host "Release package created: $zipPath" -ForegroundColor Green
-Write-Host "Release notes: $releaseNotesPath" -ForegroundColor Green

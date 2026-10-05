@@ -2,7 +2,7 @@ import { stripAnsi } from '@/helper/ansi'
 import { useDashboardStorage as useStorage } from '@/helper/storage'
 import { ref } from 'vue'
 
-export { initLogs, isPaused, logLevel, logs, stopLogs } from '@/assembly/logs'
+export { initLogs, isPaused, logLevel, logs, stopLogs, supportedLogLevels } from '@/assembly/logs'
 
 export const logFilter = ref('')
 export const logTypeFilter = ref('')

@@ -45,9 +45,6 @@ export enum CONNECTIONS_TABLE_ACCESSOR_KEY {
   GeoIP = 'geoip',
   RemoteAddress = 'remoteAddress',
   InboundUser = 'inboundUser',
-  Protocol = 'protocol',
-  OutboundType = 'outboundType',
-  FromOutbound = 'fromOutbound',
 }
 
 export enum TABLE_WIDTH_MODE {

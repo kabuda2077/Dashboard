@@ -155,6 +155,7 @@ watch(
     selectedBackendUuid.value =
       props.defaultBackendUuid || activeBackend.value?.uuid || backendList.value[0]?.uuid || ''
   },
+  { immediate: true },
 )
 
 watch(
@@ -188,18 +189,24 @@ const handleCancel = () => {
 
 const handleSave = async () => {
   if (!editForm.value || !selectedBackend.value) return
+  if (isSaving.value) return
   isSaving.value = true
+  const target = selectedBackend.value.uuid
+  const draft = editForm.value
 
   try {
-    const composed: Omit<Backend, 'uuid'> = { ...editForm.value }
-    const testBackend: Backend = { uuid: selectedBackend.value.uuid, ...composed }
+    const composed: Omit<Backend, 'uuid'> = { ...draft }
+    const testBackend: Backend = { uuid: target, ...composed }
+    const available = await isBackendAvailable(testBackend, 10000)
+    if (!props.modelValue || selectedBackendUuid.value !== target || editForm.value !== draft
+      || Object.keys(composed).some((key) => composed[key as keyof typeof composed] !== draft[key as keyof typeof draft])) return
 
-    if (!(await isBackendAvailable(testBackend, 10000))) {
+    if (!available) {
       showNotification({ content: t('backendConnectionFailed'), type: 'alert-error' })
       return
     }
 
-    updateBackend(selectedBackend.value.uuid, composed)
+    updateBackend(target, composed)
     showNotification({ content: t('backendConfigSaved'), type: 'alert-success' })
     isVisible.value = false
     reset()

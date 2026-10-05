@@ -134,10 +134,6 @@ export const connectionAccessor: ConnectionAccessor = {
   },
   sniffHost: (connection) => asClash(connection).metadata.sniffHost,
   remoteAddress: (connection) => asClash(connection).metadata.remoteDestination,
-  // clash 不提供这些字段。
-  protocol: () => '',
-  outboundType: () => '',
-  fromOutbound: () => '',
   smartBlock: (connection) => asClash(connection).metadata.smartBlock,
 }
 

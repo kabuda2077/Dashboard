@@ -7,7 +7,7 @@
 </template>
 
 <script setup lang="ts">
-import DropdownSelect from '@/components/common/DropdownSelect.vue'
+import DropdownSelect from '@/components/common/SelectInput.vue'
 import { getIPLabelFromMap } from '@/helper/sourceip'
 import { getConnectionSourceIP } from '@/helper'
 import { connections, sourceIPFilter } from '@/store/connections'

@@ -2,6 +2,7 @@ import type { StorageLike, UseStorageOptions } from '@vueuse/core'
 import { tryOnMounted, useStorage as useVueUseStorage } from '@vueuse/core'
 import { toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { notifyDashboardSettingsChanged } from './settingsChanges'
+import { isValidPreferenceEnum } from './preferenceValues'
 
 // Keep native Storage identity: VueUse emits storage events for same-document
 // writes and also observes cross-document changes. A custom StorageLike wrapper
@@ -10,11 +11,20 @@ import { notifyDashboardSettingsChanged } from './settingsChanges'
 // those paths explicitly. Normal writes are observed by dashboardSettingsSync.
 // Existing settings retain VueUse's writeDefaults behavior.
 export function useDashboardStorage<T>(
-  key: MaybeRefOrGetter<string>, defaults: MaybeRefOrGetter<T>,
-  storage?: StorageLike, options?: UseStorageOptions<T>,
+  key: MaybeRefOrGetter<string>,
+  defaults: MaybeRefOrGetter<T>,
+  storage?: StorageLike,
+  options?: UseStorageOptions<T>,
 ) {
   const target = storage ?? localStorage
-  const value = useVueUseStorage(key, defaults, target, options)
+  const value = useVueUseStorage(key, defaults, target, { writeDefaults: false, ...options })
+  watch(
+    [value, () => toValue(key)],
+    ([next, currentKey]) => {
+      if (!isValidPreferenceEnum(currentKey, next)) value.value = toValue(defaults)
+    },
+    { immediate: true, flush: 'sync' },
+  )
   if (target === localStorage) {
     const notify = () => notifyDashboardSettingsChanged(toValue(key))
     if (options?.initOnMounted) tryOnMounted(notify)
@@ -39,8 +49,5 @@ export function useStorage<T>(
   storage?: StorageLike,
   options?: UseStorageOptions<T>,
 ) {
-  return useDashboardStorage(key, defaults, storage, {
-    writeDefaults: false,
-    ...options,
-  })
+  return useDashboardStorage(key, defaults, storage, options)
 }

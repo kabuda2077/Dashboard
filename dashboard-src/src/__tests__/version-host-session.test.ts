@@ -1,59 +1,24 @@
 import { afterEach, expect, it, vi } from 'vitest'
-
-const { fetchVersion } = vi.hoisted(() => ({
-  fetchVersion: vi.fn().mockRejectedValue(new Error('API unavailable')),
-}))
-
+import { nextTick } from 'vue'
+import { startMockHost } from './hostFixture'
+const fetchVersion = vi.hoisted(() => vi.fn())
 vi.mock('@/api/clash', () => ({
   fetchClashVersion: fetchVersion,
   restartCoreAPI: vi.fn(),
   upgradeCoreAPI: vi.fn(),
 }))
-
 afterEach(() => {
+  window.dispatchEvent(new Event('pagehide'))
   Reflect.deleteProperty(window, 'chrome')
-  localStorage.clear()
-  sessionStorage.clear()
 })
-
-it('re-probes when the desktop host session changes at the same endpoint', async () => {
-  Object.defineProperty(window, 'chrome', {
-    configurable: true,
-    value: { webview: { postMessage: vi.fn() } },
-  })
-
-  const setup = await import('@/store/setup')
-  setup.backendList.value = [
-    {
-      type: 'clash',
-      protocol: 'http',
-      host: 'localhost',
-      port: '9090',
-      secondaryPath: '',
-      password: '',
-      uuid: 'desktop-core',
-      disableUpgradeCore: true,
-    },
-  ]
-  setup.activeUuid.value = 'desktop-core'
-
-  const bridge = await import('@/composables/hostBridge')
-  bridge.applyHostState({
-    coreType: 'mihomo',
-    apiUrl: 'http://localhost:9090',
-    processId: 1,
-    isRunning: true,
-  })
-
-  await import('@/assembly/version')
-  await vi.waitFor(() => expect(fetchVersion).toHaveBeenCalledTimes(1))
-
-  bridge.applyHostState({
-    coreType: 'mihomo',
-    apiUrl: 'http://localhost:9090',
-    processId: 2,
-    isRunning: true,
-  })
-
-  await vi.waitFor(() => expect(fetchVersion).toHaveBeenCalledTimes(2))
+it('desktop uses the host version and explicit core kind instead of probing or guessing from the version text', async () => {
+  vi.resetModules()
+  const host = await startMockHost({ coreVersion: '1.0.0' })
+  const { version, isSingBoxCore } = await import('@/assembly/version')
+  expect(version.value).toBe('1.0.0')
+  host.runtime({ coreType: 'sing-box', runtimeEpoch: 2, coreVersion: '2.0.0' })
+  await nextTick()
+  expect(version.value).toBe('2.0.0')
+  expect(isSingBoxCore.value).toBe(true)
+  expect(fetchVersion).not.toHaveBeenCalled()
 })

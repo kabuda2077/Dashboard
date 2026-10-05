@@ -1,6 +1,4 @@
 import { configs, updateConfigs } from '@/assembly/config'
-import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
 import { disconnectByIdAPI } from '@/assembly/connections'
 import {
   allProxiesLatencyTest,
@@ -17,6 +15,8 @@ import { renderProxiesPageItems } from '@/composables/proxies'
 import { isProxyNodeSearchMode, toggleProxySearchMode } from '@/composables/proxySearch'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
+import { captureBackendSession } from '@/helper/backendSession'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
 import { getMinCardWidth } from '@/helper/utils'
 import { activeConnections } from '@/store/connections'
 import { isProxyFolderModeActive } from '@/store/proxyFolders'
@@ -49,8 +49,8 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
-import DropdownSelect from '../common/DropdownSelect.vue'
 import SegmentedControl from '../common/SegmentedControl.vue'
+import DropdownSelect from '../common/SelectInput.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({

@@ -1,22 +1,49 @@
 import { hasHostBridge, hostSessionGeneration, hostState } from '@/composables/hostBridge'
 import { activeBackend } from '@/store/setup'
-import { computed, readonly, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-// One identity for both desktop runtime changes and browser connection edits.
-// Synchronous invalidation protects replies arriving before Vue renders the new session.
-const generation = ref(0)
-const signature = computed(() => {
-  const backend = activeBackend.value
-  return JSON.stringify([backend?.uuid, backend?.protocol, backend?.host, backend?.port,
-    backend?.secondaryPath, backend?.password, hostSessionGeneration.value])
-})
-watch(signature, () => { generation.value++ }, { flush: 'sync' })
-
-export const backendSessionGeneration = readonly(generation)
-export const backendSessionReady = computed(() => !!activeBackend.value
-  && (!hasHostBridge || hostState.value.isRunning !== false))
-
+const browserGeneration = ref(0)
+if (!hasHostBridge)
+  watch(
+    () => {
+      const backend = activeBackend.value
+      return JSON.stringify([
+        backend?.uuid,
+        backend?.protocol,
+        backend?.host,
+        backend?.port,
+        backend?.secondaryPath,
+        backend?.password,
+      ])
+    },
+    () => {
+      browserGeneration.value++
+    },
+    { flush: 'sync' },
+  )
+export const backendSessionGeneration = computed(() =>
+  hasHostBridge ? hostSessionGeneration.value : browserGeneration.value,
+)
+const unauthorizedGeneration = ref<number>()
+export const markBackendUnauthorized = () => {
+  unauthorizedGeneration.value = backendSessionGeneration.value
+}
+export const backendConnectionStatus = computed(() =>
+  unauthorizedGeneration.value === backendSessionGeneration.value
+    ? 'unauthorized'
+    : hasHostBridge
+      ? (hostState.value.apiStatus ?? 'idle')
+      : activeBackend.value
+        ? 'ready'
+        : 'idle',
+)
+export const backendSessionReady = computed(
+  () =>
+    !!activeBackend.value &&
+    backendConnectionStatus.value === 'ready' &&
+    (!hasHostBridge || hostState.value.isRunning === true),
+)
 export const captureBackendSession = () => {
-  const captured = generation.value
-  return { isCurrent: () => captured === generation.value }
+  const generation = backendSessionGeneration.value
+  return { isCurrent: () => generation === backendSessionGeneration.value }
 }

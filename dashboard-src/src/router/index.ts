@@ -1,4 +1,3 @@
-import { capabilities } from '@/assembly/backend'
 import { hasHostBridge } from '@/composables/hostBridge'
 import { ROUTE_NAME } from '@/constant'
 import { renderRoutes } from '@/helper'
@@ -44,10 +43,6 @@ const childrenRouter = [
     component: () => import('@/views/RulesPage.vue'),
   },
 ]
-
-const ROUTE_CAPABILITY: Partial<Record<string, keyof typeof capabilities.value>> = {
-  [ROUTE_NAME.rules]: 'rules',
-}
 
 const router = createRouter({
   history: createWebHashHistory(import.meta.env.BASE_URL),
@@ -97,11 +92,6 @@ router.beforeEach((to, from) => {
   if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)) {
     return { name: hasHostBridge ? ROUTE_NAME.core : ROUTE_NAME.setup }
   }
-
-  const requiredCap = typeof to.name === 'string' ? ROUTE_CAPABILITY[to.name] : undefined
-  if (requiredCap && !capabilities.value[requiredCap]) {
-    router.push({ name: ROUTE_NAME.proxies })
-  }
 })
 
 router.afterEach((to) => {
@@ -114,11 +104,9 @@ watch([language, activeBackend], () => {
   })
 })
 
-watch(capabilities, (currentCapabilities) => {
-  const routeName = router.currentRoute.value.name
-  const requiredCap = typeof routeName === 'string' ? ROUTE_CAPABILITY[routeName] : undefined
-  if (requiredCap && !currentCapabilities[requiredCap]) {
-    router.push({ name: ROUTE_NAME.proxies })
+watch(activeBackend, (backend) => {
+  if (!backend && router.currentRoute.value.name === ROUTE_NAME.rules) {
+    void router.push({ name: ROUTE_NAME.proxies })
   }
 })
 

@@ -1,6 +1,6 @@
 // 组装层 · connection 字段访问器。
 // 当前两种核心均通过 Clash-compatible API 读取连接。
-// accessor 从快照读取/派生展示字段，历史 native 字段仅保留旧配置键兼容。
+// accessor 仅从当前 Clash 快照读取/派生支持的展示字段。
 import { getGeoIPInfoSync } from '@/api/geoip'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
 import { getIPLabelFromMap } from '@/helper/sourceip'
@@ -42,10 +42,6 @@ export interface ConnectionAccessor {
   inboundUser(connection: Connection): string
   sniffHost(connection: Connection): string
   remoteAddress(connection: Connection): string
-  // 历史 native 字段：当前适配器返回空串，不再提供为列/卡片/分组选项。
-  protocol(connection: Connection): string
-  outboundType(connection: Connection): string
-  fromOutbound(connection: Connection): string
   // 仅 clash 支持的 smart 降级标记;sing-box 返回 undefined。
   smartBlock(connection: Connection): string | undefined
 }
@@ -125,32 +121,27 @@ export const createGetConnectionDisplayValue =
         return accessor.remoteAddress(connection) || '-'
       case CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser:
         return accessor.inboundUser(connection)
-      case CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol:
-        return accessor.protocol(connection) || '-'
-      case CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType:
-        return accessor.outboundType(connection) || '-'
-      case CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound:
-        return accessor.fromOutbound(connection) || '-'
       case CONNECTIONS_TABLE_ACCESSOR_KEY.Close:
         return ''
+      default:
+        return '-'
     }
   }
 
 export const createGetConnectionVisibleSearchValues = (accessor: ConnectionAccessor) => {
   const getDisplayValue = createGetConnectionDisplayValue(accessor)
-  let lastKeys: CONNECTIONS_TABLE_ACCESSOR_KEY[] | null = null
-  let visibleKeys: CONNECTIONS_TABLE_ACCESSOR_KEY[] = []
+  const supported = new Set(Object.values(CONNECTIONS_TABLE_ACCESSOR_KEY))
 
   return (
     connection: Connection,
     keys: CONNECTIONS_TABLE_ACCESSOR_KEY[],
     options: ConnectionDisplayOptions,
   ) => {
-    if (keys !== lastKeys) {
-      lastKeys = keys
-      visibleKeys = keys.filter((key) => key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close)
+    const values: string[] = []
+    for (const key of keys) {
+      if (key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close && supported.has(key))
+        values.push(getDisplayValue(connection, key, options))
     }
-
-    return visibleKeys.map((key) => getDisplayValue(connection, key, options))
+    return values
   }
 }

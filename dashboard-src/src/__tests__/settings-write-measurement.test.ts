@@ -1,71 +1,36 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
-let stop: (() => void) | undefined
-
+import { effectScope, nextTick } from 'vue'
+import { makeHostSnapshot, startMockHost } from './hostFixture'
 afterEach(() => {
-  stop?.()
+  window.dispatchEvent(new Event('pagehide'))
   vi.useRealTimers()
   Reflect.deleteProperty(window, 'chrome')
 })
-
-it('saves one burst of preference edits and does no work while idle', async () => {
+it('one hundred edits yield one preference commit; metadata and idle time create no writes', async () => {
+  vi.resetModules()
   vi.useFakeTimers()
-  let receive: (event: MessageEvent) => void = () => {}
-  let saves = 0
-  Object.defineProperty(window, 'chrome', {
-    configurable: true,
-    value: {
-      webview: {
-        postMessage: (message: { type: string; requestId: string }) => {
-          if (message.type !== 'saveDashboardSettings') return
-          saves++
-          queueMicrotask(() =>
-            receive(
-              new MessageEvent('message', {
-                data: {
-                  type: 'dashboardSettingsSaved',
-                  requestId: message.requestId,
-                  success: true,
-                },
-              }),
-            ),
-          )
-        },
-        addEventListener: (_: string, listener: typeof receive) => {
-          receive = listener
-        },
-        removeEventListener: vi.fn(),
-      },
-    },
-  })
+  localStorage.clear()
+  const host = await startMockHost()
+  host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
   const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
   const { useDashboardStorage } = await import('@/helper/storage')
-  const { applyHostState } = await import('@/composables/hostBridge')
-  // Production startup restores the host snapshot before installing sync.
-  applyHostState({ dashboardSettings: {} })
-  stop = installDashboardSettingsSync()
-  for (let index = 0; index < 100; index++) {
-    applyHostState({
-      coreType: 'mihomo',
-      apiUrl: 'http://localhost:9090',
-      isRunning: true,
-      processId: 1,
-      latestCoreVersion: `notice-${index}`,
-      dashboardSettings: {},
-    })
+  const stop = installDashboardSettingsSync()
+  for (let i = 0; i < 100; i++) {
+    host.setState(makeHostSnapshot({ latestCoreVersion: String(i) }))
     await nextTick()
   }
   await vi.advanceTimersByTimeAsync(1300)
-  expect(saves).toBe(0)
-  const preference = useDashboardStorage('config/p9-measurement', 0)
-  for (let index = 1; index <= 100; index++) {
-    preference.value = index
+  expect(host.post).not.toHaveBeenCalled()
+  const scope = effectScope()
+  const value = scope.run(() => useDashboardStorage('config/write-measurement', 0))!
+  for (let i = 1; i <= 100; i++) {
+    value.value = i
     await nextTick()
   }
   await vi.advanceTimersByTimeAsync(301)
-  const afterDebounce = saves
-  await vi.advanceTimersByTimeAsync(3000)
-  console.info(`P9 settings writes: edits=100 afterDebounce=${afterDebounce} afterIdle=${saves}`)
-  expect(afterDebounce).toBe(1)
-  expect(saves).toBe(1)
+  expect(host.post).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(host.post).toHaveBeenCalledTimes(1)
+  scope.stop()
+  stop?.()
 })

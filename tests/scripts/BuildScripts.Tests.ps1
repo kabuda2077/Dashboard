@@ -1,116 +1,108 @@
-# Runs without Pester, .NET builds, network, elevation, or user settings.
-# External commands are faked; actual build/release scripts run in a temporary copy.
-param()
+#requires -Version 7.0
 $ErrorActionPreference = 'Stop'
-$sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$originalLocation = Get-Location
-$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('Dashboard.BuildTests.' + [Guid]::NewGuid().ToString('N'))
-$script:passed = 0
+. (Join-Path $PSScriptRoot '..\..\tools\internal\pipeline.ps1')
+$script:calls = [Collections.Generic.List[string]]::new()
+function Test-DesktopSources { $script:calls.Add('sources') }
+function Prepare-Frontend { $script:calls.Add('install') }
+function Test-FrontendTypes { $script:calls.Add('types') }
+function Build-Frontend { $script:calls.Add('ui') }
+function Test-Host { param($Configuration, $IncludeWebViewIntegration) $script:calls.Add("host:$Configuration") }
+function Test-Frontend { $script:calls.Add('frontend') }
+function Assert-True { param([bool]$Value, [string]$Message) if (-not $Value) { throw $Message } }
 
-function Assert-True([bool]$Value, [string]$Message) {
-    if (-not $Value) { throw $Message }
-}
+Invoke-Verification -Configuration Release 6>$null
+Assert-True (($script:calls -join ',') -eq 'sources,install,types,ui,host:Release,frontend') 'Verification order or step count changed.'
+$script:calls.Clear()
+function Test-FrontendTypes { $script:calls.Add('types'); throw 'expected type failure' }
+$failed = $false
+try { Invoke-Verification -Configuration Release } catch { $failed = $_.Exception.Message -like '*expected type failure*' }
+Assert-True $failed 'An earlier failure must stop the pipeline.'
+Assert-True (($script:calls -join ',') -eq 'sources,install,types') 'Build/test work ran after an earlier failure.'
+$failed = $false
+try { Invoke-Checked 'expected native failure' { $global:LASTEXITCODE = 23 } } catch { $failed = $_.Exception.Message -like '*exit 23*' }
+$global:LASTEXITCODE = 0
+Assert-True $failed 'Native non-zero exit was not propagated.'
+$failed = $false
+try { Invoke-Checked 'expected missing executable' { & 'dashboard-no-such-command-for-test' } 2>$null } catch { $failed = $true }
+Assert-True $failed 'A missing executable must not be treated as a successful step.'
 
-function New-Fixture([string]$Name, [bool]$WithAssets = $true) {
-    $root = Join-Path $tempRoot $Name
-    New-Item -ItemType Directory -Force (Join-Path $root 'tools') | Out-Null
-    Copy-Item (Join-Path $sourceRoot 'tools\build.ps1'), (Join-Path $sourceRoot 'tools\create-release.ps1') (Join-Path $root 'tools')
-    Copy-Item (Join-Path $sourceRoot 'tools\assert-dashboard-assets.ps1') (Join-Path $root 'tools')
-    if ($WithAssets) {
-        New-Item -ItemType Directory -Force (Join-Path $root 'resources\dashboard\assets') | Out-Null
-        [IO.File]::WriteAllText((Join-Path $root 'resources\dashboard\index.html'), '<html><script src="./assets/app.js"></script></html>')
-        [IO.File]::WriteAllText((Join-Path $root 'resources\dashboard\assets\app.js'), 'test')
-    }
-    $global:DashboardBuildTestState = @{ RestoreExit = 0; PublishExit = 0; ChildExit = 0; Calls = @() }
-    $global:LASTEXITCODE = 0
-    return $root
-}
-
-function dotnet {
-    $state = $global:DashboardBuildTestState
-    $state.Calls += $args[0]
-    if ($args[0] -eq 'restore') { $global:LASTEXITCODE = $state.RestoreExit; return }
-    if ($args[0] -ne 'publish') { throw 'Unexpected dotnet call' }
-    $global:LASTEXITCODE = $state.PublishExit
-    if ($state.PublishExit -ne 0) { return }
-    $output = $args[[Array]::IndexOf($args, '-o') + 1]
-    New-Item -ItemType Directory -Force (Join-Path $output 'resources') | Out-Null
-    [IO.File]::WriteAllText((Join-Path $output 'Dashboard.exe'), 'fake binary')
-    Copy-Item 'resources\dashboard' (Join-Path $output 'resources') -Recurse
-}
-
-function powershell {
-    $fileIndex = [Array]::IndexOf($args, '-File')
-    Assert-True ($fileIndex -ge 0) 'Child PowerShell must specify a script'
-    $scriptPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($args[$fileIndex + 1])
-    $expectedTools = Join-Path (Get-Location) 'tools'
-    Assert-True ((Split-Path $scriptPath) -eq $expectedTools) 'Child scripts must resolve in repository tools'
-    $global:LASTEXITCODE = $global:DashboardBuildTestState.ChildExit
-}
-
-function Expect-Failure([scriptblock]$Action, [string]$Message) {
-    $caught = $null
-    try { & $Action } catch { $caught = $_.Exception.Message }
-    Assert-True ($null -ne $caught -and $caught.Contains($Message)) "Expected '$Message', got '$caught'"
-    $script:passed++
-}
-
+$temp = Join-Path ([IO.Path]::GetTempPath()) ('Dashboard.BuildTests.' + [Guid]::NewGuid().ToString('N'))
+$script:RepositoryRoot = $temp
+$publish = Join-Path $temp 'publish'
+New-Item -ItemType Directory -Force (Join-Path $publish 'resources\dashboard\assets') | Out-Null
 try {
-    $root = New-Fixture 'missing-ui' $false
-    Expect-Failure { & (Join-Path $root 'tools\build.ps1') -SkipDashboardBuild } 'Dashboard UI is missing'
-    Assert-True ($global:DashboardBuildTestState.Calls.Count -eq 0) 'Missing UI must fail before dotnet'
-
-    $root = New-Fixture 'missing-reference'
-    Remove-Item (Join-Path $root 'resources\dashboard\assets\app.js')
-    Expect-Failure { & (Join-Path $root 'tools\build.ps1') -SkipDashboardBuild } 'missing file'
-
-    $root = New-Fixture 'traversal'
-    [IO.File]::WriteAllText((Join-Path $root 'resources\dashboard\index.html'), '<script src="../outside.js"></script>')
-    Expect-Failure { & (Join-Path $root 'tools\build.ps1') -SkipDashboardBuild } 'escapes'
-
-    $root = New-Fixture 'restore-failure'
-    $global:DashboardBuildTestState.RestoreExit = 9
-    Expect-Failure { & (Join-Path $root 'tools\build.ps1') -SkipDashboardBuild } 'dotnet restore failed'
-    Assert-True ($global:DashboardBuildTestState.Calls -notcontains 'publish') 'Publish must not run after failed restore'
-
-    $root = New-Fixture 'publish-failure'
-    $global:DashboardBuildTestState.PublishExit = 8
-    Expect-Failure { & (Join-Path $root 'tools\build.ps1') -SkipDashboardBuild } 'dotnet publish failed'
-
-    $root = New-Fixture 'ui-build-failure'
-    $global:DashboardBuildTestState.ChildExit = 7
-    Expect-Failure { & (Join-Path $root 'tools\build.ps1') } 'dashboard UI build failed'
-    Assert-True ($global:DashboardBuildTestState.Calls.Count -eq 0) 'UI failure must stop dotnet'
-
-    $root = New-Fixture 'release-failure'
-    $publish = Join-Path $root 'artifacts\publish\Dashboard-Release-win-x64'
-    New-Item -ItemType Directory -Force $publish | Out-Null
-    [IO.File]::WriteAllText((Join-Path $publish 'Dashboard.exe'), 'stale binary')
-    $global:DashboardBuildTestState.ChildExit = 6
-    Expect-Failure { & (Join-Path $root 'tools\create-release.ps1') -SkipDashboardBuild -OutputZip 'test.zip' } 'packaging cancelled'
-    Assert-True (-not (Test-Path (Join-Path $root 'artifacts\releases\test.zip'))) 'Failed child build must not package stale files'
-
-    $root = New-Fixture 'successful-build'
-    $publish = Join-Path $root 'artifacts\publish\Dashboard-Release-win-x64'
-    New-Item -ItemType Directory -Force $publish | Out-Null
-    [IO.File]::WriteAllText((Join-Path $publish 'stale.txt'), 'stale')
-    Set-Location $tempRoot
-    & (Join-Path $root 'tools\build.ps1') -SkipDashboardBuild
-    Assert-True (-not (Test-Path (Join-Path $publish 'stale.txt'))) 'Successful build must clear old output'
-    Assert-True (Test-Path (Join-Path $publish 'resources\dashboard\assets\app.js')) 'Published UI missing'
-    Set-Location $tempRoot
-    & (Join-Path $root 'tools\create-release.ps1') -SkipDashboardBuild -OutputZip 'test.zip'
-    Assert-True (Test-Path (Join-Path $root 'artifacts\releases\test.zip')) 'Valid output should be packaged'
-    $script:passed++
-
-    $root = New-Fixture 'incomplete-publish'
-    New-Item -ItemType Directory -Force (Join-Path $root 'artifacts\publish\Dashboard-Release-win-x64') | Out-Null
-    Expect-Failure { & (Join-Path $root 'tools\create-release.ps1') -SkipDashboardBuild } 'Dashboard.exe is missing'
-
-    Write-Host "Build/release script tests passed: $script:passed"
+    [IO.File]::WriteAllText((Join-Path $publish 'Dashboard.exe'), 'fixture, not an executable')
+    [IO.File]::WriteAllText((Join-Path $publish 'resources\dashboard\index.html'), '<script src="./assets/app.js"></script>')
+    [IO.File]::WriteAllText((Join-Path $publish 'resources\dashboard\assets\app.js'), 'fixture')
+    $zip = Write-ReleaseArchive $publish 'test.zip'
+    Assert-True (Test-Path $zip) 'Verified fixture archive was not produced.'
+    [IO.File]::WriteAllText((Join-Path $publish 'resources\dashboard\assets\app.js'), 'updated fixture')
+    $originalHash = (Get-FileHash $zip).Hash
+    $zip = Write-ReleaseArchive $publish 'test.zip'
+    Assert-True ((Get-FileHash $zip).Hash -ne $originalHash) 'An existing release could not be replaced with verified new content.'
+    $before = (Get-FileHash $zip).Hash
+    $tampered = Join-Path $temp 'tampered.zip'
+    Copy-Item $zip $tampered
+    $archive = [IO.Compression.ZipFile]::Open($tampered, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $archive.GetEntry('resources/dashboard/assets/app.js').Delete()
+        $writer = [IO.StreamWriter]::new($archive.CreateEntry('resources/dashboard/assets/app.js').Open())
+        try { $writer.Write('changed bytes, same entry name and count') } finally { $writer.Dispose() }
+    } finally { $archive.Dispose() }
+    $failed = $false
+    try { Assert-ReleaseArchive -ArchivePath $tampered -PublishDirectory $publish } catch { $failed = $_.Exception.Message -like '*ZIP content does not match*' }
+    Assert-True $failed 'A ZIP with correct names but changed content was accepted.'
+    [IO.File]::WriteAllText((Join-Path $publish 'settings.json'), 'must not be packaged')
+    $failed = $false
+    try { Write-ReleaseArchive $publish 'test.zip' | Out-Null } catch { $failed = $_.Exception.Message -like '*leaked*' }
+    Assert-True $failed 'User settings were allowed into the release.'
+    Assert-True ((Get-FileHash $zip).Hash -eq $before) 'A failed candidate overwrote an existing archive.'
+    Remove-Item (Join-Path $publish 'settings.json')
+    foreach ($relative in @('profiles\config.yaml', 'profile\nested\user.json', 'cores\renamed.exe', 'config\user.json', 'mihomo.exe', 'sing-box.exe', 'mihomo-windows-amd64.exe', 'config.json', 'config.test.json', 'custom.yml', 'webview-data-v2\user.db', 'icon-cache\cached.png', 'backups\state.json', '.hidden\settings.json')) {
+        $file = Join-Path $publish $relative
+        New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
+        [IO.File]::WriteAllText($file, 'must not be packaged')
+        $failed = $false
+        try { Write-ReleaseArchive $publish 'test.zip' | Out-Null } catch { $failed = $_.Exception.Message -like '*leaked*' }
+        Assert-True $failed "Forbidden release file was accepted: $relative"
+        Assert-True ((Get-FileHash $zip).Hash -eq $before) 'Rejected candidate replaced an existing archive.'
+        Remove-Item -LiteralPath $file
+    }
+    Remove-Item (Join-Path $publish 'resources\dashboard\assets\app.js')
+    $failed = $false
+    try { Assert-PublishDirectory $publish } catch { $failed = $true }
+    Assert-True $failed 'Missing entry dependency was not detected.'
+    $failed = $false
+    try { Write-ReleaseArchive $publish '../escape.zip' | Out-Null } catch { $failed = $true }
+    Assert-True $failed 'An archive path escaped the release directory.'
 }
-finally {
-    Remove-Variable DashboardBuildTestState -Scope Global -ErrorAction SilentlyContinue
-    Set-Location $originalLocation
-    if (Test-Path $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force }
+finally { if (Test-Path $temp) { Remove-Item -LiteralPath $temp -Recurse -Force } }
+# Verify PowerShell 7's native output handling with actual process redirection.
+# Warnings must remain visible; a failing exit must still stop the pipeline.
+$stderrFixture = Join-Path $PSScriptRoot 'native-stderr.cjs'
+$engine = (Get-Process -Id $PID).Path
+$probe = Join-Path ([IO.Path]::GetTempPath()) ('Dashboard.NativeStderr.' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $probe | Out-Null
+try {
+    $wrapper = Join-Path $probe 'probe.ps1'
+    $pipelinePath = Join-Path $PSScriptRoot '..\..\tools\internal\pipeline.ps1'
+    $code = ". '" + $pipelinePath.Replace("'", "''") + "'`n" +
+        "`$PSNativeCommandUseErrorActionPreference = `$true`n" +
+        "Invoke-Checked 'native stderr regression' { node.exe '" + $stderrFixture.Replace("'", "''") + "' }`n"
+    [IO.File]::WriteAllText($wrapper, $code)
+    $child = Start-Process -FilePath $engine -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapper) -NoNewWindow -RedirectStandardOutput (Join-Path $probe 'stdout.log') -RedirectStandardError (Join-Path $probe 'stderr.log') -PassThru
+    $null = $child.Handle
+    $child.WaitForExit()
+    Assert-True ($child.ExitCode -eq 0) 'Successful multi-line native stderr was rejected under output redirection.'
+    $stderr = [IO.File]::ReadAllText((Join-Path $probe 'stderr.log'))
+    Assert-True ($stderr -match 'warning-one' -and $stderr -match 'warning-two') 'Native warnings disappeared.'
+    $code = $code.Replace("' }", "' 19 }")
+    [IO.File]::WriteAllText($wrapper, $code)
+    $child = Start-Process -FilePath $engine -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapper) -NoNewWindow -RedirectStandardOutput (Join-Path $probe 'failed.stdout.log') -RedirectStandardError (Join-Path $probe 'failed.stderr.log') -PassThru
+    $null = $child.Handle
+    $child.WaitForExit()
+    Assert-True ($child.ExitCode -ne 0) 'A native failure with multi-line stderr was ignored.'
+    Assert-True ([IO.File]::ReadAllText((Join-Path $probe 'failed.stderr.log')) -match 'exit 19') 'Native exit code was not propagated.'
 }
+finally { Remove-Item -LiteralPath $probe -Recurse -Force }
+Write-Host 'Build/release pipeline regression tests passed.' -ForegroundColor Green

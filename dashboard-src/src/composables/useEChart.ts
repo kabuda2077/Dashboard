@@ -161,7 +161,7 @@ export const useEChart = (
   let wasDeactivated = false
 
   const render = () => {
-    if (!active || !chart.value || paused?.value) return
+    if (!active || document.visibilityState === 'hidden' || !chart.value || paused?.value) return
 
     if (isEmpty?.value) {
       chart.value.clear()
@@ -172,8 +172,15 @@ export const useEChart = (
   }
 
   const resize = debounce(() => {
-    if (active) chart.value?.resize()
+    if (active && document.visibilityState !== 'hidden') chart.value?.resize()
   }, 100)
+  const onVisibility = () => {
+    resize.cancel()
+    if (active && document.visibilityState !== 'hidden') {
+      render()
+      chart.value?.resize()
+    }
+  }
 
   const hideTooltip = () => {
     chart.value?.dispatchAction({ type: 'hideTip' })
@@ -208,6 +215,7 @@ export const useEChart = (
     if (!chartRef.value) return
 
     chart.value = echarts.init(chartRef.value)
+    document.addEventListener('visibilitychange', onVisibility)
     removeInitListeners = onInit?.(chart.value) || undefined
     syncTouchListener()
     render()
@@ -227,10 +235,11 @@ export const useEChart = (
     syncTouchListener()
     render()
     resize.cancel()
-    chart.value?.resize()
+    if (document.visibilityState !== 'hidden') chart.value?.resize()
   })
 
   onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisibility)
     resize.cancel()
     removeTouchListener()
     removeInitListeners?.()
@@ -243,7 +252,7 @@ export const useEChart = (
     render,
     resize: () => {
       resize.cancel()
-      if (active) chart.value?.resize()
+      if (active && document.visibilityState !== 'hidden') chart.value?.resize()
     },
   }
 }

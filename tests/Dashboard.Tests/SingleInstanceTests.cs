@@ -15,6 +15,14 @@ public sealed class SingleInstanceTests
     }
 
     [Fact]
+    public async Task OversizedActivationCommandIsBounded()
+    {
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(new string('x', 4096)));
+        using var reader = new StreamReader(stream);
+        Assert.Equal("", await SingleInstance.ReadActivationCommandAsync(reader, CancellationToken.None));
+    }
+
+    [Fact]
     public void SecondInstanceReceivesActivationAcknowledgement()
     {
         var suffix = Guid.NewGuid().ToString("N");

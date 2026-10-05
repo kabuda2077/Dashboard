@@ -22,6 +22,9 @@
         :data-value="opt.value"
         role="tab"
         type="button"
+        :aria-selected="modelValue === opt.value"
+        :tabindex="modelValue === opt.value ? 0 : -1"
+        @keydown="navigate($event, opt.value)"
         :class="[
           'segment-item relative z-1 flex items-center justify-center gap-1 rounded-[0.5rem] px-3 py-1 text-sm whitespace-nowrap transition-colors duration-150',
           modelValue === opt.value
@@ -101,6 +104,19 @@ const updateIndicator = async () => {
 const select = (value: string) => {
   if (value === props.modelValue) return
   emit('update:modelValue', value)
+}
+
+const navigate = async (event: KeyboardEvent, value: string) => {
+  const length = props.options.length
+  if (!length || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const index = props.options.findIndex((option) => option.value === value)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? length - 1
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + length) % length
+  const selected = props.options[next].value
+  select(selected)
+  await nextTick()
+  segmentRefs.value.find((element) => element.dataset.value === selected)?.focus()
 }
 
 watch(() => [props.modelValue, props.options, width.value], updateIndicator, {

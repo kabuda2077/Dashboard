@@ -20,6 +20,46 @@ public sealed class DashboardApplicationContextTests
         Assert.Equal(["shutdown", "close", "exit"], calls);
     }
 
+    [Theory]
+    [InlineData(true, false, true, 0)]
+    [InlineData(false, false, false, 1)]
+    [InlineData(false, true, true, 1)]
+    public async Task ExitWaitsForFlushAndRespectsTheDiscardDecision(bool saved, bool discard, bool expected, int confirmations)
+    {
+        var flush = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var asked = 0;
+        var exit = DashboardApplicationContext.ConfirmExitAsync(() => flush.Task, () => { asked++; return discard; });
+        Assert.False(exit.IsCompleted);
+        Assert.Equal(0, asked);
+        flush.SetResult(saved);
+        Assert.Equal(expected, await exit);
+        Assert.Equal(confirmations, asked);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task ReplacementIsNotCreatedWhileExitConfirmationIsPending(bool confirmed)
+    {
+        var calls = new List<string>();
+        var consent = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var result = DashboardApplicationContext.RelaunchAfterConfirmationAsync(() => consent.Task,
+            () => calls.Add("spawn"), () => { calls.Add("finish"); return Task.CompletedTask; });
+        Assert.Empty(calls);
+        consent.SetResult(confirmed);
+        Assert.Equal(confirmed, await result);
+        Assert.Equal(confirmed ? new[] { "spawn", "finish" } : Array.Empty<string>(), calls);
+    }
+
+    [Fact]
+    public async Task FailedOrCancelledReplacementKeepsTheOldHostAlive()
+    {
+        var exited = false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => DashboardApplicationContext.RelaunchAfterConfirmationAsync(
+            () => Task.FromResult(true), () => throw new InvalidOperationException("UAC cancelled"),
+            () => { exited = true; return Task.CompletedTask; }));
+        Assert.False(exited);
+    }
+
     [Fact]
     public async Task StartupStartsCoreBeforeAutostartReconciliation()
     {
@@ -27,7 +67,7 @@ public sealed class DashboardApplicationContextTests
 
         await DashboardApplicationContext.RunStartupOperationsAsync(
             shouldStartCore: true,
-            () => calls.Add("start"),
+            () => { calls.Add("start"); return Task.CompletedTask; },
             () => { calls.Add("reconcile"); return Task.CompletedTask; });
 
         Assert.Equal(["start", "reconcile"], calls);
@@ -40,7 +80,7 @@ public sealed class DashboardApplicationContextTests
 
         await DashboardApplicationContext.RunStartupOperationsAsync(
             shouldStartCore: false,
-            () => calls.Add("start"),
+            () => { calls.Add("start"); return Task.CompletedTask; },
             () => { calls.Add("reconcile"); return Task.CompletedTask; });
 
         Assert.Equal(["reconcile"], calls);

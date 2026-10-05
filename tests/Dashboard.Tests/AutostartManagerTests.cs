@@ -122,52 +122,16 @@ public sealed class AutostartManagerTests
         Assert.Contains("disabled", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void FinalizeOperationKeepsLegacyEntryUntilTaskIsVerified()
+    [Theory]
+    [InlineData(true, false, false, false)]
+    [InlineData(true, true, false, true)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, false, false, true)]
+    public void FinalResultReflectsVerifiedTaskState(bool enabled, bool valid, bool remains, bool success)
     {
-        var legacyRemoved = false;
-
-        var result = AutostartManager.FinalizeOperation(
-            enabled: true,
-            AutostartOperationResult.Ok("installed"),
-            new AutostartTaskStatus(true, false, "wrong executable"),
-            taskExistsAfterRemoval: false,
-            () => legacyRemoved = true);
-
-        Assert.False(result.Success);
-        Assert.False(legacyRemoved);
-    }
-
-    [Fact]
-    public void FinalizeOperationRemovesLegacyEntryAfterVerification()
-    {
-        var legacyRemoved = false;
-
-        var result = AutostartManager.FinalizeOperation(
-            enabled: true,
-            AutostartOperationResult.Ok("installed"),
-            new AutostartTaskStatus(true, true, "valid"),
-            taskExistsAfterRemoval: false,
-            () => legacyRemoved = true);
-
-        Assert.True(result.Success);
-        Assert.True(legacyRemoved);
-    }
-
-    [Fact]
-    public void FinalizeRemovalKeepsLegacyEntryWhenTaskStillExists()
-    {
-        var legacyRemoved = false;
-
-        var result = AutostartManager.FinalizeOperation(
-            enabled: false,
-            AutostartOperationResult.Ok("removed"),
-            verification: null,
-            taskExistsAfterRemoval: true,
-            () => legacyRemoved = true);
-
-        Assert.False(result.Success);
-        Assert.False(legacyRemoved);
+        var result = AutostartManager.FinalizeOperation(enabled, AutostartOperationResult.Ok("operation returned"),
+            enabled ? new AutostartTaskStatus(true, valid, "verification") : null, remains);
+        Assert.Equal(success, result.Success);
     }
 
     [Fact]

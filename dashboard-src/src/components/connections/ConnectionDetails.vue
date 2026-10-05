@@ -19,16 +19,12 @@
     </template>
 
     <div class="flex h-[70dvh] max-h-[70dvh] flex-col overflow-hidden">
-      <div class="tabs-box tabs tabs-xs m-2 mb-0 shrink-0 gap-1">
-        <a
-          v-for="tab in availableTabs"
-          :key="tab"
-          role="tab"
-          :class="twMerge('tab flex-1', activeTab === tab && 'tab-active')"
-          @click="activeTab = tab"
-          >{{ $t(tabLabel[tab]) }}</a
-        >
-      </div>
+      <SegmentedControl
+        v-model="activeTab"
+        :options="tabOptions"
+        :aria-label="t('connectionDetails')"
+        class="m-2 mb-0 shrink-0"
+      />
 
       <!-- 概览:美化后的分组展示 -->
       <div
@@ -147,13 +143,14 @@ import { getConnectionDisplayValue } from '@/assembly/connections'
 import { proxyMap } from '@/assembly/proxies'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import ProxyChainPath from '@/components/common/ProxyChainPath.vue'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import ProxyGroupPanel from '@/components/proxies/ProxyGroupPanel.vue'
 import SourceIPLabels from '@/components/settings/connections/SourceIPLabels.vue'
 import { useConnections } from '@/composables/connections'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
 import { getConnectionChains, getConnectionSourceIP, getDestinationFromConnection } from '@/helper'
 import { PROXIES_PARENT_CLASS } from '@/helper/utils'
-import { proxyChainDirection, showFullProxyChain } from '@/store/settings'
+import { proxyChainDirection } from '@/store/settings'
 import {
   ArrowRightCircleIcon,
   MapPinIcon,
@@ -162,7 +159,6 @@ import {
 } from '@heroicons/vue/24/outline'
 import * as ipaddr from 'ipaddr.js'
 import { last } from 'lodash'
-import { twMerge } from 'tailwind-merge'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import VueJsonPretty from 'vue-json-pretty'
@@ -217,11 +213,12 @@ const proxyChainStart = computed(() => {
 const availableTabs = computed<TabType[]>(() =>
   proxyChainStart.value ? ['overview', 'raw', 'proxies'] : ['overview', 'raw'],
 )
+const tabOptions = computed(() => availableTabs.value.map((value) => ({ value, label: t(tabLabel[value]) })))
 
 const sectionDefs: { id: string; keys: CONNECTIONS_TABLE_ACCESSOR_KEY[] }[] = [
   {
     id: 'basic',
-    keys: [KEY.Type, KEY.ConnectTime, KEY.Rule, KEY.Process, KEY.InboundUser, KEY.Protocol],
+    keys: [KEY.Type, KEY.ConnectTime, KEY.Rule, KEY.Process, KEY.InboundUser],
   },
   {
     id: 'sourceAndDestination',
@@ -236,7 +233,7 @@ const sectionDefs: { id: string; keys: CONNECTIONS_TABLE_ACCESSOR_KEY[] }[] = [
     ],
   },
   { id: 'traffic', keys: [KEY.Download, KEY.Upload, KEY.DlSpeed, KEY.UlSpeed] },
-  { id: 'outbound', keys: [KEY.Chains, KEY.Outbound, KEY.OutboundType, KEY.FromOutbound] },
+  { id: 'outbound', keys: [KEY.Chains, KEY.Outbound] },
 ]
 
 const sections = computed(() => {
@@ -246,7 +243,7 @@ const sections = computed(() => {
   const options = {
     mode: 'table' as const,
     proxyChainDirection: proxyChainDirection.value,
-    showFullProxyChain: showFullProxyChain.value,
+    showFullProxyChain: true,
   }
   const rowsOf = (keys: CONNECTIONS_TABLE_ACCESSOR_KEY[]) =>
     keys

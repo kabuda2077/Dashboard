@@ -28,6 +28,9 @@ internal static class CoreUpgradeSupport
         string requestUrl,
         CancellationToken cancellationToken)
     {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(45));
+        cancellationToken = budget.Token;
         for (var attempt = 1; attempt <= MaxReleaseRequestAttempts; attempt++)
         {
             try
@@ -66,16 +69,34 @@ internal static class CoreUpgradeSupport
         HttpClient client,
         string downloadUrl,
         string destinationPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? overallTimeout = null,
+        TimeSpan? idleTimeout = null)
     {
-        HostOperationLogger.Info("upgrade", $"Downloading release asset: {downloadUrl}");
-        using var response = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        const long maximumBytes = 256L * 1024 * 1024;
+        var idleLimit = idleTimeout ?? TimeSpan.FromSeconds(30);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(overallTimeout ?? TimeSpan.FromMinutes(5));
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(budget.Token);
+        idle.CancelAfter(idleLimit);
+        using var response = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, idle.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using var destination = File.Create(destinationPath);
-        await source.CopyToAsync(destination, cancellationToken);
-        HostOperationLogger.Info("upgrade", $"Downloaded release asset to {destinationPath} ({destination.Length} bytes).");
+        if (response.Content.Headers.ContentLength > maximumBytes) throw new IOException("Release archive exceeds the download limit.");
+        await using var source = await response.Content.ReadAsStreamAsync(idle.Token).ConfigureAwait(false);
+        await using var destination = new FileStream(destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, useAsync: true);
+        var buffer = new byte[65536];
+        long total = 0;
+        while (true)
+        {
+            idle.CancelAfter(idleLimit);
+            var read = await source.ReadAsync(buffer, idle.Token).ConfigureAwait(false);
+            if (read == 0) break;
+            total += read;
+            if (total > maximumBytes) throw new IOException("Release archive exceeds the download limit.");
+            await destination.WriteAsync(buffer.AsMemory(0, read), idle.Token).ConfigureAwait(false);
+        }
+        await destination.FlushAsync(budget.Token).ConfigureAwait(false);
+        HostOperationLogger.Info("upgrade", $"Release asset downloaded ({total} bytes).");
     }
 
     public static string BackupCore(string corePath)
@@ -185,6 +206,7 @@ internal static class CoreUpgradeSupport
             var candidateHash = await ComputeFileSha256Async(candidatePath, cancellationToken);
             return string.Equals(currentHash, candidateHash, StringComparison.OrdinalIgnoreCase);
         }
+        catch (OperationCanceledException) { throw; }
         catch
         {
             return false;

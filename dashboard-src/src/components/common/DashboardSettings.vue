@@ -220,7 +220,12 @@ import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { LOCAL_IMAGE } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
 import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
+import {
+  notifyRequestError,
+  notifyRequestErrorForSession,
+  runManualRequest,
+} from '@/helper/requestError'
+import { cancelBackgroundUpdates } from '@/helper/backgroundUpdates'
 import { useTooltip } from '@/helper/tooltip'
 import {
   applyDashboardSettingsToStorage,
@@ -263,9 +268,14 @@ const { t } = useI18n()
 const handlerClickResetSettings = async () => {
   if (!window.confirm(t('resetSettingsConfirm'))) return
   dashboardSettingsDialogShow.value = false
-  clearDashboardSettingsFromStorage()
-  await saveDashboardSettingsToHost({ beforeReload: true })
-  window.location.reload()
+  try {
+    await cancelBackgroundUpdates()
+    clearDashboardSettingsFromStorage()
+    await saveDashboardSettingsToHost()
+    window.location.reload()
+  } catch (error) {
+    notifyRequestError(error)
+  }
 }
 
 const handlerJsonUpload = () => {
@@ -275,11 +285,15 @@ const handlerJsonUpload = () => {
   const file = inputRef.value?.files?.[0]
   if (!file) return
   const reader = new FileReader()
-  reader.onload = async () => {
-    const settings = JSON.parse(reader.result as string)
-    applyDashboardSettingsToStorage(settings)
-    await saveDashboardSettingsToHost({ beforeReload: true })
-    location.reload()
+  reader.onload = () => {
+    void runManualRequest(async () => {
+      const { parseSettingsDocument } = await import('@/helper/utils')
+      const settings = parseSettingsDocument(JSON.parse(reader.result as string))
+      await cancelBackgroundUpdates()
+      applyDashboardSettingsToStorage(settings)
+      await saveDashboardSettingsToHost()
+      location.reload()
+    })
   }
   reader.readAsText(file)
 }

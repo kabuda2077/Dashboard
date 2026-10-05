@@ -1,4 +1,3 @@
-import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
 import { afterEach, expect, it, vi } from 'vitest'
 
 const { fetchVersion } = vi.hoisted(() => ({
@@ -16,7 +15,7 @@ afterEach(() => {
   sessionStorage.clear()
 })
 
-it('refreshes for browser backend switches and explicit compatibility events', async () => {
+it('refreshes for browser backend switches and actual credential edits', async () => {
   fetchVersion
     .mockResolvedValueOnce({ data: { version: 'core-a' } })
     .mockResolvedValueOnce({ data: { version: 'core-b' } })
@@ -53,7 +52,7 @@ it('refreshes for browser backend switches and explicit compatibility events', a
   setup.activeUuid.value = 'core-b'
   await vi.waitFor(() => expect(version.value).toBe('core-b'))
 
-  window.dispatchEvent(new CustomEvent(HOST_BACKEND_UPDATED_EVENT))
+  setup.backendList.value[1].password = 'changed'
   await vi.waitFor(() => expect(version.value).toBe('core-b-refreshed'))
   expect(fetchVersion).toHaveBeenCalledTimes(3)
 })

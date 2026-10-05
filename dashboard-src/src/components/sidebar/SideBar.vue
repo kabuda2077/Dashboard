@@ -71,10 +71,10 @@ import router from '@/router'
 import { isSidebarCollapsed, showStatisticsWhenSidebarCollapsed } from '@/store/settings'
 import { useResizeObserver } from '@vueuse/core'
 import { twMerge } from 'tailwind-merge'
-import { nextTick, ref, watch } from 'vue'
+import { defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import OverviewCarousel from './OverviewCarousel.vue'
+const OverviewCarousel = defineAsyncComponent(() => import('./OverviewCarousel.vue'))
 import SidebarButtons from './SidebarButtons.vue'
 import VerticalInfos from './VerticalInfos.vue'
 

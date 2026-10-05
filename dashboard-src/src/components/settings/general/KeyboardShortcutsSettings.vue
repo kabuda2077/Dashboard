@@ -48,10 +48,7 @@
     </div>
   </DialogWrapper>
 
-  <SettingItem
-    :setting-key="GENERAL_ITEM_KEYS.keyboardShortcuts"
-    :when="!isMiddleScreen"
-  >
+  <SettingItem :when="!isMiddleScreen">
     <div class="setting-item-label">
       {{ $t('keyboardShortcuts') }}
     </div>
@@ -76,7 +73,6 @@ import {
   useKeyboardShortcuts,
 } from '@/composables/keyboard'
 import SettingItem from '@/components/settings/SettingItem.vue'
-import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { renderRoutes } from '@/helper'
 import { isMiddleScreen } from '@/helper/utils'
 import { keyboardShortcuts } from '@/store/settings'

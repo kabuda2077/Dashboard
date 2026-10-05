@@ -10,8 +10,6 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    /** Stable key retained for settings metadata and search compatibility. */
-    settingKey: string
     /** Additional prerequisite for dependent settings. */
     when?: boolean
   }>(),

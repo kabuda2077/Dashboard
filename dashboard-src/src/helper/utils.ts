@@ -1,15 +1,16 @@
-import { notifyDashboardSettingsChanged } from './settingsChanges'
 import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
 import type { Backend } from '@/types'
 import { useMediaQuery } from '@vueuse/core'
 import dayjs from 'dayjs'
 import prettyBytes, { type Options } from 'pretty-bytes'
+import { markPreferenceStorageFailed, notifyDashboardSettingsChanged } from './settingsChanges'
+import { validatePreferenceValues } from './preferenceValues'
 
 export const isPreferredDark = useMediaQuery('(prefers-color-scheme: dark)')
 export const isMiddleScreen = useMediaQuery('(max-width: 768px)')
 
 export const prettyBytesHelper = (bytes: number, opts?: Options) => {
-  return prettyBytes(bytes, {
+  return prettyBytes(Number.isFinite(bytes) ? bytes : 0, {
     binary: false,
     ...opts,
   })
@@ -39,29 +40,60 @@ export const getDashboardSettingsFromStorage = () => {
   return settings
 }
 
-export const applyDashboardSettingsToStorage = (settings: Record<string, unknown>) => {
-  for (const key in settings) {
-    if (isDashboardSettingKey(key) && typeof settings[key] === 'string') {
-      localStorage.setItem(key, settings[key])
-      notifyDashboardSettingsChanged(key)
+export const applyDashboardSettingsToStorage = (
+  settings: Record<string, unknown>,
+  replace = false,
+) => {
+  validatePreferenceValues(settings)
+  const before = getDashboardSettingsFromStorage()
+  try {
+    if (replace)
+      for (const key of Object.keys(before))
+        if (!Object.hasOwn(settings, key)) localStorage.removeItem(key)
+    for (const [key, value] of Object.entries(settings)) {
+      if (isDashboardSettingKey(key) && typeof value === 'string') localStorage.setItem(key, value)
     }
-  }
-}
-
-export const clearDashboardSettingsFromStorage = () => {
-  const keysToReset: string[] = []
-  for (let index = 0; index < localStorage.length; index += 1) {
-    const key = localStorage.key(index)
-    if (isDashboardSettingKey(key)) {
-      keysToReset.push(key)
+  } catch (error) {
+    try {
+      for (const key of Object.keys(getDashboardSettingsFromStorage()))
+        if (!Object.hasOwn(before, key)) localStorage.removeItem(key)
+      for (const [key, value] of Object.entries(before)) localStorage.setItem(key, value)
+    } catch {
+      // Never send a partially restored document back over the durable host snapshot.
+      markPreferenceStorageFailed()
+      throw new Error(
+        'Local preference storage failed to roll back. Reopen the window to restore the host snapshot.',
+      )
     }
+    throw error
   }
-  keysToReset.forEach((key) => localStorage.removeItem(key))
   notifyDashboardSettingsChanged(null)
 }
 
+export const clearDashboardSettingsFromStorage = () => applyDashboardSettingsToStorage({}, true)
+
+export const parseSettingsDocument = (input: unknown): Record<string, string> => {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('Invalid settings document')
+  const document = input as { schemaVersion?: unknown; preferences?: unknown }
+  const values = document.preferences
+  if (
+    document.schemaVersion !== 2 ||
+    !values ||
+    typeof values !== 'object' ||
+    Array.isArray(values) ||
+    !Object.entries(values).every(
+      ([key, value]) => key.startsWith('config/') && typeof value === 'string',
+    )
+  ) {
+    throw new Error('Only schemaVersion=2 preference documents are supported')
+  }
+  validatePreferenceValues(values as Record<string, unknown>)
+  return { ...values } as Record<string, string>
+}
+
 export const exportSettings = () => {
-  const settings = getDashboardSettingsFromStorage()
+  const settings = { schemaVersion: 2, preferences: getDashboardSettingsFromStorage() }
   const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -69,11 +101,6 @@ export const exportSettings = () => {
   a.download = 'zashboard-settings'
   a.click()
   URL.revokeObjectURL(url)
-}
-
-export const resetSettings = () => {
-  clearDashboardSettingsFromStorage()
-  window.location.reload()
 }
 
 export const getUrlFromBackend = (end: {
@@ -95,61 +122,35 @@ export const getMinCardWidth = (size: PROXY_CARD_SIZE) => {
 
 export const PROXIES_PARENT_CLASS = 'proxies-scrollable-parent'
 
-export const scrollIntoCenter = (el: HTMLElement) => {
-  const scrollableParent = findScrollableParent(el)
-
-  if (!scrollableParent) return
-
-  const parentTop = scrollableParent.offsetTop
-  const childTop = el.offsetTop
-  const relativeTop = childTop - parentTop - scrollableParent.scrollTop
-
-  if (relativeTop >= 0 && relativeTop + el.clientHeight <= scrollableParent.clientHeight) return
-
-  const centerOffset =
-    childTop - parentTop - scrollableParent.clientHeight / 2 + el.clientHeight / 2
-
-  scrollableParent.scrollTo({
-    top: centerOffset,
-    behavior: 'smooth',
-  })
-}
-
-export const findScrollableParent = (el: HTMLElement | null): HTMLElement | null => {
-  const parent = el?.parentElement
-
-  if (
-    parent?.classList.contains(PROXIES_PARENT_CLASS) &&
-    parent.scrollHeight > parent.clientHeight
-  ) {
-    return parent
-  }
-
-  return parent ? findScrollableParent(parent) : null
-}
-
 export const getBackendFromUrl = () => {
   const query = new URLSearchParams(
     window.location.search || location.hash.match(/\?.*$/)?.[0]?.replace('?', ''),
   )
 
-  if (query.has('hostname')) {
+  const host = query.get('hostname')
+  const protocol = query.get('protocol') ?? window.location.protocol.replace(':', '')
+  if (
+    !host ||
+    !['http', 'https'].includes(protocol) ||
+    /[\/@?#]/.test(host) ||
+    (query.has('type') && query.get('type') !== 'clash')
+  )
+    return null
+  try {
+    const port = query.get('port')
+    const address = new URL(`${protocol}://${host}${port ? ':' + port : ''}`)
     return {
       type: 'clash' as const,
-      protocol: query.get('http')
-        ? 'http'
-        : query.get('https')
-          ? 'https'
-          : window.location.protocol.replace(':', ''),
+      protocol,
       secondaryPath: query.get('secondaryPath') || '',
-      host: query.get('hostname') as string,
-      port: query.get('port') as string,
+      host: address.hostname,
+      port: address.port || (protocol === 'https' ? '443' : '80'),
       password: query.get('secret') || '',
       label: query.get('label') || '',
-      disableUpgradeCore:
-        query.get('disableUpgradeCore') === '1' || query.get('disableUpgradeCore') === 'core',
-      disableTunMode: query.get('disableTunMode') === '1' || query.get('disableTunMode') === 'tun',
+      disableUpgradeCore: query.get('disableUpgradeCore') === '1',
+      disableTunMode: query.get('disableTunMode') === '1',
     }
+  } catch {
+    return null
   }
-  return null
 }

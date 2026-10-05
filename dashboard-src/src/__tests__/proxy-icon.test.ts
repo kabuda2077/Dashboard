@@ -1,13 +1,16 @@
-import { applyHostIconCache } from '@/composables/hostBridge'
+import ProxyIcon from '@/components/proxies/ProxyIcon.vue'
+import { applyHostIconCache, applyHostState } from '@/composables/hostBridge'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
+import { makeHostSnapshot } from './hostFixture'
 
 // Happy DOM is not a supported DOMPurify environment. Verify the component
 // passes markup through sanitation here; real-browser sanitation is checked by
 // the isolated R4 browser fixture.
-const { sanitize } = vi.hoisted(() => ({ sanitize: vi.fn(() => '<svg><path d="M0 0h1v1z"></path></svg>') }))
+const { sanitize } = vi.hoisted(() => ({
+  sanitize: vi.fn(() => '<svg><path d="M0 0h1v1z"></path></svg>'),
+}))
 vi.mock('dompurify', () => ({ default: { sanitize } }))
-import ProxyIcon from '@/components/proxies/ProxyIcon.vue'
 
 const mountedApps: App[] = []
 const mountedElements: HTMLElement[] = []
@@ -26,6 +29,7 @@ const mountProxyIcon = (icon: string) => {
 
 beforeEach(() => {
   sanitize.mockClear()
+  applyHostState(makeHostSnapshot())
   applyHostIconCache({})
 })
 
@@ -56,9 +60,13 @@ describe('ProxyIcon', () => {
     await nextTick()
 
     expect(element.querySelector('img')?.getAttribute('src')).toBe(cachedIcon)
-    applyHostIconCache({ 'https://icons.example.test/cached.png': 'http://localhost/replacement.png' })
+    applyHostIconCache({
+      'https://icons.example.test/cached.png': 'http://localhost/replacement.png',
+    })
     await nextTick()
-    expect(element.querySelector('img')?.getAttribute('src')).toBe('http://localhost/replacement.png')
+    expect(element.querySelector('img')?.getAttribute('src')).toBe(
+      'http://localhost/replacement.png',
+    )
     applyHostIconCache({})
     await nextTick()
     expect(element.querySelector('img')?.getAttribute('src')).toBe(icon)

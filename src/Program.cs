@@ -33,7 +33,9 @@ internal static class Program
                 var operation = autostartOperationIndex + 1 < args.Length
                     ? args[autostartOperationIndex + 1]
                     : "";
-                Environment.ExitCode = AutostartManager.RunManagementCommand(operation);
+                var sidIndex = Array.FindIndex(args, arg => string.Equals(arg, "--expected-user-sid", StringComparison.OrdinalIgnoreCase));
+                var expectedSid = sidIndex < 0 ? null : sidIndex + 1 < args.Length ? args[sidIndex + 1] : "";
+                Environment.ExitCode = AutostartManager.RunManagementCommand(operation, expectedSid);
                 return;
             }
 
@@ -79,12 +81,12 @@ internal static class Program
                 Application.Run(applicationContext);
             }
         }
-        catch (Exception exception) when (exception is AppSettingsLoadException or AppSettingsMigrationException)
+        catch (AppSettingsLoadException exception)
         {
-            HostOperationLogger.Critical("settings", "Settings could not be loaded or migrated; original retained.", exception);
+            HostOperationLogger.Critical("settings", "Settings could not be loaded; original retained.", exception);
             MessageBox.Show(
-                "设置文件无法读取或完成安全迁移，原文件已保留，程序没有恢复默认设置或覆盖它。\n\n"
-                    + "请检查文件访问权限，并在恢复原文件或修复问题后重试。不要删除唯一副本。\n\n"
+                "设置文件无法读取或不是新版格式，原文件已保留，程序没有恢复默认设置或覆盖它。\n\n"
+                    + "请检查文件或使用全新目录重新配置；此版本不迁移旧格式。不要删除唯一副本。\n\n"
                     + exception.Message,
                 "Dashboard 设置需要恢复",
                 MessageBoxButtons.OK,

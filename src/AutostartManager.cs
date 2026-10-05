@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Principal;
+using System.Runtime.InteropServices;
 using System.Xml.Linq;
-using Microsoft.Win32;
 
 namespace Dashboard;
 
@@ -10,16 +10,18 @@ internal static class AutostartManager
 {
     internal const string TaskName = @"\Dashboard\Autostart";
     internal const string ScheduledArguments = "--minimized --scheduled-start";
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string AppName = "Dashboard";
-    private const string LegacyAppName = "MihomoDashboard";
     private const int SuccessExitCode = 0;
     private const int FailureExitCode = 2;
 
-    public static int RunManagementCommand(string operation)
+    public static int RunManagementCommand(string operation, string? expectedUserSid = null)
     {
         try
         {
+            if (expectedUserSid is not null && !string.Equals(expectedUserSid, GetCurrentUserSid(), StringComparison.Ordinal))
+            {
+                LogResult(operation, AutostartOperationResult.Failure("Elevation changed the Windows account; no autostart task was modified."));
+                return FailureExitCode;
+            }
             var result = operation.ToLowerInvariant() switch
             {
                 "install" => InstallTask(),
@@ -38,45 +40,92 @@ internal static class AutostartManager
 
     public static async Task<AutostartOperationResult> SetEnabledAsync(bool enabled)
     {
-        var result = await RunElevatedOperationAsync(enabled ? "install" : "remove");
-        var verification = enabled && result.Success ? QueryStatus() : null;
-        var taskExistsAfterRemoval = !enabled && result.Success && TaskExists();
-        return FinalizeOperation(
-            enabled,
-            result,
-            verification,
-            taskExistsAfterRemoval,
-            RemoveLegacyRunEntries);
-    }
-
-    public static AutostartTaskStatus QueryStatus()
-    {
-        var query = RunSchtasks(["/Query", "/TN", TaskName, "/XML"]);
-        if (query.ExitCode != 0)
+        return await Task.Run(async () =>
         {
-            return new AutostartTaskStatus(false, false, query.ErrorText);
+            var before = ReadTaskDefinition();
+            var permission = CheckOwnership(before, Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid(), WindowsIdentity.GetCurrent().Name);
+            if (!permission.Success) return permission;
+            if (!enabled && !before.Exists) return AutostartOperationResult.Ok("No current autostart task exists.");
+            var result = await RunElevatedOperationAsync(enabled ? "install" : "remove").ConfigureAwait(false);
+            if (!result.Success) return result;
+            var after = ReadTaskDefinition();
+            if (after.Error is not null) return AutostartOperationResult.Failure("Task operation completed but verification failed: " + after.Error);
+            return FinalizeOperation(enabled, result,
+                enabled ? Status(after, Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid(), WindowsIdentity.GetCurrent().Name) : null,
+                !enabled && after.Exists);
+        }).ConfigureAwait(false);
+    }
+
+    public static AutostartTaskStatus QueryStatus() =>
+        Status(ReadTaskDefinition(), Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid(), WindowsIdentity.GetCurrent().Name);
+
+    private static AutostartTaskStatus Status(AutostartTaskDefinition task, string exe, string directory, string sid, string? account) =>
+        task.Error is not null ? new(false, false, task.Error)
+        : !task.Exists ? new(false, false, "No autostart task exists.")
+        : VerifyTaskXml(task.Xml ?? "", exe, directory, sid, account);
+
+    internal static AutostartOperationResult CheckOwnership(AutostartTaskDefinition task, string exe, string directory, string sid, string? account = null)
+    {
+        if (task.Error is not null) return AutostartOperationResult.Failure("Cannot determine autostart task ownership: " + task.Error);
+        if (!task.Exists) return AutostartOperationResult.Ok("No existing task.");
+        try
+        {
+            var root = XDocument.Parse(task.Xml ?? "").Root ?? throw new FormatException("Missing task definition.");
+            XNamespace ns = root.Name.Namespace;
+            var principals = root.Element(ns + "Principals")?.Elements(ns + "Principal").ToArray() ?? [];
+            var actions = root.Element(ns + "Actions")?.Elements().ToArray() ?? [];
+            var logons = root.Element(ns + "Triggers")?.Elements(ns + "LogonTrigger").ToArray() ?? [];
+            if (principals.Length == 1 && UserIdMatches(principals[0].Element(ns + "UserId")?.Value, sid, account)
+                && actions.Length == 1 && actions[0].Name == ns + "Exec"
+                && PathsEqual(actions[0].Element(ns + "Command")?.Value, exe)
+                && PathsEqual(actions[0].Element(ns + "WorkingDirectory")?.Value, directory)
+                && logons.All(trigger => UserIdMatches(trigger.Element(ns + "UserId")?.Value, sid, account)))
+                return AutostartOperationResult.Ok("Task belongs to this user and installation.");
         }
-
-        return VerifyTaskXml(
-            query.StandardOutput,
-            Application.ExecutablePath,
-            AppSettings.AppDirectory,
-            GetCurrentUserSid(),
-            WindowsIdentity.GetCurrent().Name);
+        catch (Exception) { }
+        return AutostartOperationResult.Failure("同名自启任务不属于当前 Windows 用户和 Dashboard 目录，未覆盖或删除。请在原目录或任务计划程序中确认归属后处理。");
     }
 
-    public static bool HasCurrentLegacyRunEntry()
+    internal static AutostartOperationResult ChangeOwnedTask(bool enabled, Func<AutostartTaskDefinition> query,
+        Func<bool, AutostartOperationResult> mutate, string exe, string directory, string sid, string? account = null)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey, false);
-        return IsCurrentExecutableValue(key?.GetValue(AppName))
-            || IsCurrentExecutableValue(key?.GetValue(LegacyAppName));
+        var before = query();
+        var permission = CheckOwnership(before, exe, directory, sid, account);
+        if (!permission.Success) return permission;
+        if (!enabled && !before.Exists) return AutostartOperationResult.Ok("No task to remove.");
+        var changed = mutate(before.Exists);
+        if (!changed.Success) return changed;
+        var after = query();
+        if (after.Error is not null) return AutostartOperationResult.Failure("Task operation completed but verification failed: " + after.Error);
+        return FinalizeOperation(enabled, changed, enabled ? Status(after, exe, directory, sid, account) : null, !enabled && after.Exists);
     }
 
-    public static void RemoveLegacyRunEntries()
+    private static AutostartTaskDefinition ReadTaskDefinition() => ReadTaskDefinition(TaskName);
+
+    internal static AutostartTaskDefinition ReadTaskDefinition(string taskPath)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey, true);
-        key?.DeleteValue(AppName, false);
-        key?.DeleteValue(LegacyAppName, false);
+        object? service = null, folder = null, task = null;
+        var queryingTask = false;
+        try
+        {
+            var type = Type.GetTypeFromProgID("Schedule.Service") ?? throw new InvalidOperationException("Task Scheduler is unavailable.");
+            service = Activator.CreateInstance(type)!;
+            ((dynamic)service).Connect();
+            folder = ((dynamic)service).GetFolder(@"\");
+            queryingTask = true;
+            task = ((dynamic)folder).GetTask(taskPath);
+            return new(true, (string)((dynamic)task).Xml);
+        }
+        // COM interop can translate these HRESULTs into FileNotFoundException /
+        // DirectoryNotFoundException rather than preserving COMException.
+        catch (Exception error) when (queryingTask && unchecked((uint)error.GetBaseException().HResult) is 0x80070002 or 0x80070003)
+        { return new(false); }
+        catch (Exception error) { return new(false, Error: error.Message); }
+        finally
+        {
+            foreach (var value in new[] { task, folder, service })
+                if (value is not null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value);
+        }
     }
 
     internal static string BuildTaskXml(string executablePath, string workingDirectory, string userSid)
@@ -182,8 +231,7 @@ internal static class AutostartManager
         bool enabled,
         AutostartOperationResult operationResult,
         AutostartTaskStatus? verification,
-        bool taskExistsAfterRemoval,
-        Action removeLegacyEntries)
+        bool taskExistsAfterRemoval)
     {
         if (!operationResult.Success)
         {
@@ -206,15 +254,7 @@ internal static class AutostartManager
             return result;
         }
 
-        try
-        {
-            removeLegacyEntries();
-            return operationResult;
-        }
-        catch (Exception ex)
-        {
-            return AutostartOperationResult.Failure($"Failed to remove legacy startup entry: {ex.Message}");
-        }
+        return operationResult;
     }
 
     private static AutostartOperationResult InstallTask()
@@ -222,20 +262,16 @@ internal static class AutostartManager
         var tempPath = Path.Combine(Path.GetTempPath(), $"dashboard-autostart-{Guid.NewGuid():N}.xml");
         try
         {
-            // schtasks /Create creates missing parent folders (verified: \Dashboard
-            // does not need to exist beforehand), so no Task Scheduler COM call here.
             var xml = BuildTaskXml(Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid());
             File.WriteAllText(tempPath, xml, System.Text.Encoding.Unicode);
-            var create = RunSchtasks(["/Create", "/TN", TaskName, "/XML", tempPath, "/F"]);
-            if (create.ExitCode != 0)
+            return ChangeOwnedTask(true, ReadTaskDefinition, replaceOwned =>
             {
-                return AutostartOperationResult.Failure(create.ErrorText);
-            }
-
-            var status = QueryStatus();
-            return status.IsValid
-                ? AutostartOperationResult.Ok("Scheduled task installed and verified.")
-                : AutostartOperationResult.Failure(status.Message);
+                var arguments = new List<string> { "/Create", "/TN", TaskName, "/XML", tempPath };
+                // An absent task must not become an unconditional overwrite if another user creates it meanwhile.
+                if (replaceOwned) arguments.Add("/F");
+                var create = RunSchtasks(arguments);
+                return create.ExitCode == 0 ? AutostartOperationResult.Ok("Scheduled task installed.") : AutostartOperationResult.Failure(create.ErrorText);
+            }, Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid(), WindowsIdentity.GetCurrent().Name);
         }
         finally
         {
@@ -249,18 +285,11 @@ internal static class AutostartManager
         }
     }
 
-    private static AutostartOperationResult RemoveTask()
+    private static AutostartOperationResult RemoveTask() => ChangeOwnedTask(false, ReadTaskDefinition, _ =>
     {
         var remove = RunSchtasks(["/Delete", "/TN", TaskName, "/F"]);
-        if (remove.ExitCode != 0 && TaskExists())
-        {
-            return AutostartOperationResult.Failure(remove.ErrorText);
-        }
-
-        return TaskExists()
-            ? AutostartOperationResult.Failure("Scheduled task still exists after deletion.")
-            : AutostartOperationResult.Ok("Scheduled task removed.");
-    }
+        return remove.ExitCode == 0 ? AutostartOperationResult.Ok("Scheduled task removed.") : AutostartOperationResult.Failure(remove.ErrorText);
+    }, Application.ExecutablePath, AppSettings.AppDirectory, GetCurrentUserSid(), WindowsIdentity.GetCurrent().Name);
 
     private static async Task<AutostartOperationResult> RunElevatedOperationAsync(string operation)
     {
@@ -273,7 +302,7 @@ internal static class AutostartManager
         {
             using var process = Process.Start(new ProcessStartInfo(
                 Application.ExecutablePath,
-                $"--manage-autostart {operation}")
+                $"--manage-autostart {operation} --expected-user-sid {GetCurrentUserSid()}")
             {
                 WorkingDirectory = AppSettings.AppDirectory,
                 UseShellExecute = true,
@@ -299,11 +328,6 @@ internal static class AutostartManager
         }
     }
 
-    private static bool TaskExists()
-    {
-        return RunSchtasks(["/Query", "/TN", TaskName]).ExitCode == 0;
-    }
-
     private static SchtasksResult RunSchtasks(IEnumerable<string> arguments)
     {
         try
@@ -315,7 +339,8 @@ internal static class AutostartManager
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardError = true
+                    RedirectStandardError = true,
+                    RedirectStandardInput = true
                 }
             };
             foreach (var argument in arguments)
@@ -324,10 +349,21 @@ internal static class AutostartManager
             }
 
             process.Start();
-            var standardOutput = process.StandardOutput.ReadToEnd();
-            var standardError = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return new SchtasksResult(process.ExitCode, standardOutput, standardError);
+            process.StandardInput.Close(); // never answer an unexpected overwrite prompt with consent
+            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var output = process.StandardOutput.ReadToEndAsync(budget.Token);
+            var error = process.StandardError.ReadToEndAsync(budget.Token);
+            try
+            {
+                process.WaitForExitAsync(budget.Token).GetAwaiter().GetResult();
+                Task.WhenAll(output, error).GetAwaiter().GetResult();
+                return new SchtasksResult(process.ExitCode, output.Result, error.Result);
+            }
+            catch (OperationCanceledException)
+            {
+                try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+                return new SchtasksResult(-1, "", "Task Scheduler command timed out; system state must be rechecked.");
+            }
         }
         catch (Exception ex)
         {
@@ -339,12 +375,6 @@ internal static class AutostartManager
     {
         using var identity = WindowsIdentity.GetCurrent();
         return identity.User?.Value ?? throw new InvalidOperationException("Unable to resolve the current user SID.");
-    }
-
-    private static bool IsCurrentExecutableValue(object? value)
-    {
-        return value is string text
-            && text.Contains(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? GetValue(XElement root, XNamespace ns, params string[] path)
@@ -416,3 +446,4 @@ internal sealed record AutostartOperationResult(bool Success, string Message)
 }
 
 internal sealed record AutostartTaskStatus(bool Exists, bool IsValid, string Message);
+internal sealed record AutostartTaskDefinition(bool Exists, string? Xml = null, string? Error = null);

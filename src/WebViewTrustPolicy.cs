@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Dashboard;
 
 internal enum DashboardNavigationTarget
@@ -35,11 +33,6 @@ internal sealed class WebViewTrustPolicy(Uri dashboardUri)
             && IsTrustedDocument(source)
             && IsTrustedDocument(currentAddress);
     }
-
-    public string DocumentGuardScript =>
-        "if (window.top !== window || location.origin !== "
-        + JsonSerializer.Serialize(dashboardUri.GetLeftPart(UriPartial.Authority))
-        + " || (location.pathname !== '/' && location.pathname !== '/index.html')) return;";
 
     private bool IsDashboardOrigin(Uri uri) =>
         string.Equals(uri.Scheme, dashboardUri.Scheme, StringComparison.OrdinalIgnoreCase)

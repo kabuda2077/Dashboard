@@ -1,20 +1,12 @@
-import { getUrlFromBackend } from '@/helper/utils'
 import { postHostMessage } from '@/composables/hostBridge'
+import { captureBackendSession } from '@/helper/backendSession'
+import { getUrlFromBackend } from '@/helper/utils'
 import { activeBackend } from '@/store/setup'
-import type {
-  Backend,
-  Config,
-  NodeRank,
-  Proxy,
-  ProxyProvider,
-  Rule,
-  RuleProvider,
-} from '@/types'
+import type { Backend, Config, NodeRank, Proxy, ProxyProvider, Rule, RuleProvider } from '@/types'
 import axios from 'axios'
 import { debounce } from 'lodash'
 import ReconnectingWebSocket from 'reconnectingwebsocket'
 import { shallowRef } from 'vue'
-import { captureBackendSession } from '@/helper/backendSession'
 
 export const fetchClashVersion = () => axios.get<{ version: string }>('/version')
 
@@ -30,12 +22,16 @@ export const deleteFixedProxyAPI = (proxyGroup: string) => {
   return axios.delete(`/proxies/${encodeURIComponent(proxyGroup)}`)
 }
 
+const latencyRequestBudget = (timeout: number) =>
+  Number.isFinite(timeout) && timeout > 0 ? Math.min(600000, Math.max(1000, timeout)) + 5000 : 30000
+
 export const fetchProxyLatencyAPI = (proxyName: string, url: string, timeout: number) => {
   return axios.get<{ delay: number }>(`/proxies/${encodeURIComponent(proxyName)}/delay`, {
     params: {
       url,
       timeout,
     },
+    timeout: latencyRequestBudget(timeout),
   })
 }
 
@@ -55,6 +51,7 @@ export const fetchProxyProviderLatencyAPI = (
         url,
         timeout,
       },
+      timeout: latencyRequestBudget(timeout),
     },
   )
 }
@@ -65,6 +62,7 @@ export const fetchProxyGroupLatencyAPI = (proxyName: string, url: string, timeou
       url,
       timeout,
     },
+    timeout: latencyRequestBudget(timeout),
   })
 }
 
@@ -144,8 +142,8 @@ export const disconnectAllClashAPI = () => {
   return axios.delete('/connections')
 }
 
-export const getConfigsAPI = () => {
-  return axios.get<Config>('/configs')
+export const getConfigsAPI = (signal?: AbortSignal) => {
+  return axios.get<Config>('/configs', { signal })
 }
 
 export const patchConfigsAPI = (configs: Record<string, string | boolean | object | number>) => {
@@ -165,14 +163,13 @@ export const reloadConfigsAPI = () => {
 }
 
 export const updateGeoDataAPI = () => {
-  return axios.post('/configs/geo')
+  return axios.post('/configs/geo', undefined, { timeout: 120000 })
 }
-
 
 export const upgradeCoreAPI = (type: 'release' | 'alpha' | 'auto') => {
   const url = type === 'auto' ? '/upgrade' : `/upgrade?channel=${type}`
 
-  return axios.post(url)
+  return axios.post(url, undefined, { timeout: 600000 })
 }
 
 export const restartCoreAPI = () => {

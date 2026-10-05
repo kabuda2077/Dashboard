@@ -1,4 +1,3 @@
-import { runManualRequest } from '@/helper/requestError'
 import {
   blockConnectionByIdAPI,
   disconnectByIdAPI,
@@ -12,6 +11,7 @@ import {
   PROXY_CHAIN_DIRECTION,
 } from '@/constant'
 import { getConnectionChains, getConnectionSmartBlock } from '@/helper'
+import { runManualRequest } from '@/helper/requestError'
 import { connectionFilter, connectionTabShow, isClosedConnection } from '@/store/connections'
 import { connectionCardLines, proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import type { Connection } from '@/types'
@@ -55,58 +55,58 @@ export default defineComponent<{
           filter={connectionFilter.value}
         />
       )
-      const componentMap: Record<CONNECTIONS_TABLE_ACCESSOR_KEY, JSX.Element> = {
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]: (
+      const componentMap: Record<CONNECTIONS_TABLE_ACCESSOR_KEY, () => JSX.Element> = {
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]: () => (
           <span class="text-main w-80 grow truncate">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Host)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Destination]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Destination]: () => (
           <span class="w-80 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Destination)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress]: () => (
           <span class="w-80 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP]: () => (
           <span class="w-80 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP]: () => (
           <span class="w-40 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.SourcePort]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.SourcePort]: () => (
           <span class="w-20 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.SourcePort)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.SniffHost]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.SniffHost]: () => (
           <span class="w-80 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.SniffHost)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Type]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Type]: () => (
           <span class="w-60 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Type)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Rule]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Rule]: () => (
           <span class="w-80 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Rule)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Process]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Process]: () => (
           <span class="w-60 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Process)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Chains]: (() => {
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Chains]: () => {
           let visibleChains = chains
           if (!showFullProxyChain.value && chains.length > 2) {
             visibleChains = [chains[0], chains[chains.length - 1]]
@@ -121,7 +121,12 @@ export default defineComponent<{
               />,
             )
             if (index < visibleChains.length - 1) {
-              chainNodes.unshift(<ArrowRightCircleIcon key={`arrow-${index}`} class="h-4 w-4 shrink-0" />)
+              chainNodes.unshift(
+                <ArrowRightCircleIcon
+                  key={`arrow-${index}`}
+                  class="h-4 w-4 shrink-0"
+                />,
+              )
             }
           })
           return (
@@ -135,67 +140,52 @@ export default defineComponent<{
               {chainNodes}
             </span>
           )
-        })(),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Outbound]: (
+        },
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Outbound]: () => (
           <span class="w-60 grow truncate break-all">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Outbound)}
           </span>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Download]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Download]: () => (
           <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
             <ArrowDownIcon class="text-success h-3 w-3 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Download)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Upload]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Upload]: () => (
           <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
             <ArrowUpIcon class="text-info h-3 w-3 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Upload)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed]: () => (
           <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
             <ArrowDownCircleIcon class="text-success h-4 w-4 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed]: () => (
           <div class="mr-1 flex items-center gap-[1px] text-xs whitespace-nowrap">
             <ArrowUpCircleIcon class="text-info h-4 w-4 shrink-0" />
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime]: () => (
           <div class="whitespace-nowrap">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.DestinationType]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.DestinationType]: () => (
           <div class="whitespace-nowrap">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.DestinationType)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser]: (
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser]: () => (
           <div class="whitespace-nowrap">
             {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser)}
           </div>
         ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol]: (
-          <div class="whitespace-nowrap">
-            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol)}
-          </div>
-        ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType]: (
-          <div class="whitespace-nowrap">
-            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType)}
-          </div>
-        ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound]: (
-          <div class="whitespace-nowrap">
-            {highlightedText(CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound)}
-          </div>
-        ),
-        [CONNECTIONS_TABLE_ACCESSOR_KEY.Close]: (() => {
+        [CONNECTIONS_TABLE_ACCESSOR_KEY.Close]: () => {
           const closeButton = (
             <button
               class="btn btn-circle btn-xs"
@@ -228,7 +218,7 @@ export default defineComponent<{
             )
           }
           return closeButton
-        })(),
+        },
       }
       const isClosed = isClosedConnection(conn)
       const dimmed = isClosed && connectionTabShow.value === CONNECTION_TAB_TYPE.ALL
@@ -243,7 +233,7 @@ export default defineComponent<{
               {line
                 .filter((key) => key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close || !isClosed)
                 .map((key) => {
-                  return componentMap[key]
+                  return componentMap[key]()
                 })}
             </div>
           ))}

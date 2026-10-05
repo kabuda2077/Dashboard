@@ -7,6 +7,7 @@ import { version } from '../src/assembly/version'
 import { useRenderProxyList } from '../src/composables/renderProxies'
 import { independentLatencyTest, groupTestUrls, speedtestUrl, hideUnavailableProxies } from '../src/store/settings'
 import type { Proxy } from '../src/types'
+import { writeReport } from './report'
 
 const groups = ['Group-A', 'Group-B', 'Group-C', 'Group-D']
 const provider = 'Provider-1'
@@ -68,7 +69,7 @@ function timed(fn: () => void, iterations: number) {
   return performance.now() - start
 }
 
-describe('P9 fixed-fixture proxy latency benchmark (opt-in only)', () => {
+describe('fixed-fixture proxy latency benchmark (opt-in only)', () => {
   it.each(['mihomo-independent', 'mihomo-shared', 'sing-box-independent'] as const)('%s', (mode) => {
     setup(mode)
     const baseline = directPass(false)
@@ -88,10 +89,10 @@ describe('P9 fixed-fixture proxy latency benchmark (opt-in only)', () => {
       samples.push(baselineFirst ? { baseline: first, reuse: second } : { baseline: second, reuse: first })
     }
     const median = (values: number[]) => values.sort((a, b) => a - b)[2]
-    console.log(JSON.stringify({ mode, groups: 4, providerEntries: 128, nodesPerGroup: 128,
+    writeReport(`latency-${mode}`, ['src/assembly/proxies/index.ts', 'src/composables/renderProxies.ts', 'bench/latency.bench.test.ts'], { mode, groups: 4, providerEntries: 128, nodesPerGroup: 128,
       uniqueNames: uniqueNames.length, sharedNodes: shared.length, urls, providerWithoutGroupContext: true, repeatedReadsPerPass: 1280,
       baselineCalls: baseline.calls, reusedCalls: candidate.calls, warmup, iterationsPerSample: 100,
       samplesMs: samples, medianMs: { baseline: median(samples.map((s) => s.baseline)), reuse: median(samples.map((s) => s.reuse)) },
-    }))
+    })
   })
 })

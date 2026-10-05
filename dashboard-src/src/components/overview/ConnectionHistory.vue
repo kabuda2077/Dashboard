@@ -1,170 +1,112 @@
 <template>
-  <div class="base-container w-full backdrop-blur-none!">
-    <!-- Header -->
-    <div
-      class="need-blur flex items-center justify-between p-4 max-sm:flex-col max-sm:items-start max-sm:gap-2"
-    >
+  <div class="flex w-full flex-col">
+    <div class="base-container w-full rounded-b-none!">
+      <!-- Header -->
       <div
-        class="text-base-content/60 flex items-center gap-2 text-xs font-semibold tracking-wider uppercase"
+        class="flex items-center justify-between p-4 max-sm:flex-col max-sm:items-start max-sm:gap-2"
       >
-        {{ $t('totalConnections') }}
-        <button
-          class="btn btn-ghost btn-xs btn-circle"
-          @click="showClearDialog = true"
+        <div
+          class="text-base-content/60 flex items-center gap-2 text-xs font-semibold tracking-wider uppercase"
         >
-          <TrashIcon class="h-3.5 w-3.5" />
-        </button>
-        <QuestionMarkCircleIcon
-          class="h-3.5 w-3.5 cursor-pointer"
-          @mouseenter="showTip($event, totalConnectionsTip)"
-        />
-      </div>
-      <div
-        v-memo="[aggregationType, autoCleanupInterval, locale]"
-        class="flex items-center gap-2 max-sm:flex-col max-sm:items-start"
-      >
-        <div class="flex items-center gap-2">
-          <span class="text-base-content/60 text-xs">{{ $t('aggregateBy') }}</span>
-          <select
-            v-model="aggregationType"
-            class="select select-bordered select-sm w-32"
+          {{ $t('totalConnections') }}
+          <button
+            class="btn btn-ghost btn-xs btn-circle"
+            @click="showClearDialog = true"
           >
-            <option :value="ConnectionHistoryType.SourceIP">
-              {{ $t('aggregateBySourceIP') }}
-            </option>
-            <option :value="ConnectionHistoryType.Destination">
-              {{ $t('aggregateByDestination') }}
-            </option>
-            <option :value="ConnectionHistoryType.Process">{{ $t('aggregateByProcess') }}</option>
-            <option :value="ConnectionHistoryType.Outbound">
-              {{ $t('aggregateByOutbound') }}
-            </option>
-            <option :value="ConnectionHistoryType.ProxyGroup">
-              {{ $t('aggregateByProxyGroup') }}
-            </option>
-          </select>
+            <TrashIcon class="h-3.5 w-3.5" />
+          </button>
+          <QuestionMarkCircleIcon
+            class="h-3.5 w-3.5 cursor-pointer"
+            @mouseenter="showTip($event, totalConnectionsTip)"
+          />
         </div>
-        <div class="flex items-center gap-2">
-          <span class="text-base-content/60 text-xs">{{ $t('autoCleanupInterval') }}</span>
-          <select
-            v-model="autoCleanupInterval"
-            class="select select-bordered select-sm w-28"
-          >
-            <option :value="AutoCleanupInterval.Never">
-              {{ $t('autoCleanupIntervalNever') }}
-            </option>
-            <option :value="AutoCleanupInterval.Week">{{ $t('autoCleanupIntervalWeek') }}</option>
-            <option :value="AutoCleanupInterval.Month">
-              {{ $t('autoCleanupIntervalMonth') }}
-            </option>
-            <option :value="AutoCleanupInterval.Quarter">
-              {{ $t('autoCleanupIntervalQuarter') }}
-            </option>
-          </select>
+        <!-- v-memo: avoid re-rendering the selects on every connection poll (flicker on firefox) -->
+        <div
+          v-memo="[aggregationType, autoCleanupInterval, locale]"
+          class="flex items-center gap-2 max-sm:flex-col max-sm:items-start"
+        >
+          <div class="flex items-center gap-2">
+            <span class="text-base-content/60 text-xs">{{ $t('aggregateBy') }}</span>
+            <SelectInput
+              v-model="aggregationType"
+              class="select select-bordered select-sm w-32"
+              :options="[
+                { value: ConnectionHistoryType.SourceIP, label: $t('aggregateBySourceIP') },
+                {
+                  value: ConnectionHistoryType.Destination,
+                  label: $t('aggregateByDestination'),
+                },
+                { value: ConnectionHistoryType.Process, label: $t('aggregateByProcess') },
+                { value: ConnectionHistoryType.Outbound, label: $t('aggregateByOutbound') },
+                { value: ConnectionHistoryType.ProxyGroup, label: $t('aggregateByProxyGroup') },
+              ]"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-base-content/60 text-xs">{{ $t('autoCleanupInterval') }}</span>
+            <SelectInput
+              v-model="autoCleanupInterval"
+              class="select select-bordered select-sm w-28"
+              :options="[
+                { value: AutoCleanupInterval.Never, label: $t('autoCleanupIntervalNever') },
+                { value: AutoCleanupInterval.Week, label: $t('autoCleanupIntervalWeek') },
+                { value: AutoCleanupInterval.Month, label: $t('autoCleanupIntervalMonth') },
+                { value: AutoCleanupInterval.Quarter, label: $t('autoCleanupIntervalQuarter') },
+              ]"
+            />
+          </div>
+        </div>
+      </div>
+      <!-- Stats grid -->
+      <div class="grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-5">
+        <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
+          <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
+            {{ aggregateSourceLabel }}
+          </div>
+          <div class="text-2xl font-extralight tabular-nums">{{ aggregateSourceCount }}</div>
+        </div>
+        <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
+          <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
+            {{ t('totalTraffic') }}
+          </div>
+          <div class="text-2xl font-extralight tabular-nums">
+            {{ prettyBytesHelper(totalStats.download + totalStats.upload) }}
+          </div>
+        </div>
+        <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
+          <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
+            {{ t('download') }}
+          </div>
+          <div class="text-2xl font-extralight tabular-nums">
+            {{ prettyBytesHelper(totalStats.download) }}
+          </div>
+        </div>
+        <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
+          <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
+            {{ t('upload') }}
+          </div>
+          <div class="text-2xl font-extralight tabular-nums">
+            {{ prettyBytesHelper(totalStats.upload) }}
+          </div>
+        </div>
+        <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
+          <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
+            {{ t('connectionCount') }}
+          </div>
+          <div class="text-2xl font-extralight tabular-nums">{{ totalStats.count }}</div>
         </div>
       </div>
     </div>
-
-    <!-- Stats grid -->
-    <div class="need-blur grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-5">
-      <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
-        <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
-          {{ aggregateSourceLabel }}
-        </div>
-        <div class="text-2xl font-extralight tabular-nums">{{ aggregateSourceCount }}</div>
-      </div>
-      <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
-        <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
-          {{ t('totalTraffic') }}
-        </div>
-        <div class="text-2xl font-extralight tabular-nums">
-          {{ prettyBytesHelper(totalStats.download + totalStats.upload) }}
-        </div>
-      </div>
-      <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
-        <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
-          {{ t('download') }}
-        </div>
-        <div class="text-2xl font-extralight tabular-nums">
-          {{ prettyBytesHelper(totalStats.download) }}
-        </div>
-      </div>
-      <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
-        <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
-          {{ t('upload') }}
-        </div>
-        <div class="text-2xl font-extralight tabular-nums">
-          {{ prettyBytesHelper(totalStats.upload) }}
-        </div>
-      </div>
-
-      <div class="bg-base-200/30 flex flex-col gap-1.5 rounded-xl p-4">
-        <div class="text-base-content/60 text-xs font-semibold tracking-wider uppercase">
-          {{ t('connectionCount') }}
-        </div>
-        <div class="text-2xl font-extralight tabular-nums">{{ totalStats.count }}</div>
-      </div>
-    </div>
-    <div
-      ref="parentRef"
-      class="h-96 overflow-auto"
-      @touchstart.passive.stop
-      @touchmove.passive.stop
-      @touchend.passive.stop
-    >
-      <div :style="{ height: `${totalSize}px` }">
-        <table class="table-sm table w-full rounded-none">
-          <thead class="bg-base-200 sticky top-0 z-10">
-            <tr>
-              <th
-                v-for="header in tanstackTable.getHeaderGroups()[0]?.headers"
-                :key="header.id"
-                class="cursor-pointer select-none"
-                @click="header.column.getToggleSortingHandler()?.($event)"
-              >
-                <div class="flex items-center gap-1">
-                  <FlexRender
-                    v-if="!header.isPlaceholder"
-                    :render="header.column.columnDef.header"
-                    :props="header.getContext()"
-                  />
-                  <ArrowUpCircleIcon
-                    v-if="header.column.getIsSorted() === 'asc'"
-                    class="h-4 w-4"
-                  />
-                  <ArrowDownCircleIcon
-                    v-if="header.column.getIsSorted() === 'desc'"
-                    class="h-4 w-4"
-                  />
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(virtualRow, index) in virtualRows"
-              :key="virtualRow.key.toString()"
-              :style="{
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start - index * virtualRow.size}px)`,
-              }"
-              class="hover:bg-primary! hover:text-primary-content whitespace-nowrap"
-              :class="virtualRow.index % 2 === 1 && 'bg-base-150'"
-            >
-              <td
-                v-for="cell in rows[virtualRow.index].getVisibleCells()"
-                :key="cell.id"
-                class="text-sm"
-              >
-                <FlexRender
-                  :render="cell.column.columnDef.cell"
-                  :props="cell.getContext()"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <!-- VirtualTable 自带独立的 base-container，与上方统计区域保持同级透明层 -->
+    <div class="h-96">
+      <VirtualTable
+        class="m-0! rounded-t-none!"
+        :data="aggregatedData"
+        :columns="columns"
+        sorting-key="cache/connection-history-sorting"
+        :initial-sorting="[{ id: 'download', desc: true }]"
+        :estimate-size="36"
+      />
     </div>
     <DialogWrapper
       v-model="showClearDialog"
@@ -195,10 +137,13 @@
 
 <script setup lang="ts">
 import { ConnectionHistoryType } from '@/helper/indexeddb'
+import SelectInput from '@/components/common/SelectInput.vue'
 import { showNotification } from '@/helper/notification'
 import { getIPLabelFromMap } from '@/helper/sourceip'
+import { useStorage } from '@/helper/storage'
 import { useTooltip } from '@/helper/tooltip'
 import { prettyBytesHelper } from '@/helper/utils'
+import VirtualTable from '@/components/common/VirtualTable.vue'
 import {
   aggregateConnections,
   aggregatedDataMap,
@@ -206,23 +151,8 @@ import {
   mergeAggregatedData,
 } from '@/store/connHistory'
 import { activeConnections } from '@/store/connections'
-import {
-  ArrowDownCircleIcon,
-  ArrowUpCircleIcon,
-  QuestionMarkCircleIcon,
-  TrashIcon,
-} from '@heroicons/vue/24/outline'
-import {
-  FlexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useVueTable,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/vue-table'
-import { useVirtualizer } from '@tanstack/vue-virtual'
-import { useStorage } from '@vueuse/core'
-import { useDashboardStorage } from '@/helper/storage'
+import { QuestionMarkCircleIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import type { ColumnDef } from '@tanstack/vue-table'
 import dayjs from 'dayjs'
 import { computed, h, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -343,57 +273,21 @@ const columns = computed<ColumnDef<ConnectionHistoryData>[]>(() => {
   ]
 })
 
-const sorting = useStorage<SortingState>('cache/connection-history-sorting', [
-  { id: 'download', desc: true },
-])
-
-const tanstackTable = useVueTable({
-  get data() {
-    return aggregatedData.value
-  },
-  get columns() {
-    return columns.value
-  },
-  state: {
-    get sorting() {
-      return sorting.value
-    },
-  },
-  onSortingChange: (updater) => {
-    if (typeof updater === 'function') {
-      sorting.value = updater(sorting.value)
-    } else {
-      sorting.value = updater
-    }
-  },
-  getSortedRowModel: getSortedRowModel(),
-  getCoreRowModel: getCoreRowModel(),
-})
-
-const rows = computed(() => {
-  return tanstackTable.getRowModel().rows
-})
-
-const parentRef = ref<HTMLElement | null>(null)
-const rowVirtualizerOptions = computed(() => {
-  return {
-    count: rows.value.length,
-    getScrollElement: () => parentRef.value,
-    estimateSize: () => 36,
-    overscan: 10,
-  }
-})
-
-const rowVirtualizer = useVirtualizer(rowVirtualizerOptions)
-const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
-const totalSize = computed(() => rowVirtualizer.value.getTotalSize() + 24)
-
 const showClearDialog = ref(false)
-const autoCleanupInterval = useDashboardStorage<AutoCleanupInterval>(
+const autoCleanupInterval = useStorage<AutoCleanupInterval>(
   'config/connection-history-auto-cleanup-interval',
   AutoCleanupInterval.Month,
 )
-const startTime = useStorage<number>('cache/connection-history-stats-start-time', Date.now())
+// 这是统计起始时间戳,首次访问就要落盘固定下来,否则每次刷新都会被视为"刚开始统计",
+// 自动清理永远不会触发 —— 与其他纯 UI 偏好不同,这里需要保留 writeDefaults
+const startTime = useStorage<number>(
+  'cache/connection-history-stats-start-time',
+  Date.now(),
+  undefined,
+  {
+    writeDefaults: true,
+  },
+)
 const totalConnectionsTip = computed(() => {
   const dayjsTime = dayjs(startTime.value)
 

@@ -53,10 +53,10 @@ public sealed class CoreOperationGateTests
     }
 
     [Fact]
-    public void DisposedProcessManagerCannotStartAgain()
+    public async Task DisposedProcessManagerCannotStartAgain()
     {
         var manager = new CoreProcessManager();
         manager.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => manager.Start(new AppSettings()));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => manager.StartAsync(new(CoreKind.Mihomo, new CoreProfile())));
     }
 }

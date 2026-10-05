@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeHostSnapshot } from './hostFixture'
 
 describe('backend URL parsing', () => {
   beforeEach(() => {
@@ -14,7 +15,7 @@ describe('backend URL parsing', () => {
     history.replaceState(
       null,
       '',
-      '/?https=1&hostname=example.test&port=9443&secondaryPath=%2Fapi&secret=s3cr3t&label=Local&disableUpgradeCore=1&disableTunMode=tun',
+      '/?protocol=https&hostname=example.test&port=9443&secondaryPath=%2Fapi&secret=s3cr3t&label=Local&disableUpgradeCore=1&disableTunMode=1',
     )
     const { getBackendFromUrl } = await import('@/helper/utils')
 
@@ -35,16 +36,11 @@ describe('backend URL parsing', () => {
     history.replaceState(null, '', '/?type=singbox&http=1&hostname=box.local&port=9091')
     const { getBackendFromUrl } = await import('@/helper/utils')
 
-    expect(getBackendFromUrl()).toMatchObject({
-      type: 'clash',
-      protocol: 'http',
-      host: 'box.local',
-      port: '9091',
-    })
+    expect(getBackendFromUrl()).toBeNull()
   })
 
   it('parses backend parameters from hash URLs and formats backend URLs', async () => {
-    history.replaceState(null, '', '/#/core?http=1&hostname=127.0.0.1&port=9090')
+    history.replaceState(null, '', '/#/core?protocol=http&hostname=127.0.0.1&port=9090')
     const { getBackendFromUrl, getUrlFromBackend } = await import('@/helper/utils')
 
     expect(getBackendFromUrl()).toMatchObject({
@@ -89,9 +85,8 @@ describe('dashboard settings storage', () => {
   })
 
   it('applies and clears only config-prefixed dashboard settings', async () => {
-    const { applyDashboardSettingsToStorage, clearDashboardSettingsFromStorage } = await import(
-      '@/helper/utils'
-    )
+    const { applyDashboardSettingsToStorage, clearDashboardSettingsFromStorage } =
+      await import('@/helper/utils')
 
     localStorage.setItem('setup/api-list', '[]')
     applyDashboardSettingsToStorage({
@@ -113,17 +108,31 @@ describe('dashboard settings storage', () => {
     vi.resetModules()
     const listeners = new Set<(event: MessageEvent) => void>()
     const postMessage = vi.fn((message) => {
-      queueMicrotask(() => listeners.forEach((listener) => listener(new MessageEvent('message', {
-        data: { type: 'dashboardSettingsSaved', requestId: message.requestId, success: true },
-      }))))
+      queueMicrotask(() =>
+        listeners.forEach((listener) =>
+          listener(
+            new MessageEvent('message', {
+              data: {
+                protocolVersion: 2,
+                type: 'commandResult',
+                requestId: message.requestId,
+                state: makeHostSnapshot(),
+                result: { status: 'completed', code: 'saved', saved: true },
+              },
+            }),
+          ),
+        ),
+      )
     })
     Object.defineProperty(window, 'chrome', {
       configurable: true,
       value: {
         webview: {
           postMessage,
-          addEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.add(listener),
-          removeEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.delete(listener),
+          addEventListener: (_type: string, listener: (event: MessageEvent) => void) =>
+            listeners.add(listener),
+          removeEventListener: (_type: string, listener: (event: MessageEvent) => void) =>
+            listeners.delete(listener),
         },
       },
     })
@@ -134,41 +143,12 @@ describe('dashboard settings storage', () => {
     await saveDashboardSettingsToHost()
 
     expect(postMessage).toHaveBeenCalledWith({
-      type: 'saveDashboardSettings',
+      type: 'saveDashboardPreferences',
+      protocolVersion: 2,
       requestId: expect.any(String),
-      settings: {
+      preferences: {
         'config/default-theme': '"light"',
       },
     })
-  })
-})
-
-describe('proxy scrolling', () => {
-  it('uses layout offsets when deciding whether a reordered card is visible', async () => {
-    const { PROXIES_PARENT_CLASS, scrollIntoCenter } = await import('@/helper/utils')
-    const parent = document.createElement('div')
-    const card = document.createElement('div')
-    const scrollTo = vi.fn()
-
-    parent.classList.add(PROXIES_PARENT_CLASS)
-    parent.append(card)
-    Object.defineProperties(parent, {
-      scrollHeight: { configurable: true, value: 1000 },
-      clientHeight: { configurable: true, value: 100 },
-      offsetTop: { configurable: true, value: 0 },
-      scrollTop: { configurable: true, value: 100 },
-      scrollTo: { configurable: true, value: scrollTo },
-    })
-    Object.defineProperties(card, {
-      clientHeight: { configurable: true, value: 20 },
-      offsetTop: { configurable: true, value: 120 },
-    })
-
-    scrollIntoCenter(card)
-    expect(scrollTo).not.toHaveBeenCalled()
-
-    Object.defineProperty(card, 'offsetTop', { configurable: true, value: 300 })
-    scrollIntoCenter(card)
-    expect(scrollTo).toHaveBeenCalledWith({ top: 260, behavior: 'smooth' })
   })
 })

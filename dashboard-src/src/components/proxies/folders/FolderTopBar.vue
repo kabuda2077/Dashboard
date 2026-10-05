@@ -10,7 +10,6 @@
   >
     <div class="scrollbar-hidden flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       <FolderItem
-        :id="VIRTUAL_ALL"
         :label="$t('folder_all')"
         :count="totalCount"
         :is-active="activeFolderId === VIRTUAL_ALL"
@@ -21,7 +20,6 @@
       <FolderItem
         v-for="f in foldersSorted"
         :key="f.id"
-        :id="f.id"
         :label="displayFolderName(f.name)"
         :count="folderCount(f.id)"
         :is-active="activeFolderId === f.id"
@@ -31,7 +29,6 @@
       />
       <FolderItem
         v-if="folderCount(VIRTUAL_UNCAT) > 0"
-        :id="VIRTUAL_UNCAT"
         :label="$t('folder_uncategorized')"
         :count="folderCount(VIRTUAL_UNCAT)"
         :is-active="activeFolderId === VIRTUAL_UNCAT"

@@ -1,77 +1,76 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { restoreDashboardSettings, startDashboard } from '@/helper/dashboardStartup'
+import { bootstrapFixture, installHostMock, makeHostSnapshot } from './hostFixture'
 
-let receive: (event: MessageEvent) => void
-let post: ReturnType<typeof vi.fn>
-let remove: ReturnType<typeof vi.fn>
 beforeEach(() => {
+  vi.resetModules()
   vi.useFakeTimers()
   localStorage.clear()
-  remove = vi.fn()
-  post = vi.fn()
-  Object.defineProperty(window, 'chrome', { configurable: true, value: { webview: {
-    postMessage: post,
-    addEventListener: (_: string, listener: typeof receive) => { receive = listener },
-    removeEventListener: remove,
-  } } })
-})
-afterEach(() => { vi.useRealTimers(); Reflect.deleteProperty(window, 'chrome') })
-const reply = (settings: unknown, id = post.mock.lastCall?.[0].requestId) => receive(new MessageEvent('message', {
-  data: { type: 'dashboardSettingsSnapshot', requestId: id, settings },
-}))
-
-it('restores before loading stores and requests a fresh snapshot on each document startup', async () => {
-  const load = vi.fn(async () => expect(localStorage.getItem('config/theme')).toBe('new'))
-  const first = startDashboard(load)
-  expect(load).not.toHaveBeenCalled()
-  reply({ 'config/theme': 'old' }, 'obsolete')
-  expect(load).not.toHaveBeenCalled()
-  reply({ 'config/theme': 'new' })
-  await first
-  expect(load).toHaveBeenCalledOnce()
-  const next = restoreDashboardSettings()
-  reply({ 'config/theme': 'latest' })
-  await next
-  expect(localStorage.getItem('config/theme')).toBe('latest')
-  expect(post).toHaveBeenCalledTimes(2)
-  expect(remove).toHaveBeenCalledTimes(2)
-})
-
-it.each([null, {}])('distinguishes legacy null from explicit empty snapshot: %j', async (snapshot) => {
-  localStorage.setItem('config/theme', 'legacy')
-  localStorage.setItem('setup/api-list', 'preserved')
-  const result = restoreDashboardSettings()
-  reply(snapshot)
-  await result
-  expect(localStorage.getItem('config/theme')).toBe(snapshot === null ? 'legacy' : null)
-  expect(localStorage.getItem('setup/api-list')).toBe('preserved')
-})
-
-it('fails visibly without loading stores, and retry can recover', async () => {
   document.body.innerHTML = '<div id="app"></div>'
-  const load = vi.fn(async () => {})
+})
+afterEach(() => {
+  vi.useRealTimers()
+  Reflect.deleteProperty(window, 'chrome')
+})
+it('uses the real C# bootstrap shape and restores preferences before importing stores', async () => {
+  const host = installHostMock()
+  const { startDashboard } = await import('@/helper/dashboardStartup')
+  localStorage.setItem('config/old', 'old')
+  const load = vi.fn(async () => {
+    expect(localStorage.getItem('config/theme')).toBe('dark')
+    expect(localStorage.getItem('config/old')).toBeNull()
+  })
   const result = startDashboard(load)
-  await vi.advanceTimersByTimeAsync(10001)
-  await result
+  host.bootstrap('wrong-id', { 'config/theme': 'wrong' })
   expect(load).not.toHaveBeenCalled()
-  expect(remove).toHaveBeenCalledOnce()
+  host.bootstrap(undefined, { 'config/theme': 'dark' })
+  await result
+  expect(load).toHaveBeenCalledOnce()
+  expect(bootstrapFixture().protocolVersion).toBe(2)
+})
+it.each([null, undefined, { 'setup/password': 'bad' }])(
+  'rejects unsupported preference payloads without changing storage: %j',
+  async (preferences) => {
+    const host = installHostMock()
+    const { restoreDashboardSettings } = await import('@/helper/dashboardStartup')
+    localStorage.setItem('config/theme', 'kept')
+    const result = restoreDashboardSettings().catch((error) => error)
+    if (preferences === undefined)
+      host.emit({
+        type: 'bootstrap',
+        requestId: host.post.mock.lastCall?.[0].requestId,
+        state: makeHostSnapshot(),
+      })
+    else host.bootstrap(undefined, preferences)
+    expect(await result).toBeInstanceOf(Error)
+    expect(localStorage.getItem('config/theme')).toBe('kept')
+  },
+)
+it('supports a first installation with an explicit empty snapshot', async () => {
+  const host = installHostMock()
+  const { startDashboard } = await import('@/helper/dashboardStartup')
+  const load = vi.fn(async () => {})
+  const boot = startDashboard(load)
+  host.bootstrap()
+  await boot
+  expect(load).toHaveBeenCalledOnce()
+})
+it('fails visibly on timeout and a fresh request can retry', async () => {
+  const host = installHostMock()
+  const { startDashboard } = await import('@/helper/dashboardStartup')
+  const load = vi.fn(async () => {})
+  const boot = startDashboard(load)
+  await vi.advanceTimersByTimeAsync(30001)
+  await boot
+  expect(load).not.toHaveBeenCalled()
   document.querySelector('button')!.click()
-  reply({})
+  host.bootstrap()
   await vi.advanceTimersByTimeAsync(0)
   expect(load).toHaveBeenCalledOnce()
 })
-
-it('starts normally without a desktop host', async () => {
+it('browser startup does not require a desktop host', async () => {
   Reflect.deleteProperty(window, 'chrome')
+  const { startDashboard } = await import('@/helper/dashboardStartup')
   const load = vi.fn(async () => {})
   await startDashboard(load)
   expect(load).toHaveBeenCalledOnce()
-})
-
-it('rejects invalid snapshots before mutating storage', async () => {
-  localStorage.setItem('config/theme', 'kept')
-  const result = restoreDashboardSettings().catch((error: Error) => error)
-  reply({ 'config/theme': 'new', 'setup/api-list': 'bad' })
-  expect(await result).toBeInstanceOf(Error)
-  expect(localStorage.getItem('config/theme')).toBe('kept')
 })

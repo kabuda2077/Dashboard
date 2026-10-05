@@ -16,15 +16,14 @@ import {
   getInboundUserFromConnection,
   getNetworkTypeFromConnection,
 } from '@/helper'
+import { captureBackendSession } from '@/helper/backendSession'
 import { toSearchRegex } from '@/helper/search'
-import type { Connection } from '@/types'
 import { useDashboardStorage as useStorage } from '@/helper/storage'
+import type { Connection } from '@/types'
 import { watchOnce } from '@vueuse/core'
 import dayjs from 'dayjs'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { initAggregatedDataMap, saveConnectionHistory } from './connHistory'
-import { activeUuid } from './setup'
-import { captureBackendSession } from '@/helper/backendSession'
 import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
@@ -34,6 +33,7 @@ import {
   proxyChainDirection,
   showFullProxyChain,
 } from './settings'
+import { activeUuid } from './setup'
 
 export const connectionTabShow = ref(CONNECTION_TAB_TYPE.ACTIVE)
 export const connectionSortType = useStorage<SORT_TYPE>(
@@ -90,7 +90,9 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
     }
     activeConnectionCount.value = snapshot.active.length
 
-    if (isPaused.value) {
+    if (isPaused.value || document.visibilityState === 'hidden') {
+      // Continue collecting closed-history even while the visible lists are paused.
+      if (mode === 'full' && snapshot.closed.length) saveConnectionHistory(snapshot.closed)
       return
     }
 
@@ -220,7 +222,7 @@ export const filteredActiveConnections = computed(() => filterConnections(active
 export const renderConnections = computed(() => {
   const filtered = filterConnections(connections.value)
   const sortType = isConnectionCard.value ? connectionSortType.value : SORT_TYPE.HOST
-  const getSortKey = sortKeyFunctionMap[sortType]
+  const getSortKey = sortKeyFunctionMap[sortType] ?? sortKeyFunctionMap[SORT_TYPE.HOST]
   const descending = isConnectionCard.value && isDesc.value
   const decorated: [string | number, string, Connection][] = filtered.map((connection) => [
     getSortKey(connection),
@@ -234,9 +236,7 @@ export const renderConnections = computed(() => {
     const keyA = a[0]
     const keyB = b[0]
     const result =
-      typeof keyA === 'number'
-        ? keyA - (keyB as number)
-        : keyA.localeCompare(keyB as string)
+      typeof keyA === 'number' ? keyA - (keyB as number) : keyA.localeCompare(keyB as string)
 
     return result || a[1].localeCompare(b[1])
   })

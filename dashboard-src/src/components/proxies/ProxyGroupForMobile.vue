@@ -69,7 +69,6 @@ const isLatencyTesting = ref(false)
 
 const modalMode = ref(false)
 const displayContent = ref(false)
-const showAllContent = ref(modalMode.value)
 const contentOpacity = ref(0)
 
 const cardWrapperRef = ref()
@@ -160,7 +159,6 @@ const handlerTransitionEnd = (e: TransitionEvent) => {
 
   if (modalMode.value) {
     contentOpacity.value = 1
-    showAllContent.value = true
   } else {
     displayContent.value = false
 
@@ -179,7 +177,6 @@ const handlerGroupClick = async () => {
   if (modalMode.value) {
     displayContent.value = true
   }
-  showAllContent.value = false
   contentOpacity.value = 0
 
   calcCardStyle()

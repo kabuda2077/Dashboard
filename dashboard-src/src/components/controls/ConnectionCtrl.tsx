@@ -9,8 +9,8 @@ import {
 } from '@/composables/connectionCardGroups'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
-import { useTooltip } from '@/helper/tooltip'
 import { runManualRequest } from '@/helper/requestError'
+import { useTooltip } from '@/helper/tooltip'
 import {
   connectionFilter,
   connections,
@@ -40,7 +40,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
-import DropdownSelect from '../common/DropdownSelect.vue'
+import DropdownSelect from '../common/SelectInput.vue'
 import TextInput from '../common/TextInput.vue'
 import ConnectionCardSettings from '../settings/connections/ConnectionCardSettings.vue'
 import TableSettings from '../settings/connections/TableSettings.vue'

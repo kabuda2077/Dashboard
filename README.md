@@ -2,164 +2,91 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Dashboard 是一个基于 [zashboard](https://github.com/Zephyruso/zashboard) 的 Windows 桌面启动器和管理面板，支持 mihomo 和 sing-box。
+基于 [zashboard](https://github.com/Zephyruso/zashboard) 的 Windows 桌面代理管理面板。WinForms + WebView2 承载本地 UI，宿主管理 mihomo / sing-box、窗口、托盘、自启、凭证和升级；面板通过 Clash-compatible API 读取数据。
 
-它使用 WinForms + WebView2 承载本地打包的 zashboard UI，同时由桌面宿主管理代理内核进程、托盘行为、开机自启、窗口控制和本地设置。
+## 2.0 配置格式
 
-本项目保留 zashboard 的主面板体验，在此基础上加入了 Windows 桌面壳、内核启动/停止/切换、托盘与窗口控制、便携式本地设置、mihomo / sing-box Clash-compatible API 接入，以及少量适配桌面使用的界面调整。
+**2.0 是不兼容升级，使用 schemaVersion=2 的 settings.json 和独立的 `resources/webview-data-v2/`。不迁移旧 Dashboard 设置、历史、图片、旧明文凭证或旧启动项。**
 
-## 下载
+首次使用建议解压到一个新目录，重新选择核心和配置。旧文件不会自动删除或覆盖；遇到旧格式/损坏设置时程序明确报错。已存在的 v2 文件必须保留完整的根字段、两个 profile 和桌面选项字段，缺失不会被静默补成默认值。请保留原目录，不要删除唯一的数据副本。
 
-从 [GitHub Releases](https://github.com/kabuda2077/Dashboard/releases) 下载最新版 ZIP。
+2.0 创建的数据在同格式的窗口重建、应用重启和覆盖更新中保留。Secret 由 Windows 当前用户 DPAPI 保护；换用户后无法解密时必须在 Core 页面明确替换，即使新值为空。普通设置保存不会覆盖无法解密的密文。
 
-便携包只包含 Dashboard 应用文件。你还需要：
+## 运行条件
 
-- [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
-- 已配置好的 `mihomo` 或 `sing-box` 可执行文件
+- Windows x64、[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)。
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
+- 自备配置好的 mihomo 或包含 Clash API 的 sing-box。发布包不包含核心和用户配置。
 
-## 快速开始
-
-1. 解压 ZIP 到一个目录，例如：
+示例目录：
 
 ```text
 Dashboard/
   Dashboard.exe
-  mihomo/
-    mihomo.exe
-    config.yaml
-  sing-box/
-    sing-box.exe
-    config.json
+  mihomo/mihomo.exe
+  mihomo/config.yaml
+  sing-box/sing-box.exe
+  sing-box/config.json
 ```
 
-2. 打开 `Dashboard.exe`，在内核页面选择内核可执行文件和配置文件。
-3. 确认所选内核已开启 Clash-compatible API，然后点击启动。
+在 Core 页面选择要编辑的核心槽，填写 exe/config/API/Secret 并保存。两套草稿独立；Windows 开关不会顺带保存未提交核心字段。文件选择只回填草稿。启动或重启需要提权时会请求 UAC。
 
-默认路径相对于 Dashboard 程序目录：
+mihomo 必须配置 `external-controller`；sing-box 使用 `experimental.clash_api.external_controller`。例如 API 地址为 `http://127.0.0.1:9090`，Secret 与内核配置一致。进程启动与 API 就绪是不同状态；API 未就绪时可修正地址/凭证并重试。
 
-```text
-.\mihomo\mihomo.exe
-.\mihomo\config.yaml
-.\sing-box\sing-box.exe
-.\sing-box\config.json
-```
+## 功能和边界
 
-## 更新 Dashboard
+- 一个活动内核、两份独立 profile，支持启动、停止、重启、切换、PID/输出日志。
+- Core 内嵌设置；代理、连接、概览、规则、日志、主题、标签、测速、当前格式的背景/历史和偏好导入导出。
+- 托盘、窗口拖拽/缩放/最大化，关闭到托盘；轻量模式默认隐藏 60 秒后释放 WebView，提前重开取消释放。
+- view 挂起/释放前等待偏好、历史及图片读取/解码/提交；退出未确认保存时给出反馈，不把发送消息当成已经落盘。提权前先完成保存/退出确认，失败或取消不关闭旧宿主。
+- 当前用户计划任务 `\Dashboard\Autostart` 登录后约 5 秒静默启动。写入/删除前核对用户、exe 和工作目录；同名任务属于其他用户/目录或无法确认归属时拒绝操作，不强制覆盖，也不迁移旧注册表 Run 项。
+- mihomo 升级通过运行中核心的 `/upgrade`；sing-box 内置升级仅选择 reF1nd Windows amd64v3 构建。官方版/其他 fork 用户如不希望替换为该构建，应自行升级。
+- sing-box 有有效发布摘要时验证 SHA256；没有摘要时在执行候选/替换前要求明确确认。下载、解压、版本验证、备份/原子替换有边界。
+- Dashboard 应用更新只检查 Release 并打开下载页，不自动替换 Dashboard.exe。
+- 当前桌面版没有 sing-box native API / Tools / Terminal 等功能。浏览器 Clash 预览仍可用，但不具备本机宿主权限。
+- UI 保持 `http://127.0.0.1:33291/`，端口占用明确报错。HTTPS 虚拟主机映射会阻止现有明文远端 API，本版本未通过关闭浏览器安全来规避它。
 
-Dashboard 会在启动后自动检查 GitHub Release，也可以在内核页手动检查。发现新版本后，点击 Release 按钮打开下载页面。
+同格式覆盖更新：完全退出，覆盖应用包文件后重开，不删除整个目录。包不包含 settings.json、profile、核心、日志。基础日志在 `resources/logs`；可用 `--diagnostic-log` 开启详细诊断，日志队列和文件轮转均有界。
 
-更新便携版只需要：
+## 开发与验证
 
-1. 完全退出 Dashboard。
-2. 解压新版 ZIP，将其中全部文件复制到原 Dashboard 目录并选择覆盖。
-3. 重新启动 `Dashboard.exe`。
-
-不要先删除整个 Dashboard 目录。发布包不包含 `settings.json`、`mihomo\`、`sing-box\` 和运行日志，直接覆盖会保留设置、内核及配置。内置前端更新会保留 WebView2 profile 中的偏好、标签和连接历史，只使可重建的 HTTP 缓存、Cache Storage 和旧 Service Worker 注册失效；前端版本化资源使用带 hash 的文件名，无需手动删除 profile 或缓存。桌面界面固定使用 `http://127.0.0.1:33291/` 以保持同一数据 origin；若该端口被其他程序占用，Dashboard 会明确报错而不会随机换端口隐藏已有数据。
-
-## 内核配置
-
-`mihomo` 需要在 `config.yaml` 中开启 `external-controller`，例如：
-
-```yaml
-external-controller: 127.0.0.1:9090
-secret: ""
-```
-
-`sing-box` 需要开启 Clash-compatible API。Dashboard 会通过 Clash API 显示概览、代理、规则、连接、日志、重载配置等页面。桌面前端不包含 sing-box native API / Tools；如有需要，可让浏览器版面板连接单独的 native API 端口。
-
-推荐使用 reF1nd [`sing-box-releases`](https://github.com/reF1nd/sing-box-releases) 构建。官方 GitHub Release 中包含 Clash API 的 sing-box 也可以使用；自行编译或使用第三方精简构建时，必须确认启用了 `with_clash_api` 构建标签。Dashboard 的内置 sing-box 升级功能仅支持 reF1nd Windows amd64v3 构建：如果当前使用官方版或其他分支，请手动升级，点击面板内的升级会将内核替换为 reF1nd 构建。
-
-`sing-box` 配置片段示例：
-
-```json
-{
-  "experimental": {
-    "clash_api": {
-      "external_controller": "127.0.0.1:9090",
-      "secret": ""
-    }
-  }
-}
-```
-
-## 功能
-
-- 内置 zashboard UI，并加入桌面端集成。
-- 单一活动内核模式：`mihomo` / `sing-box` 二选一。
-- mihomo 和 sing-box 分别保存独立的内核路径、配置路径、API 地址和 Secret。
-- 在内核页面启动、停止、重启、切换和查看当前内核。
-- 显示内核 PID、运行状态、stdout/stderr 日志和当前下载较高的连接。
-- 支持从 MetaCubeX releases 升级 `mihomo`。
-- 内置 sing-box 升级仅支持 reF1nd `sing-box-releases` 的 Windows amd64v3 构建。
-- mihomo 和 sing-box 都通过 Clash-compatible API 驱动主面板页面。
-- 系统托盘菜单支持显示窗口、重启内核、停止内核和退出。
-- 支持关闭到托盘和轻量模式，用于控制 WebView 生命周期。
-- 支持启动后自动检查 Dashboard 更新，也可在内核页手动检查并打开 GitHub Release。
-- 支持当前用户开机自启，通过 `\Dashboard\Autostart` 计划任务在登录 5 秒后以最高权限静默启动托盘宿主。
-- 设置保存到便携目录旁的 `settings.json`。
-- 新保存的 Secret 仅以当前 Windows 用户的 DPAPI 密文保存；旧明文字段读取后经加密校验迁移，不再写回明文。迁移失败保留原设置文件并报告错误。
-- 桌面连接密码仅在内存中使用，浏览器存储只保留不含密码的连接标识；已知旧密码字段会迁移清理。这不保证抹除磁盘历史碎片，也不隐藏正常鉴权所需的内存凭证。
-
-## 常见问题
-
-**Dashboard 无法启动，Windows 提示缺少 .NET。**  
-安装 .NET 9 Desktop Runtime 后重新打开 Dashboard。
-
-**Dashboard 显示缺少 WebView2 Runtime。**  
-根据提示链接安装 Microsoft Edge WebView2 Runtime，然后重新打开 Dashboard。
-
-**内核已启动，但 Dashboard 无法连接 API。**  
-检查内核页面里的 API 地址是否和内核配置一致。大多数情况下是 `http://127.0.0.1:9090`。如果配置里设置了非空 `secret`，内核页面也要填同样的值。
-
-**移动到其他 Windows 用户或电脑后提示 Secret 无法解密。**
-
-DPAPI 凭证绑定当前 Windows 用户。到 Core 页面重新填写 Secret，确认替换后保存；确实没有 Secret 时可以明确确认留空。普通设置保存不会覆盖无法解密的原密文。设置文件损坏或迁移失败时不会自动恢复默认配置，请先保留原件并修复文件或权限。
-
-**TUN 启动失败或要求管理员权限。**  
-Windows 上 TUN 通常需要管理员权限。请以管理员身份启动 Dashboard，或允许应用弹出的 UAC 重启提示。
-
-**开启开机自启时为什么会弹一次 UAC？**
-Dashboard 需要创建最高权限计划任务。任务创建并验证成功后，后续登录不会再弹 UAC；登录约 5 秒后只启动托盘、内核管理和本地服务，打开窗口时才创建 WebView2。
-
-**移动软件目录后需要重新设置开机自启吗？**
-不需要。下次手动启动 Dashboard 时会检测计划任务路径不一致并请求修复。修复成功前不会删除旧的注册表启动项；关闭开机自启会同时清理计划任务和遗留启动项。
-
-**可以只用 sing-box native API 吗？**  
-不可以。当前桌面版主面板页面使用 sing-box 的 Clash-compatible API。
-
-**sing-box 必须使用 reF1nd 构建吗？**
-
-不是。官方 GitHub Release 中包含 Clash API 的构建也可以使用，但本项目主要适配和测试 reF1nd 构建，内置升级器也只会下载 reF1nd Windows amd64v3。官方版、其他分支或不支持 amd64v3 的设备应自行升级内核。
-
-**日志保存在哪里，怎样临时开启详细诊断？**
-
-基础日志保存在程序目录的 `resources\logs`。Release 版默认只记录关键操作、错误和 WebView 冷恢复摘要；需要排查启动或托盘恢复问题时，可使用 `Dashboard.exe --diagnostic-log` 启动，本次会话会额外记录窗口生命周期、托盘时序、前端首屏和 WebSocket 首包。Debug 构建默认开启详细诊断。单个日志文件超过 2 MB 时自动轮转，并保留最近 3 个归档。
-
-## 开发
-
-开发环境需要 .NET 9 SDK、Node.js 24 和 pnpm 11.20.0。
+需要 **PowerShell 7**（`pwsh`）、.NET 9 SDK、Node.js **24**、pnpm **11.20.0**。构建和测试脚本只支持 PowerShell 7；运行打包后的 Dashboard 不需要 PowerShell。两个应用入口按目的二选一，不要先完整 Check 再重复 Release：
 
 ```powershell
-pnpm --dir dashboard-src type-check
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Configuration Release -Runtime win-x64
-powershell -ExecutionPolicy Bypass -File .\tools\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
+# 安装依赖、类型检查、构建、宿主测试及真实 JSON fixture、前端测试
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1
+
+# 对本次输入重新检查，再发布、核对资源与 ZIP；不信任旧产物
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\create-release.ps1
 ```
 
-发布新版本前需要同步更新 `Dashboard.csproj` 中的 `Version` 和 `InformationalVersion`，并与 GitHub Release tag 保持一致。
+发布目录 `artifacts/releases/` 只放 ZIP；每个包的输入清单与验证摘要放在 `artifacts/verification/<包名>/`，不需要复制到安装目录。相同包名可直接重新生成，不再为每次试编译创建新名称。历史候选可归档到 `artifacts/archive/`。
 
-主要目录：
+日常修改先运行相关测试；前端全套很短，可直接运行。需要前端 wire fixture 时先运行宿主测试。UI 修改加跑相关 WebView 测试即可；定稿后再执行一次 Release。构建工具和文档修改运行 `pwsh -NoProfile -File .\tools\check-maintenance.ps1`；CI 同时运行此入口和普通 Check，应用构建不重复执行这些维护检查。
 
-- `src/`：Windows 桌面宿主。
-- `dashboard-src/`：基于 zashboard 的前端源码。
-- `resources/dashboard/`：构建后的前端静态资源，由 `tools/build-zashboard.ps1` 生成，不纳入版本控制。新克隆的仓库需要先构建前端，再构建 .NET，否则产物里没有界面。`tools/build.ps1` 和 `tools/check.ps1` 已经按这个顺序执行。
-- [docs/architecture.md](docs/architecture.md)：当前职责、启动、会话和持久化边界。
-- [docs/style.md](docs/style.md)：本项目 UI 规则。
-- [docs/upstream-merge.md](docs/upstream-merge.md)：跟进 zashboard 上游的唯一操作入口。
-- [验证记录](docs/validation.md)：最终实施摘要与当前产物证据；[实机验收](docs/manual-acceptance.md)记录未完成项目，[性能记录](docs/performance.md)保留测量与优化取舍。
+`check.ps1 -IncludeWebViewIntegration` 增加真实 WebView/生产窗口测试，不包含真实等待60秒的空闲回收测试。增加 `-IncludeSlowIntegration` 才运行该慢测试（必须同时启用 WebView）。真实核心验证需显式准备只用于测试的核心：
 
-## 许可证
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\PrepareValidationCores.ps1
+$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/validation-cores).Path
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
+```
 
-本项目使用 MIT License 发布。
+上述检查用于专项验证；最终交付时直接把同样的参数传给 `create-release.ps1`，需要完整生命周期验收时另加 `-IncludeSlowIntegration`，无需先再跑一次 Check。
 
-内置前端基于 zashboard，上游版权声明见 `dashboard-src/LICENSE`。
+准备脚本仅下载并校验 GitHub 发布摘要，不更改系统配置。真实核心测试使用临时目录、无 TUN/代理监听的最小配置，不接管用户核心。
+
+在上面的完整检查命令中增加 `-IncludePerformanceIntegration`，可运行独立测试宿主中的真实 WebView 固定负载测量（3 轮，100/1000/10000 条合成连接）。报告写入 `.tmp/performance-v2/desktop.json`；它包含测试宿主开销，不是物理显示器帧率或纯 Dashboard.exe 内存。局部计算基准可在 `dashboard-src/` 下运行 `node.exe node_modules/vitest/vitest.mjs run --config bench/vitest.config.ts`。
+
+内部构建/图标/资源工具在 `tools/internal/`，无需手工拼接执行。前端资源从 `dashboard-src/dist/` 生成到 `resources/dashboard/`，不入 Git；没有 UI 资源时 .NET 构建会明确失败。前端 wire 测试读取本次 .NET 测试生成的 `.tmp/bridge-fixtures-v2/`，不要用旧 fixture 冒充当前协议验证。
+
+自动检查和 ZIP 成功不等于手工系统场景全部通过；仍需补齐的验收边界见[维护说明](docs/maintenance.md)。项目版本、InformationalVersion 和正式 Release tag 必须一致。
+
+## 维护文档
+
+- [维护说明](docs/maintenance.md)：当前配置约定、验证与产物规则、剩余验收事项；不维护实施流水账。
+- [上游跟进指南](docs/upstream-merge.md)：唯一正式跟进入口，保护产品保证，允许有证据地替换实现。
+- [样式规则](docs/style.md)：视觉原则与当前默认，不冻结类名/组件内部实现。
+- [上游基线](docs/upstream/v3.26.0.md)：下次合并所需的确切版本与保留取舍。
+
+MIT License；内置前端原版权见 `dashboard-src/LICENSE`。

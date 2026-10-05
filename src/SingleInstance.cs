@@ -13,13 +13,11 @@ public sealed class SingleInstance : IDisposable
     private readonly Action _activate;
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Task _serverTask;
-    private bool _ownsMutex;
     private bool _disposed;
 
-    private SingleInstance(Mutex mutex, bool ownsMutex, string pipeName, Action activate)
+    private SingleInstance(Mutex mutex, string pipeName, Action activate)
     {
         _mutex = mutex;
-        _ownsMutex = ownsMutex;
         _pipeName = pipeName;
         _activate = activate;
         _serverTask = Task.Run(RunActivationServerAsync);
@@ -42,7 +40,8 @@ public sealed class SingleInstance : IDisposable
         {
             try
             {
-                ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(8));
+                // Allow the previous host's preference flush (5s) and shutdown budget (10s).
+                ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(20));
             }
             catch (AbandonedMutexException)
             {
@@ -62,7 +61,7 @@ public sealed class SingleInstance : IDisposable
             return false;
         }
 
-        instance = new SingleInstance(mutex, true, names.PipeName, activate);
+        instance = new SingleInstance(mutex, names.PipeName, activate);
         return true;
     }
 
@@ -93,7 +92,9 @@ public sealed class SingleInstance : IDisposable
                 {
                     AutoFlush = true
                 };
-                var command = await reader.ReadLineAsync(_cancellation.Token);
+                using var requestBudget = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
+                requestBudget.CancelAfter(ActivationTimeoutMs);
+                var command = await ReadActivationCommandAsync(reader, requestBudget.Token);
                 if (string.Equals(command, "activate", StringComparison.Ordinal))
                 {
                     try
@@ -133,6 +134,19 @@ public sealed class SingleInstance : IDisposable
                 }
             }
         }
+    }
+
+    internal static async Task<string> ReadActivationCommandAsync(StreamReader reader, CancellationToken token)
+    {
+        var text = new StringBuilder();
+        var buffer = new char[1];
+        while (await reader.ReadAsync(buffer.AsMemory(), token) != 0)
+        {
+            if (buffer[0] == '\n') return text.ToString().TrimEnd('\r');
+            if (text.Length >= 32) return "";
+            text.Append(buffer[0]);
+        }
+        return "";
     }
 
     private static bool SendActivation(string pipeName)
@@ -228,16 +242,12 @@ public sealed class SingleInstance : IDisposable
         {
         }
         _cancellation.Dispose();
-        if (_ownsMutex)
+        try
         {
-            try
-            {
-                _mutex.ReleaseMutex();
-            }
-            catch (ApplicationException)
-            {
-            }
-            _ownsMutex = false;
+            _mutex.ReleaseMutex();
+        }
+        catch (ApplicationException)
+        {
         }
         _mutex.Dispose();
     }

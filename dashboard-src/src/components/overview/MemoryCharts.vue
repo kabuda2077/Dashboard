@@ -18,15 +18,22 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const chartsData = computed(() => [
-  {
-    name: t('memoryUsage'),
-    data: memoryHistory.value,
-  },
-])
+const chartsData = computed(() => {
+  return [
+    {
+      name: t('memoryUsage'),
+      data: memoryHistory.value,
+    },
+  ]
+})
 
-const labelFormatter = (value: number) =>
-  prettyBytesHelper(value, { maximumFractionDigits: 0, binary: true })
-const tooltipFormatter = (value: ChartTooltipParam[]) =>
-  value.map((item) => formatHistoryTooltipParam(item, { binary: true })).join('')
+const labelFormatter = (value: number) => {
+  return `${prettyBytesHelper(value, {
+    maximumFractionDigits: 0,
+    binary: true,
+  })}`
+}
+const tooltipFormatter = (value: ChartTooltipParam[]) => {
+  return value.map((item) => formatHistoryTooltipParam(item, { binary: true })).join('')
+}
 </script>

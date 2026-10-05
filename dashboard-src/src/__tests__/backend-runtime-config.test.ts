@@ -1,170 +1,95 @@
 import type { Config } from '@/types'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope } from 'vue'
-
-const getConfigsAPIMock = vi.fn()
-const patchConfigsAPIMock = vi.fn()
-
-vi.mock('@/api/clash', () => ({
-  getConfigsAPI: getConfigsAPIMock,
-  patchConfigsAPI: patchConfigsAPIMock,
-}))
-
-const deferred = <T>() => {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, reject, resolve }
-}
-
-const config = (allowLan: boolean): Config => ({
-  port: 0,
-  'socks-port': 0,
-  'redir-port': 0,
-  'tproxy-port': 0,
-  'mixed-port': 7890,
-  'allow-lan': allowLan,
-  'bind-address': '',
-  mode: 'rule',
-  'mode-list': [],
-  modes: [],
-  'log-level': 'info',
-  ipv6: false,
-  tun: {
-    enable: allowLan,
-  },
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { startMockHost } from './hostFixture'
+const { get, patch } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }))
+vi.mock('@/api/clash', () => ({ getConfigsAPI: get, patchConfigsAPI: patch }))
+beforeEach(() => {
+  vi.resetModules()
+  get.mockReset()
+  patch.mockReset()
+  localStorage.clear()
 })
-
-describe('backend runtime config switching', () => {
-  beforeEach(() => {
-    localStorage.clear()
-    sessionStorage.clear()
-    getConfigsAPIMock.mockReset()
-    patchConfigsAPIMock.mockReset()
-    vi.resetModules()
+afterEach(() => {
+  window.dispatchEvent(new Event('pagehide'))
+  vi.useRealTimers()
+  Reflect.deleteProperty(window, 'chrome')
+})
+const config = (value: boolean) => ({ 'allow-lan': value, tun: { enable: value } }) as Config
+it('the session owner ignores old config responses after a same-endpoint core restart', async () => {
+  const host = await startMockHost()
+  let old!: (value: unknown) => void
+  get
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          old = resolve
+        }),
+    )
+    .mockResolvedValueOnce({ data: config(true) })
+  const state = await import('@/assembly/config')
+  state.startConfigRuntime()
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+  host.runtime({ processId: 2, runtimeEpoch: 2 })
+  state.resetConfigs()
+  state.startConfigRuntime()
+  await vi.waitFor(() => expect(state.configs.value['allow-lan']).toBe(true))
+  old({ data: config(false) })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(state.configs.value['allow-lan']).toBe(true)
+  state.stopConfigRuntime()
+})
+it('a post-PATCH refresh never reuses a GET started before the write', async () => {
+  await startMockHost()
+  let old!: (value: unknown) => void
+  get
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          old = resolve
+        }),
+    )
+    .mockResolvedValueOnce({ data: config(true) })
+  patch.mockResolvedValue({})
+  const state = await import('@/assembly/config')
+  const first = state.fetchConfigs()
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+  await state.updateConfigs({ 'allow-lan': true })
+  expect(get).toHaveBeenCalledTimes(2)
+  old({ data: config(false) })
+  await first
+  expect(state.configs.value['allow-lan']).toBe(true)
+})
+it('retries transient startup failures and derives read-only TUN without component-owned timers', async () => {
+  vi.useFakeTimers()
+  await startMockHost({ coreType: 'sing-box', readOnlyTunEnabled: true })
+  get
+    .mockRejectedValueOnce(new Error('not ready'))
+    .mockResolvedValueOnce({ data: { 'allow-lan': false } })
+  const state = await import('@/assembly/config')
+  const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
+  const view = useBackendRuntimeConfig()
+  state.startConfigRuntime()
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+  expect(view.tunState.value).toMatchObject({
+    visible: true,
+    writable: false,
+    enabled: true,
+    source: 'host',
   })
-
-  afterEach(() => {
-    vi.useRealTimers()
-    Reflect.deleteProperty(window, 'chrome')
-  })
-
-  it('loads the new core immediately and ignores the old pending response', async () => {
-    const oldRequest = deferred<{ data: Config }>()
-    const newRequest = deferred<{ data: Config }>()
-    getConfigsAPIMock
-      .mockImplementationOnce(() => oldRequest.promise)
-      .mockImplementationOnce(() => newRequest.promise)
-
-    const setup = await import('@/store/setup')
-    setup.backendList.value = [
-      {
-        type: 'clash',
-        protocol: 'http',
-        host: '127.0.0.1',
-        port: '9090',
-        secondaryPath: '',
-        password: '',
-        uuid: 'desktop-core',
-      },
-    ]
-    setup.activeUuid.value = 'desktop-core'
-
-    const { HOST_BACKEND_UPDATED_EVENT } = await import('@/constant/hostEvents')
-    const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
-    const scope = effectScope()
-    scope.run(() => useBackendRuntimeConfig())
-
-    await vi.waitFor(() => expect(getConfigsAPIMock).toHaveBeenCalledTimes(1))
-    window.dispatchEvent(new CustomEvent(HOST_BACKEND_UPDATED_EVENT))
-    await vi.waitFor(() => expect(getConfigsAPIMock).toHaveBeenCalledTimes(2))
-
-    newRequest.resolve({ data: config(true) })
-    const runtimeConfig = await import('@/assembly/config')
-    await vi.waitFor(() => expect(runtimeConfig.configsLoaded.value).toBe(true))
-    expect(runtimeConfig.configs.value['allow-lan']).toBe(true)
-
-    oldRequest.resolve({ data: config(false) })
-    await oldRequest.promise
-    await Promise.resolve()
-    expect(runtimeConfig.configs.value['allow-lan']).toBe(true)
-    expect(runtimeConfig.configsLoadedBackendUuid.value).toBe('desktop-core')
-
-    scope.stop()
-  })
-
-  it('stays idle without a backend and does not request config', async () => {
-    const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
-    const scope = effectScope()
-    const runtime = scope.run(() => useBackendRuntimeConfig())!
-
-    expect(runtime.configStatus.value).toBe('idle')
-    expect(runtime.tunState.value.visible).toBe(false)
-    expect(getConfigsAPIMock).not.toHaveBeenCalled()
-
-    scope.stop()
-  })
-
-  it('retries config loading while preserving a host-provided read-only TUN state', async () => {
-    vi.useFakeTimers()
-    Object.defineProperty(window, 'chrome', {
-      configurable: true,
-      value: { webview: { postMessage: vi.fn() } },
-    })
-    getConfigsAPIMock
-      .mockRejectedValueOnce(new Error('not ready'))
-      .mockResolvedValueOnce({ data: config(false) })
-
-    const bridge = await import('@/composables/hostBridge')
-    bridge.applyHostState({
-      coreType: 'sing-box',
-      apiUrl: 'http://localhost:9090',
-      processId: 1,
-      isRunning: true,
-      readOnlyTunEnabled: true,
-    })
-    const setup = await import('@/store/setup')
-    setup.backendList.value = [
-      {
-        type: 'clash',
-        protocol: 'http',
-        host: 'localhost',
-        port: '9090',
-        secondaryPath: '',
-        password: '',
-        uuid: 'desktop-core',
-        disableTunMode: true,
-        readOnlyTunEnabled: true,
-      },
-    ]
-    setup.activeUuid.value = 'desktop-core'
-
-    const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
-    const scope = effectScope()
-    const runtime = scope.run(() => useBackendRuntimeConfig())!
-
-    await vi.waitFor(() => expect(getConfigsAPIMock).toHaveBeenCalledTimes(1))
-    expect(runtime.tunState.value).toMatchObject({
-      visible: true,
-      writable: false,
-      enabled: true,
-      source: 'host',
-    })
-
-    await vi.advanceTimersByTimeAsync(800)
-    await vi.waitFor(() => expect(getConfigsAPIMock).toHaveBeenCalledTimes(2))
-    await vi.waitFor(() => expect(runtime.configStatus.value).toBe('ready'))
-    expect(runtime.tunState.value).toEqual({
-      visible: true,
-      writable: false,
-      loading: false,
-      enabled: true,
-      source: 'host',
-    })
-
-    scope.stop()
-  })
+  await vi.advanceTimersByTimeAsync(801)
+  expect(get).toHaveBeenCalledTimes(2)
+  expect(view.configStatus.value).toBe('ready')
+  state.stopConfigRuntime()
+})
+it('does not keep retrying unauthorized config requests', async () => {
+  vi.useFakeTimers()
+  await startMockHost()
+  get.mockRejectedValue({ response: { status: 401 } })
+  const state = await import('@/assembly/config')
+  state.startConfigRuntime()
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(get).toHaveBeenCalledTimes(1)
+  state.stopConfigRuntime()
 })

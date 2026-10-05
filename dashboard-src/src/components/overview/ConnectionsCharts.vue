@@ -17,14 +17,19 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const chartsData = computed(() => [
-  {
-    name: t('connections'),
-    data: connectionsHistory.value,
-  },
-])
+const chartsData = computed(() => {
+  return [
+    {
+      name: t('connections'),
+      data: connectionsHistory.value,
+    },
+  ]
+})
 
-const labelFormatter = (value: number) => `       ${value}`
-const tooltipFormatter = (value: ChartTooltipParam[]) =>
-  value.map((item) => formatTimeSeriesTooltipParam(item, String)).join('\n')
+const labelFormatter = (value: number) => {
+  return `       ${value}`
+}
+const tooltipFormatter = (value: ChartTooltipParam[]) => {
+  return value.map((item) => formatTimeSeriesTooltipParam(item, String)).join('\n')
+}
 </script>

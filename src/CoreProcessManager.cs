@@ -22,7 +22,8 @@ public sealed class CoreProcessManager : IDisposable
     private readonly Func<Process, int, bool> _waitForExit;
 
     public CoreProcessManager() : this(process => process.Kill(entireProcessTree: true),
-        (process, timeout) => process.WaitForExit(timeout)) { }
+        (process, timeout) => process.WaitForExit(timeout))
+    { }
 
     internal CoreProcessManager(Action<Process> killProcess, Func<Process, int, bool> waitForExit)
     {
@@ -80,28 +81,31 @@ public sealed class CoreProcessManager : IDisposable
         return sb.ToString();
     }
 
-    public void Start(AppSettings settings)
+    internal Task StartAsync(CoreLaunchSpec spec, CancellationToken token = default) => Task.Run(() =>
     {
         lock (_operationLock)
         {
+            token.ThrowIfCancellationRequested();
             ObjectDisposedException.ThrowIf(_disposed, this);
-            StartOwnedProcess(settings);
+            StartOwnedProcess(spec);
         }
-    }
+    }, token);
 
-    private void StartOwnedProcess(AppSettings settings)
+    internal Task StopAsync(TimeSpan? timeout = null) => Task.Run(() => Stop(timeout ?? TimeSpan.FromSeconds(3)));
+
+    private void StartOwnedProcess(CoreLaunchSpec spec)
     {
         DisposeExitedProcess();
 
         if (IsRunning)
         {
-            AppendLog($"{settings.CoreDisplayName} is already running.");
+            AppendLog($"{spec.Title} is already running.");
             return;
         }
 
-        var corePath = settings.ActiveCorePath;
-        var configPath = settings.ActiveConfigPath;
-        var coreName = settings.CoreDisplayName;
+        var corePath = spec.Profile.ExePath;
+        var configPath = spec.Profile.ConfigPath;
+        var coreName = spec.Title;
 
         if (!File.Exists(corePath))
         {
@@ -114,7 +118,7 @@ public sealed class CoreProcessManager : IDisposable
         }
 
         var configDirectory = Path.GetDirectoryName(configPath) ?? AppContext.BaseDirectory;
-        var arguments = settings.IsSingBox
+        var arguments = spec.Kind == CoreKind.SingBox
             ? $"run -D \"{configDirectory}\" -c \"{configPath}\""
             : $"-d \"{configDirectory}\" -f \"{configPath}\"";
 
@@ -135,15 +139,18 @@ public sealed class CoreProcessManager : IDisposable
             EnableRaisingEvents = true
         };
         var processId = 0;
-        process.OutputDataReceived += (_, e) => AppendLog(e.Data);
-        process.ErrorDataReceived += (_, e) => AppendLog(e.Data);
+        string? Redact(string? line) => string.IsNullOrEmpty(spec.Profile.Secret) ? line : line?.Replace(spec.Profile.Secret, "[redacted]", StringComparison.Ordinal);
+        process.OutputDataReceived += (_, e) => AppendLog(Redact(e.Data));
+        process.ErrorDataReceived += (_, e) => AppendLog(Redact(e.Data));
         process.Exited += (_, _) =>
         {
             if (processId == 0 || !ShouldSuppressExitedLog(processId))
             {
                 AppendLog($"{coreName} exited with code {GetExitCodeText(process)}.");
             }
-            StatusChanged?.Invoke(this, EventArgs.Empty);
+            bool current;
+            lock (_processLock) current = ReferenceEquals(_process, process);
+            if (current) StatusChanged?.Invoke(this, EventArgs.Empty);
         };
         lock (_processLock)
         {
@@ -240,6 +247,7 @@ public sealed class CoreProcessManager : IDisposable
             return;
         }
 
+        if (line.Length > 8192) line = line[..8192] + " [truncated]";
         var entry = $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
         lock (_logLinesLock)
         {
@@ -257,6 +265,7 @@ public sealed class CoreProcessManager : IDisposable
     {
         lock (_logEventLock)
         {
+            if (_pendingLogEvents.Length + entry.Length > 65536) _pendingLogEvents.Clear();
             _pendingLogEvents.Append(entry);
             _logEventTimer ??= new System.Threading.Timer(
                 _ => FlushPendingLogReceived(),
@@ -394,7 +403,8 @@ public sealed class CoreProcessManager : IDisposable
                         _logEventTimer?.Dispose();
                         _logEventTimer = null;
                     }
-                }),
+                }
+            ),
                 ("Exited core process", () => exitedProcess?.Dispose()));
         }
     }

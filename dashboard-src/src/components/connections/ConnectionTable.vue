@@ -235,7 +235,7 @@ import {
   getConnectionUpload,
 } from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
-import { showNotification } from '@/helper/notification'
+import { copyToClipboard } from '@/helper/clipboard'
 import { runManualRequest } from '@/helper/requestError'
 import {
   connectionFilter,
@@ -557,27 +557,6 @@ const columns: ColumnDef<Connection>[] = [
       getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser),
     cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser),
   },
-  {
-    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol),
-    id: CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol,
-    accessorFn: (original) =>
-      getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol),
-    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol),
-  },
-  {
-    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType),
-    id: CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType,
-    accessorFn: (original) =>
-      getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType),
-    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType),
-  },
-  {
-    header: () => t(CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound),
-    id: CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound,
-    accessorFn: (original) =>
-      getTableDisplayValue(original, CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound),
-    cell: highlightedCell(CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound),
-  },
 ]
 
 const grouping = useStorage<GroupingState>('config/table-grouping', [])
@@ -787,34 +766,6 @@ const handleMouseUp = () => {
 }
 
 // 复制功能
-const copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showNotification({
-      content: 'copySuccess',
-      type: 'alert-success',
-      timeout: 2000,
-    })
-  } catch {
-    // 降级处理
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    document.body.appendChild(textArea)
-    textArea.select()
-    try {
-      document.execCommand('copy')
-      showNotification({
-        content: 'copySuccess',
-        type: 'alert-success',
-        timeout: 2000,
-      })
-    } catch (error) {
-      console.error('复制失败:', error)
-    }
-    document.body.removeChild(textArea)
-  }
-}
-
 const handleCellRightClick = (
   event: MouseEvent,
   cell: { column: { id: string }; getValue: () => unknown },

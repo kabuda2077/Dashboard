@@ -11,6 +11,7 @@ import {
   logLevel,
   logTypeFilter,
   logs,
+  supportedLogLevels,
 } from '@/store/logs'
 import { logDisplayStyle, logRetentionLimit, logSearchHistory } from '@/store/settings'
 import {
@@ -29,7 +30,7 @@ import { computed, defineComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CtrlsBar from '../common/CtrlsBar.vue'
 import DialogWrapper from '../common/DialogWrapper.vue'
-import DropdownSelect from '../common/DropdownSelect.vue'
+import DropdownSelect from '../common/SelectInput.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({
@@ -57,12 +58,7 @@ export default defineComponent({
 
     watch(logFilter, insertLogSearchHistory)
 
-    const logLevels = computed(() => {
-      if (isSingBoxCore.value) {
-        return Object.values(LOG_LEVEL)
-      }
-      return [LOG_LEVEL.Debug, LOG_LEVEL.Info, LOG_LEVEL.Warning, LOG_LEVEL.Error, LOG_LEVEL.Silent]
-    })
+    const logLevels = supportedLogLevels
 
     const logFilterOptions = computed(() => {
       const types: string[] = []
@@ -73,7 +69,10 @@ export default defineComponent({
         if (isSingBoxCore.value) {
           const startIndex = log.payload.startsWith('[') ? log.payload.indexOf(']') + 2 : 0
           const endIndex = log.payload.indexOf(':', startIndex)
-          type = endIndex === -1 ? log.payload.slice(startIndex) : log.payload.slice(startIndex, endIndex + 1)
+          type =
+            endIndex === -1
+              ? log.payload.slice(startIndex)
+              : log.payload.slice(startIndex, endIndex + 1)
         } else {
           const index = log.payload.indexOf(' ')
           type = index === -1 ? log.payload : log.payload.slice(0, index)

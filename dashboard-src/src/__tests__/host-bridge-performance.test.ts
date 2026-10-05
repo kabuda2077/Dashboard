@@ -1,86 +1,41 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
+import { makeHostSnapshot } from './hostFixture'
 
-describe('host bridge incremental messages', () => {
-  it('merges runtime state without replacing the full host state', async () => {
-    const { applyHostRuntimeState, applyHostState, hostState } = await import(
-      '@/composables/hostBridge'
-    )
-
-    applyHostState({
-      coreType: 'mihomo',
-      apiUrl: 'http://127.0.0.1:9090',
-      logText: 'existing',
-      appVersion: '1.2.0',
-      latestAppVersion: '1.3.0',
-      appUpdateAvailable: true,
-    })
-    applyHostRuntimeState({
-      isRunning: true,
-      processId: 42,
-      coreTitle: 'Mihomo Core',
-      coreVersion: 'v1.2.3',
-      canUpgradeCore: true,
-      isCoreUpgrading: false,
-      isCoreSwitching: false,
-      isWindowMaximized: true,
-    })
-
-    expect(hostState.value).toMatchObject({
-      coreType: 'mihomo',
-      apiUrl: 'http://127.0.0.1:9090',
-      logText: 'existing',
-      isRunning: true,
-      processId: 42,
-      coreVersion: 'v1.2.3',
-      appVersion: '1.2.0',
-      latestAppVersion: '1.3.0',
-      appUpdateAvailable: true,
-    })
+beforeEach(() => vi.resetModules())
+it('applies runtime patches without replacing profiles and clears nullable PID', async () => {
+  const bridge = await import('@/composables/hostBridge')
+  bridge.applyHostState(makeHostSnapshot({ appVersion: '2.0.0', logText: 'existing' }))
+  const profile = bridge.hostState.value.profiles!['mihomo']
+  bridge.applyHostMessage({
+    protocolVersion: 2,
+    type: 'runtimeState',
+    runtimeState: { processId: null, isRunning: false, runtimeEpoch: 2 },
   })
-
-  it('publishes an asynchronously arriving host version through reactive state', async () => {
-    const { applyHostRuntimeState, hostState } = await import('@/composables/hostBridge')
-
-    applyHostRuntimeState({ coreVersion: 'sing-box 1.2.3' })
-
-    expect(hostState.value.coreVersion).toBe('sing-box 1.2.3')
+  expect(bridge.hostState.value).toMatchObject({
+    processId: null,
+    isRunning: false,
+    runtimeEpoch: 2,
+    appVersion: '2.0.0',
+    logText: 'existing',
   })
-
-  it('updates icon cache independently from full state', async () => {
-    const { applyHostIconCache, hostIconCache } = await import('@/composables/hostBridge')
-
-    applyHostIconCache({
-      'https://example.test/icon.svg': 'http://127.0.0.1/icon.svg',
-    })
-
-    expect(hostIconCache.value).toEqual({
-      'https://example.test/icon.svg': 'http://127.0.0.1/icon.svg',
-    })
-  })
+  expect(bridge.hostState.value.profiles!['mihomo']).toBe(profile)
 })
-
-describe('router lazy loading', () => {
-  it('keeps secondary pages lazy while core pages stay eager', async () => {
-    const { default: router } = await import('@/router')
-    const routes = new Map(router.getRoutes().map((route) => [route.name, route]))
-    const homeRoute = router.getRoutes().find((route) => route.path === '/')
-
-    expect(typeof homeRoute?.components?.default, 'homepage').toBe('object')
-
-    expect(typeof routes.get('core')?.components?.default, 'core').toBe('object')
-
-    for (const routeName of ['proxies', 'overview', 'connections', 'logs', 'rules', 'setup']) {
-      expect(typeof routes.get(routeName)?.components?.default, routeName).toBe('function')
-    }
-
-    const { renderRoutes } = await import('@/helper')
-    expect(renderRoutes.value).toEqual([
-      'core',
-      'proxies',
-      'connections',
-      'overview',
-      'logs',
-      'rules',
-    ])
+it('late metadata changes do not invent a new connection epoch', async () => {
+  const bridge = await import('@/composables/hostBridge')
+  bridge.applyHostState(makeHostSnapshot({ coreType: 'sing-box', runtimeEpoch: 7 }))
+  bridge.applyHostRuntimeState({ coreVersion: 'sing-box 1.2.3' })
+  expect(bridge.hostState.value.coreVersion).toBe('sing-box 1.2.3')
+  expect(bridge.hostSessionGeneration.value).toBe(7)
+})
+it('updates icons and logs through separate incremental payloads', async () => {
+  const bridge = await import('@/composables/hostBridge')
+  bridge.applyHostState(makeHostSnapshot({ logText: 'first\n' }))
+  bridge.applyHostMessage({
+    protocolVersion: 2,
+    type: 'iconCacheUpdated',
+    iconCacheMap: { remote: 'local' },
   })
+  bridge.applyHostMessage({ protocolVersion: 2, type: 'logAppend', logText: 'second\n' })
+  expect(bridge.hostIconCache.value).toEqual({ remote: 'local' })
+  expect(bridge.hostState.value.logText).toBe('first\nsecond\n')
 })

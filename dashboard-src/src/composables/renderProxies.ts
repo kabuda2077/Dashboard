@@ -50,24 +50,23 @@ export const groupProxiesByProviderName = (proxies: string[]): ProxiesProviderSe
 }
 
 export function useRenderProxyList(proxies: ComputedRef<string[]>, groupName?: string) {
-  const renderProxies = computed(() => getRenderProxies(proxies.value, groupName))
-
+  const latencies = computed<LatencyMap>(
+    () => new Map(proxies.value.map((name) => [name, getLatencyByName(name, groupName)])),
+  )
+  const renderProxies = computed(() =>
+    sortProxies(
+      filterProxies(proxies.value, groupName, latencies.value),
+      groupName,
+      latencies.value,
+    ),
+  )
   const proxiesCount = computed(() => {
     const available = renderProxies.value.filter(
-      (proxy) => getLatencyByName(proxy, groupName) !== NOT_CONNECTED,
+      (name) => latencies.value.get(name) !== NOT_CONNECTED,
     ).length
     return `${available}/${proxies.value.length}`
   })
-
   return { renderProxies, proxiesCount }
-}
-
-const getRenderProxies = (proxies: string[], groupName: string | undefined) => {
-  const latencyMap: LatencyMap = new Map(
-    proxies.map((name) => [name, getLatencyByName(name, groupName)]),
-  )
-  const filtered = filterProxies(proxies, groupName, latencyMap)
-  return sortProxies(filtered, groupName, latencyMap)
 }
 
 const filterProxies = (

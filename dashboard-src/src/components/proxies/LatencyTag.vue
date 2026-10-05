@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div
     :class="[
       'latency-tag bg-base-100 h-5 w-10 rounded-xl text-xs select-none md:hover:shadow-sm',

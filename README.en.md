@@ -2,165 +2,89 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-A Windows desktop launcher and dashboard for mihomo and sing-box, based on [zashboard](https://github.com/Zephyruso/zashboard).
+A Windows desktop proxy dashboard based on [zashboard](https://github.com/Zephyruso/zashboard). WinForms and WebView2 host the local UI; C# owns core processes, tray/window behavior, autostart, credentials and upgrades. Panel data uses the Clash-compatible API.
 
-Dashboard bundles a local zashboard UI in a WinForms + WebView2 desktop shell. The desktop host manages the proxy core process, tray behavior, startup settings, window controls, and local settings.
+## Version 2 format
 
-This project keeps zashboard's main dashboard experience and adds a Windows desktop shell, core start/stop/switch controls, tray and window controls, portable local settings, mihomo / sing-box Clash-compatible API integration, and a few UI adjustments for desktop use.
+**2.0 is a breaking update. It uses schemaVersion=2 settings.json and `resources/webview-data-v2/`. There is no migration of old settings, history, backgrounds, plaintext secrets or startup registrations.**
 
-## Download
+Extract into a new directory and configure the core paths and API again. Old or corrupt settings produce an explicit error, not an automatic overwrite. Existing v2 documents must retain all serialized root/profile/desktop-option fields; missing fields are not silently filled with defaults. Preserve the old directory and do not delete your only copy.
 
-Download the latest ZIP from [GitHub Releases](https://github.com/kabuda2077/Dashboard/releases).
+Data created by 2.0 survives same-format view recreation, application restarts and normal replacement updates. Secrets are protected with current-user Windows DPAPI. If a different user cannot decrypt a credential, explicitly replace it in Core, including when the intended replacement is empty. Ordinary saves retain unreadable ciphertext.
 
-The portable package contains Dashboard app files only. You still need:
+## Requirements and setup
 
-- Windows 10/11
-- [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
-- A configured `mihomo` or `sing-box` executable
-
-## Quick Start
-
-1. Extract the ZIP to a folder such as:
+- Windows x64, [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0).
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+- Your own mihomo or sing-box executable and configuration. sing-box must include Clash API support.
 
 ```text
 Dashboard/
   Dashboard.exe
-  mihomo/
-    mihomo.exe
-    config.yaml
-  sing-box/
-    sing-box.exe
-    config.json
+  mihomo/mihomo.exe
+  mihomo/config.yaml
+  sing-box/sing-box.exe
+  sing-box/config.json
 ```
 
-2. Open `Dashboard.exe`, then choose your core executable and config file on the Core page.
-3. Make sure the selected core exposes a Clash-compatible API, then click Start.
+Select a profile in Core, choose its executable/configuration and enter its API address and Secret. File selection edits the draft without saving it. Desktop option changes do not commit unrelated core drafts. UAC is requested when starting/restarting a core requires elevation.
 
-Default paths are relative to the Dashboard folder:
+Enable mihomo `external-controller`, or sing-box `experimental.clash_api.external_controller`. A typical URL is `http://127.0.0.1:9090`. Process existence and API readiness are separate states; correct the address/credential and retry if necessary.
 
-```text
-.\mihomo\mihomo.exe
-.\mihomo\config.yaml
-.\sing-box\sing-box.exe
-.\sing-box\config.json
-```
+## Capabilities and limits
 
-## Updating Dashboard
+- One active core and two independent profiles, start/stop/restart/switch, PID and output logs.
+- Embedded Core settings, proxies, connections, overview, rules, logs, themes, labels, latency testing, backgrounds, preference import/export and current-format history.
+- Native window actions and tray. Lightweight mode releases the view after 60 seconds hidden; reopening cancels disposal.
+- Preferences, history and the full image read/decode/commit workflow are awaited before view suspension/disposal. Unconfirmed exit saves produce feedback. Elevation is requested only after flush/exit consent; a cancelled or failed replacement keeps the old host alive.
+- Current-user Task Scheduler registration `\Dashboard\Autostart`, approximately five seconds after logon. Writes/deletes verify the user, executable and working directory; foreign or unverifiable same-name tasks are not overwritten. No legacy registry startup migration.
+- mihomo upgrades use the running core's `/upgrade`. Built-in sing-box upgrades select only reF1nd Windows amd64v3 builds. Users who want to keep official/other builds should update them manually.
+- Published SHA256 digests are verified. Missing digests require explicit confirmation before candidate execution/replacement. Download, extraction, validation and atomic replacement have defined limits and recovery.
+- Dashboard updates check Releases and open the download page; they do not replace Dashboard.exe automatically.
+- No desktop native sing-box API, Tools or Terminal. Browser Clash preview remains available without native privileges.
+- The UI uses `http://127.0.0.1:33291/`; port conflicts are explicit. Secure virtual-host mapping blocks supported remote plaintext APIs, so this version does not disable browser security to work around it.
 
-Dashboard checks GitHub Releases automatically after startup. You can also check manually from the Core page. When a new version is available, use the Release button to open its download page.
-
-To update the portable build:
-
-1. Exit Dashboard completely.
-2. Extract the new ZIP, copy all files into the existing Dashboard folder, and confirm replacement.
-3. Start `Dashboard.exe` again.
-
-Do not delete the existing Dashboard folder first. Release packages do not contain `settings.json`, `mihomo\`, `sing-box\`, or runtime logs, so replacing the packaged files preserves settings, cores, and configuration. Bundled frontend updates keep the WebView2 profile—including preferences, tags, and connection history—and invalidate only rebuildable HTTP caches, Cache Storage, and old service-worker registrations. Versioned frontend assets use hashed filenames, so no manual profile or cache deletion is required. The desktop UI keeps `http://127.0.0.1:33291/` as its fixed data origin; if another process occupies that port, Dashboard reports the conflict instead of switching to a random port and hiding existing origin-scoped data.
-
-## Core Configuration
-
-For `mihomo`, enable `external-controller` in `config.yaml`:
-
-```yaml
-external-controller: 127.0.0.1:9090
-secret: ""
-```
-
-For `sing-box`, enable its Clash-compatible API. Dashboard uses the Clash API path for overview, proxies, rules, connections, logs, config reload, and related pages. sing-box native API / Tools integration is intentionally not included.
-
-The reF1nd [`sing-box-releases`](https://github.com/reF1nd/sing-box-releases) build is recommended. Official sing-box GitHub Release builds that include the Clash API can also be used. Self-compiled or stripped-down third-party builds must be built with the `with_clash_api` tag. Dashboard's built-in sing-box updater only supports reF1nd Windows amd64v3 builds: if you use the official build or another fork, update it manually, because using the in-app updater will replace it with a reF1nd build.
-
-Example `sing-box` config fragment:
-
-```json
-{
-  "experimental": {
-    "clash_api": {
-      "external_controller": "127.0.0.1:9090",
-      "secret": ""
-    }
-  }
-}
-```
-
-## Features
-
-- Bundled zashboard UI with desktop-specific integration.
-- Single active core model: choose either `mihomo` or `sing-box`.
-- Independent core path, config path, API URL, and Secret for each core type.
-- Start, stop, restart, switch, and inspect the active core from the Core page.
-- Show core PID, running state, stdout/stderr logs, and recent active downloads.
-- Upgrade `mihomo` from MetaCubeX releases.
-- Built-in sing-box upgrades only support the reF1nd `sing-box-releases` Windows amd64v3 build.
-- Use Clash-compatible API as the main UI channel for both `mihomo` and `sing-box`.
-- Tray menu for showing the window, restarting/stopping the core, and exiting.
-- Minimize-to-tray and lightweight mode for WebView lifecycle control.
-- Check for Dashboard updates automatically after startup or manually from the Core page, then open GitHub Releases.
-- Per-user autostart through the `\Dashboard\Autostart` scheduled task, delayed 5 seconds after logon and run at the highest available privilege.
-- Settings stored next to the portable app in `settings.json`.
-- New saves contain only Windows DPAPI ciphertext for Secrets. Legacy plaintext is migrated after encryption round-trip verification; failures preserve the original settings file and report an error.
-- Desktop passwords are used only in memory; browser storage retains password-free endpoint identity. Known old password fields are cleaned during migration. This does not erase historical disk fragments or hide the credentials needed in memory for API authentication.
-
-## FAQ
-
-**Dashboard does not start and Windows says .NET is missing.**  
-Install the .NET 9 Desktop Runtime, then reopen Dashboard.
-
-**Dashboard opens a WebView2 Runtime prompt.**  
-Install Microsoft Edge WebView2 Runtime from the prompt link, then reopen Dashboard.
-
-**The core starts but Dashboard cannot connect to the API.**  
-Check that the API address on the Core page matches your core config. For most users this is `http://127.0.0.1:9090`. If your config has a non-empty `secret`, enter the same value on the Core page.
-
-**Secret cannot be decrypted after moving to another Windows account or computer.**
-
-DPAPI credentials are bound to the Windows user. Re-enter the Secret in Core, explicitly confirm replacement, and save. An empty Secret is allowed when explicitly confirmed. Ordinary settings saves preserve unreadable ciphertext. Corrupt settings or failed migrations do not trigger an automatic reset; retain the original file and repair the file or access permissions before retrying.
-
-**TUN mode fails or asks for administrator permission.**  
-TUN usually needs administrator permission on Windows. Start Dashboard as administrator or allow the UAC relaunch prompt.
-
-**Why does enabling autostart show UAC once?**
-Dashboard creates and verifies a highest-privilege scheduled task. Later logons do not prompt again: after about 5 seconds only the tray host, core manager, and local server start; WebView2 is created only when the window is opened.
-
-**Do I need to configure autostart again after moving the portable folder?**
-No. The next manual launch detects a stale task path and requests a repair. Legacy registry startup entries are kept until task verification succeeds, and disabling autostart removes both the scheduled task and legacy entries.
-
-**Can I use only sing-box native API?**  
-No. This desktop build uses sing-box's Clash-compatible API for the main dashboard pages.
-
-**Must I use the reF1nd sing-box build?**
-
-No. Official GitHub Release builds that include the Clash API can also work, but this project is primarily adapted and tested with reF1nd builds, and the built-in updater only downloads reF1nd Windows amd64v3. Update official builds, other forks, and installations on CPUs without amd64v3 support manually.
-
-**Where are logs stored, and how can I temporarily enable detailed diagnostics?**
-
-Basic logs are stored under `resources\logs` next to the app. Release builds record only key operations, errors, and WebView cold-restore summaries by default. Start the app with `Dashboard.exe --diagnostic-log` to additionally record window lifecycle, tray timing, frontend startup, and first WebSocket messages for that session. Debug builds enable detailed diagnostics by default. Each log rotates after 2 MB, with the latest 3 archives retained.
+For same-format updates, fully exit and overlay application files; do not delete the directory. Packages exclude settings, profile data, cores and logs. Logs are under `resources/logs`; `--diagnostic-log` enables detailed diagnostics. Both the queue and rotated files are bounded.
 
 ## Development
 
-Development requires .NET 9 SDK, Node.js 24, and pnpm 11.20.0.
+Requires **PowerShell 7** (`pwsh`), .NET 9 SDK, Node.js **24**, pnpm **11.20.0**. Build and test scripts support PowerShell 7 only. The packaged Dashboard does not require PowerShell. Choose one application entry point for your goal; do not run a full Check immediately before Release:
 
 ```powershell
-pnpm --dir dashboard-src type-check
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Configuration Release -Runtime win-x64
-powershell -ExecutionPolicy Bypass -File .\tools\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
+# Prepare dependencies, build, check types, run .NET/wire/frontend tests
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1
+
+# Verify this invocation's inputs, publish, inspect resources and create ZIP
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\create-release.ps1
 ```
 
-Before publishing a new version, update `Version` and `InformationalVersion` in `Dashboard.csproj` and keep them aligned with the GitHub Release tag.
+`artifacts/releases/` contains deliverable ZIPs only. Input manifests and verification summaries go to `artifacts/verification/<package-name>/`; do not install these records. Reuse the same ZIP name for rebuilds and place historical candidates in `artifacts/archive/`.
 
-Main directories:
+During edits, run relevant tests and types; add targeted WebView checks for UI changes. Once changes settle, run Release once. Run `pwsh -NoProfile -File .\tools\check-maintenance.ps1` for tooling/document changes. CI runs maintenance checks and the regular Check; application builds do not repeat maintenance checks.
 
-- `src/`: Windows desktop host.
-- `dashboard-src/`: zashboard-based frontend source.
-- `resources/dashboard/`: built frontend assets, generated by `tools/build-zashboard.ps1` and not tracked in git. A fresh clone must build the frontend before the .NET build, otherwise the output has no UI. `tools/build.ps1` and `tools/check.ps1` already run in that order.
-- [docs/architecture.md](docs/architecture.md): current ownership, startup, session, and persistence boundaries (Chinese).
-- [docs/style.md](docs/style.md): local UI rules.
-- [docs/upstream-merge.md](docs/upstream-merge.md): the single workflow for following upstream zashboard.
-- [Validation record](docs/validation.md): final implementation summary and artifact evidence; [manual acceptance](docs/manual-acceptance.md) tracks pending checks, and [performance](docs/performance.md) records measurements and optimization decisions.
+Use `-IncludeWebViewIntegration` for actual WebView/production-window tests. The real 60-second idle-disposal test requires the additional `-IncludeSlowIntegration` switch (which requires WebView). Explicit isolated real-core testing:
 
-## License
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\PrepareValidationCores.ps1
+$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/validation-cores).Path
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
+```
 
-This project is released under the MIT License.
+For final delivery, pass the same integration switches directly to `create-release.ps1`; add `-IncludeSlowIntegration` when validating the full lifecycle. Do not first repeat Check.
 
-The embedded frontend is based on zashboard, which is also licensed under the MIT License. See `dashboard-src/LICENSE` for the upstream copyright notice.
+The preparation script downloads digest-verified test cores only. Tests use temporary data and configurations without TUN or proxy listeners, and never take over user core processes.
+
+Add `-IncludePerformanceIntegration` to the complete check above to run a fixed workload in a separate testhost with real WebView (three rounds, 100/1,000/10,000 synthetic connections). The report is `.tmp/performance-v2/desktop.json`; totals include the harness and are not physical-display FPS or pure Dashboard.exe memory. Local calculation benchmarks run from `dashboard-src/` with `node.exe node_modules/vitest/vitest.mjs run --config bench/vitest.config.ts`.
+
+`tools/internal/` contains reusable implementation steps, not additional manual workflows. UI files are generated from `dashboard-src/dist/` into untracked `resources/dashboard/`. .NET rejects missing UI resources. Frontend wire tests consume `.tmp/bridge-fixtures-v2/` generated by current .NET tests; stale fixtures are not validation.
+
+A successful check or ZIP does not imply all manual Windows scenarios passed. Keep Version, InformationalVersion and the eventual Release tag aligned.
+
+## Maintenance records
+
+- [Maintenance](docs/maintenance.md): current configuration contracts, validation/artifact rules and remaining acceptance boundaries, not an implementation diary (Chinese).
+- [Upstream guide](docs/upstream-merge.md): the sole upstream workflow; preserve product guarantees while allowing better implementations.
+- [UI rules](docs/style.md): visual principles and current defaults.
+- [Upstream baseline](docs/upstream/v3.26.0.md): exact revision and retained decisions for the next merge (Chinese).
+
+MIT License. Upstream frontend copyright is retained in `dashboard-src/LICENSE`.

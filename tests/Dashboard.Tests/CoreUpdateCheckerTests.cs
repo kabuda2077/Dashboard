@@ -5,6 +5,13 @@ namespace Dashboard.Tests;
 public sealed class CoreUpdateCheckerTests
 {
     [Theory]
+    [InlineData("Mihomo Meta alpha-smart-ab12 windows amd64 with go1.26.8", "alpha-smart-ab12")]
+    [InlineData("Mihomo Meta v1.19.31 windows amd64 with go1.26.8", "v1.19.31")]
+    [InlineData("unknown output with go1.26.8", "")]
+    public void DisplayVersionDoesNotMistakeTheGoVersionForTheCore(string output, string expected) =>
+        Assert.Equal(expected, CoreUpdateChecker.DisplayVersion(output, CoreKind.Mihomo));
+
+    [Theory]
     [InlineData("v1.19.28", true)]
     [InlineData("v1.19.29", false)]
     public async Task ComparesMihomoStableRelease(string installedVersion, bool expected)
@@ -99,7 +106,7 @@ public sealed class CoreUpdateCheckerTests
         try
         {
             using var cancellation = new CancellationTokenSource();
-            var read = CoreUpdateChecker.ReadVersionProcessAsync(process, cancellation.Token);
+            var read = CoreVersionReader.ReadProcessAsync(process, cancellation.Token);
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(5)));
             Assert.True(process.HasExited);

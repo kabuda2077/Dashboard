@@ -1,8 +1,5 @@
 <template>
-  <SettingItem
-    :setting-key="PROXIES_ITEM_KEYS.groupTestUrls"
-    :when="independentLatencyTest"
-  >
+  <SettingItem :when="independentLatencyTest">
     <div class="setting-item-label">
       {{ $t('groupTestUrls') }}
       <template v-if="groupTestUrls.length"> ({{ groupTestUrls.length }}) </template>
@@ -84,7 +81,6 @@
 
 <script setup lang="ts">
 import SettingItem from '@/components/settings/SettingItem.vue'
-import { PROXIES_ITEM_KEYS } from '@/config/settingsItems'
 import { useTooltip } from '@/helper/tooltip'
 import { proxyGroupList } from '@/assembly/proxies'
 import { groupTestUrls, independentLatencyTest } from '@/store/settings'

@@ -17,6 +17,7 @@ import type { Connection } from '@/types'
 import ipaddr from 'ipaddr.js'
 import { shallowRef } from 'vue'
 import { activeBackend } from './setup'
+import { registerPersistenceFlusher } from '@/helper/persistenceBarrier'
 
 const uuid = () => activeBackend.value?.uuid || ''
 const allHistoryTypes: ConnectionHistoryType[] = [
@@ -157,6 +158,14 @@ const flushCurrentSession = () => {
     }
   })
 }
+
+registerPersistenceFlusher(async () => {
+  await flushCurrentSession()
+  await persistenceQueue
+  // Initialization or an incoming batch may have completed while awaiting disk.
+  if (dirty) await flushCurrentSession()
+  if (dirty) throw new Error('Connection history has not been saved. Retry before closing.')
+})
 
 export const aggregateConnections = (
   connections: Connection[],

@@ -1,272 +1,62 @@
-# UI Style Guide
+# Dashboard UI rules
 
-This project embeds a customized zashboard UI inside a Windows desktop shell. UI changes should preserve the existing visual language and reuse shared styles before adding new one-off classes.
+The objective is a coherent Windows dashboard using zashboard's visual language, not permanent preservation of today's component names or layout algorithm. Product decisions and upstream workflow live in [upstream-merge.md](upstream-merge.md); maintenance and remaining acceptance boundaries live in [maintenance.md](maintenance.md).
 
-## Core Principle
+## Stable principles
 
-- Reuse existing tokens, utilities, components, and spacing patterns first.
-- Add a new visual style only when an existing pattern cannot express the intended UI.
-- When adding a new style, document why it is needed and where it should be reused.
-- Prefer zashboard's existing component patterns over page-local custom styling.
-- Keep desktop shell visuals and frontend visuals in the same DOM/CSS system whenever possible. C# should provide window APIs; frontend should own visual layout.
-- When following upstream zashboard UI changes, keep the upstream behavior where possible but express the final visuals through this guide's existing tokens, utilities, and component patterns.
-- Desktop-specific CSS utilities should stay centralized in `dashboard-src/src/assets/styles/dashboard-desktop.css`.
+- Reuse existing theme tokens, controls and surface patterns before inventing a new local family.
+- The frontend owns visible layout and control appearance. Native code provides window/process/system operations.
+- UI must remain usable with keyboard focus, long labels, light/dark themes, normal/maximized windows and supported DPI.
+- Text truncates inside its allocated area, never over action buttons. Loading, disabled and failure states must be distinguishable.
+- User drafts are not overwritten by unrelated runtime updates. Destructive actions and abandoning unsaved data require clear feedback.
+- Use ordinary text for external/host error messages. Rich text needs an explicit sanitized path.
+- Prefer natural Grid/Flex/sticky layout to repeated measuring loops. Use ResizeObserver only where content requires measurement.
+- Better upstream controls, rendering and accessibility can replace local implementations when these principles and current product behavior remain satisfied.
 
-## Layout
+## Current defaults, not immutable implementation
 
-- Main app layout is a left sidebar plus right content area.
-- Desktop sidebar widths:
-  - Expanded: `w-64`
-  - Collapsed: `w-18`
-- Sidebar width transitions use `duration-320 ease-[cubic-bezier(0.34,0.1,0.2,1)]`.
-- Main content uses page padding of `p-3` and card/grid gaps of `gap-3`.
-- Scrollable card pages that sit beside the native window scrollbar should keep the shared right-edge rhythm, usually `p-3 md:pr-2`; Overview should not use a different horizontal content offset from Proxies-style card pages.
-- Two-column settings/dashboard layouts should use `lg:gap-8` by default.
-- Wide content containers should usually use `mx-auto w-full max-w-7xl`.
-- Avoid nested cards. Use cards for repeated items, modals, and framed tools only.
+- Sidebar expanded 16rem and collapsed 4.5rem, a restrained 320ms transition. A shared `--sidebar-width` expresses the content/top-bar relationship.
+- Typical page padding/gaps are `p-3` / `gap-3`. Wide settings containers use max-w-7xl.
+- Core keeps profile controls/output together, followed by backend controls and folded general settings. The runtime toolbar spans the profile column at wide widths, using the same centered content geometry and scrollbar space. The status lamp follows v1.2.2's optical alignment: its 12px body is inset 2px from the profile card's left edge, the status box is inset 30px (16px clear gap), and its 4px glow uses the state color at 30% opacity. Center the lamp vertically on the status box even when action buttons wrap. It has an external status lamp, a shrinkable status box, then three fixed buttons in Switch, Start, Stop order. Both Start and Stop remain visible with the unavailable action disabled; no profile editor selector belongs in this row. Native window controls remain at the viewport's top right with reserved space; scrolling must not hide or overlap either control group.
+- Core profile/output and embedded backend/downloads share column widths, outer padding and column gap. Embedded children must not add another outer inset. At sufficient actual content width, both sections use two columns; otherwise both stack.
+- Core profile rows use compact vertical padding (6px per side with 32px inputs), keeping single-line rows approximately the same 44px height as desktop options, allowing the divider's 1px difference. The profile card to desktop-options heading gap is explicitly 16px, not conflicting utility margins. Wrapped rows grow naturally.
+- Profile field labels, inputs and file/action buttons share a row when space permits, with a common label column and shrinkable inputs. Narrow layouts put labels above the fields. Long paths/translations must not clip buttons or create horizontal page overflow.
+- Output has a complete card surface and an inner read-only log area. In two columns its outer edges align with the profile/options column. Appending logs scrolls inside the area without growing the page or changing the card height. Express alignment through layout rather than fixed-duration RAF loops.
+- Settings use one column below 1000px of actual available content and two columns above it. Changing the measuring/rendering technique is allowed; do not restore historical arbitrary-hidden-item metadata as an invisible compatibility requirement.
+- General top controls are approximately 36px; Core compact actions currently use 34px height/72px width. Long translations must remain usable; these sizes can evolve with demonstrated need.
+- The Core configuration heading does not repeat the active core name. Save belongs beside Secret, is disabled when unchanged, and does not occupy a permanent footer row. Dirty/conflict/restart notices remain visible when applicable.
+- Runtime text displays the core name and PID only, without repeating running/readiness labels. The lamp is green only while the core is running and its API is ready; otherwise it is yellow. Its accessible label and the lamp/status-box native tooltip expose detailed running/connection status. The log card is titled “内核日志” / “Core logs”. Compact runtime toolbars hide PID below 560px of available toolbar content; the tooltip preserves it. Do not add a JavaScript measurement loop for this.
+- Reload/discard confirmation invoked from a native Core modal stays inside that same modal, with cancellation and stale-context protection; an external div dialog is not an equivalent replacement.
+- Lazy settings must finish initial async rendering before measuring columns or honoring a settings deep link. Collapsing settings or choosing another target cancels the pending navigation; do not repeatedly reposition on a timer.
+- Normal Core configuration follows the active core. Switching opens a dialog that identifies and edits the target's independent draft; only confirmation saves/changes runtime and cancellation preserves both drafts. Keep selection and path/API editing out of the runtime toolbar.
+- Fresh current-format profiles show a full first-time setup dialog with mihomo/sing-box choices, executable/config/API/Secret fields, file selection and core-specific API help. Start runs the selected draft through the same command path. API readiness and a successful completeSetup ACK are required before dismissing the guide; failures keep it visible and explain the result. Do not replace this flow with a banner.
+- Current Core maintenance order and network latency presentation are product defaults documented in the upstream guide, not checks against literal source strings.
+- The initial Core page must not eagerly load all charts/settings previews through a hidden static import. Render optional previews only when needed.
 
-## Colors
+## Shared tokens and surfaces
 
-Use DaisyUI theme tokens instead of raw colors.
+Use DaisyUI semantic tokens: base-200 page/sidebar; base-100 main surfaces; base-200/70 secondary read-only controls; base-content text; base-content/60 secondary text; base-content/40 weak metadata; primary actions; success running state; warning attention state.
 
-- Prefer a small fixed set of semantic surface/text tokens.
-- Do not introduce a new gray/neutral opacity token unless the current set cannot express the difference.
-- Page background: `bg-base-200`
-- Sidebar background: `bg-base-150`
-- Primary surfaces: `bg-base-100`
-- Secondary/control surfaces: `bg-base-200/70`
-- Control hover surfaces: `hover:bg-base-200/80`
-- Subtle sidebar/card panels: `bg-base-100/70`
-- Main text: `text-base-content`
-- Secondary/read-only text: `text-base-content/60`
-- Very weak helper text or separators: `text-base-content/40`
-- Subtle borders/dividers: `border-base-border`
-- Top bar borders: `border-base-content/20`
-- Brand/action emphasis: `primary`
-- Running/status success: `success`
-- Stopped/warning status: `warning`
+`base-border` is the low-emphasis divider token; base-content/20 is reserved for clearer control outlines. Reuse existing opacity levels rather than inventing new nearly-identical grays.
 
-Recommended meaning of each text level:
+`base-container`, `settings-grid`, `setting-item`, `settings-section-label` and DaisyUI controls are the shared vocabulary. These names can change during an intentional cleanup; preserve the resulting consistency and update consumers together.
 
-- `base-content`: primary labels, headings, actionable text.
-- `base-content/60`: secondary labels, status text, section hints, and long read-only content.
-- `base-content/40`: separators, arrows, or very lightweight metadata.
+Avoid unnecessary nested cards. Respect virtual-row measurement rather than wrapping every row in a new surface. A cached/paused chart must not repeatedly redraw just because it remains mounted.
 
-Avoid adding new text opacities like `/50`, `/70`, or `/80` unless there is a specific visual mismatch that the existing levels cannot solve.
+Current shared CSS is in `assets/styles/components/`; `dashboard-desktop.css` is the last override import for real desktop exceptions. This is today's ownership arrangement, not permission to put every new rule in overrides. If replaced, verify the resulting cascade rather than keeping an unused file to satisfy a string check.
 
-`base-border` is defined as an 8% mix of `base-content` in `dashboard-src/src/assets/styles/theme/tokens.css`. Keep it for low-emphasis dividers. Use `base-content/20` only where the border intentionally needs more presence, especially top bar controls.
+## Controls and focus
 
-Border policy:
+- Choose one suitable shared select/menu implementation when its interactions are equivalent. Do not preserve duplicate controls merely because one is local.
+- Menus close appropriately on selection, outside click and Escape; focus remains visible and keyboard access works.
+- Read-only TUN follows the disabled control appearance and reports its source. Do not make unknown state look like a confirmed false value.
+- Keep native window buttons accessible, reserve their space and exclude ordinary interactive controls from draggable regions.
+- Existing mobile/browser interactions remain deliberate: horizontal tables, text inputs and vertical scrolling should not be hijacked by page swipes.
 
-- `base-border`: default divider for cards, lists, sidebar panels, and settings rows.
-- `base-content/20`: top bar inputs/selects/tabs and any control that needs a clearer shell.
-- Do not mix both border styles inside the same repeated component unless there is a deliberate hierarchy.
+## Verification
 
-## Surfaces
+Use real component interaction tests and a small real WebView visual matrix. At minimum inspect Core/Settings, a proxy list, connection/log/rule tables, overview charts, expanded/collapsed sidebar, light/dark and high DPI for changes affecting those areas.
 
-Shared surfaces are split by ownership: project containers and settings live in `dashboard-src/src/assets/styles/components/app.css`, while DaisyUI component overrides live in `dashboard-src/src/assets/styles/components/daisyui.css`.
+CoreLayoutTests uses the production WebView to check actual toolbar/card edges, column widths, field placement, output surfaces, internal scroll and window-control separation. It exercises Chinese/light and English/dark at several widths and sidebar states, including a test-only window below the production desktop minimum. Screenshots in `.tmp/core-layout/` support visual inspection; they do not prove physical DPI, touch or multiple-monitor acceptance.
 
-- `base-container`: `bg-base-100 overflow-hidden rounded-xl shadow-xs`
-- `card`: `bg-base-100 rounded-xl shadow-xs`
-- `collapse`: `bg-base-100 rounded-xl shadow-xs`
-- `settings-grid`: `bg-base-100 grid grid-cols-1 overflow-hidden rounded-xl`
-- `badge`: `bg-base-200/80`
-
-For most new settings or dashboard panels, prefer `settings-grid`, `base-container`, or existing card components rather than creating custom wrappers.
-
-Connections, Logs, and Rules card views use one `base-container` per repeated row with `gap-3` between rows. In virtual lists, that 12px gap must be implemented as bottom padding on the measured row so the virtualizer includes it in row height. Do not restore the old shared-container `.scroller-item` divider pattern for these views.
-
-Use only two broad panel families for custom desktop/Core UI:
-
-- Content/settings panels: `settings-grid`, `setting-item`, and `settings-section-label`.
-- Information/log panels: the same outer panel rhythm, with inner read-only content using `bg-base-200/70` and `text-base-content/60`.
-
-Do not introduce a third card-like container with different padding, border, or background just for one Core page area.
-
-Desktop-only surfaces and Core-page utilities should stay in `dashboard-src/src/assets/styles/dashboard-desktop.css`.
-
-## Typography
-
-Keep type hierarchy restrained.
-
-- Page/section title: `text-lg font-semibold`
-- Settings section label: `settings-section-label`
-- Setting row label: `setting-item-label`
-- Normal control text: `text-sm`
-- Logs, helper metadata, and compact secondary rows: `text-xs`
-- Important inline labels may use `font-medium` or `font-semibold`.
-
-Existing settings definitions:
-
-- `settings-section-label`: `text-xs font-semibold tracking-wider uppercase`, color equivalent to `base-content/60`.
-- `setting-item-label`: `text-sm font-medium`.
-- Small inputs/buttons/selects/tabs are normalized to `text-sm`.
-- Toggles use the shared `.toggle` utility: `bg-base-100`, `border-base-border`, and a `base-content` thumb. Disabled toggles follow the current DaisyUI default state and must not receive a page-local appearance override.
-
-Use `text-base-content/60` for read-only or low-priority content that must remain readable, such as core paths and log text. Use `text-base-content/40` sparingly for decorative separators like arrows.
-
-## Borders And Radius
-
-- Keep radius vocabulary small and stable.
-- Standard cards and settings panels use `rounded-xl`.
-- Compact top bar controls use `rounded-lg`.
-- Inner pills and small repeated items may use `rounded-box` or `rounded-full`.
-- Settings rows use `border-base-border border-b`; the last row removes the bottom border.
-- Top bar inputs, selects, and tabs use `border-base-content/20`.
-- Avoid adding heavy shadows. Current default is `shadow-xs`; many custom controls use `shadow-none`.
-
-## Canonical Reusable Patterns
-
-When adding or changing UI, prefer these existing patterns first:
-
-- `settings-grid` + `setting-item` + `setting-item-label`
-- `base-container` / `card`
-- Repeated list rows: one `base-container` per row with `gap-3`
-- `CtrlsBar` + shared top bar select/input styles
-- `bg-base-200/70` secondary control surfaces
-- `text-base-content/60` for muted/read-only text
-- `border-base-border` for regular separators
-
-If a new pattern is unavoidable, document why it is different from the canonical set above.
-
-During upstream merges, do not accept a new upstream visual pattern only because it exists upstream. First map it to the canonical set above. If it cannot be mapped, document the reusable reason before adding a project utility.
-
-## Top Bar
-
-Top bars are rendered through `CtrlsBar`.
-
-- Use `CtrlsBar` for page-level controls.
-- The visual bar itself is transparent; individual controls provide the visible surface.
-- Top bar control height is `2.25rem` / 36px.
-- `ctrls-search` defines the standard desktop search width:
-  - `width: 20rem`
-  - `min-width: 12rem`
-  - `max-width: min(20rem, 32vw)`
-- Top bar inputs and selects should reuse the shared rule:
-  - `border-base-content/20 bg-base-100 rounded-lg border shadow-none`
-- Top bar dropdowns should prefer `DropdownSelect` instead of native `<select>` when the popup needs a controlled border, spacing, or selected indicator. Native WebView select popups are not reliably styleable.
-- Top bar circular buttons use:
-  - `bg-base-100 shadow-xs hover:bg-base-200`
-  - width/height `2.25rem`
-- Window controls are separate from zashboard controls but aligned in the same top row.
-- Window controls are independent circular buttons using the same top-control surface family; the close button may use `error` on hover.
-- Core page status controls are a top bar variant: the status box follows top bar border/radius rules, while its action buttons keep the documented 34px semantic-button exception.
-
-Do not add page-specific top bar borders, shadows, or heights unless the shared top bar rules cannot handle the case.
-
-## Sidebar
-
-- Sidebar uses `sidebar border-base-border bg-base-150 text-base-content`.
-- Menu item gap is `gap-1`.
-- Menu icons use `h-5 w-5`.
-- Expanded sidebar content width is `w-60`; collapsed content width is `w-18`.
-- Expanded lower sidebar panels use `border-base-border bg-base-100/70 rounded-xl border shadow-none`.
-- Keep collapsed sidebar styling close to the upstream zashboard behavior. Avoid custom collapsed-only visual rewrites unless fixing alignment.
-
-## Settings Pages
-
-Settings should follow the shared settings system.
-
-- Group title outside cards: `settings-section-label`
-- Card wrapper: `settings-grid`
-- Row: `setting-item`
-- Custom content row: `setting-panel-row`
-- Row label: `setting-item-label`
-- Row minimum height: `min-h-11`
-- Row horizontal padding: `px-4`
-- Row gap: `gap-3`
-- Custom content inside a `settings-grid` must still be wrapped by a standard `setting-item`
-  or `setting-panel-row`. The custom child may handle its own inner layout,
-  but it should not own the card's outer horizontal padding.
-
-Backend/Core settings are embedded into the Core page, but they should still use these shared settings classes.
-
-## Core Page
-
-The Core page combines desktop app controls and zashboard settings.
-
-- Top status row height: `h-9` / 36px.
-- Core top action buttons height: 34px.
-- Core top action button colors are a deliberate semantic exception:
-  - Switch: `btn-primary`
-  - Start: `btn-success`
-  - Stop: `btn-warning`
-- Core status box border: `border-base-content/20`.
-- Core status title: `font-semibold`.
-- Runtime status text: `text-xs text-base-content/60`.
-- Core path/config/API/Secret inputs: `input input-sm dashboard-input`.
-- Core log text: `text-xs leading-5 text-base-content/60`.
-- Core operation buttons: `btn btn-sm dashboard-action-btn`.
-- Core and embedded backend two-column layouts should use `lg:gap-8`.
-- Core page section headings, including Backend and Current Downloads, should use the same `dashboard-section-title` structure. Backend version text may sit beside the title as static secondary information, but the heading should not become a link.
-
-Avoid introducing a second settings style in Core page. Prefer the same `settings-grid`, `setting-item`, and `settings-section-label` used elsewhere.
-
-## Buttons And Controls
-
-- Prefer three button families:
-  - soft action buttons
-  - top bar icon buttons
-  - primary/status buttons
-- Reuse one of these families before creating a new button shape.
-
-- Standard small buttons: `btn btn-sm`.
-- Neutral utility buttons in panels: `btn btn-sm dashboard-action-btn`; this is the only soft-button supplement allowed to set `font-weight: 600`, keeping Chinese labels clear without changing size or spacing.
-- Primary action: `btn-primary`.
-- Start/status action: `btn-success` only where the action truly means start/running.
-- Warning/destructive stop action: `btn-warning` when it represents warning/stop rather than deletion.
-- Icon-only top bar buttons should be circular: `btn btn-circle btn-sm`.
-- Use existing icon libraries already used by the project, especially Heroicons in current components.
-- Avoid visible focus black outlines. Reuse the current zashboard-style subtle purple focus ring instead of removing focus feedback.
-
-Do not create more button utilities unless at least two real call sites clearly benefit from the extraction. `dashboard-action-btn` is already the canonical soft action supplement. Any new utility must describe its reusable purpose in this file.
-
-When extracting DaisyUI control styles, keep DaisyUI base classes on the element and use project utilities only as supplements:
-
-- Good: `class="input input-sm dashboard-input"`
-- Good: `class="btn btn-sm dashboard-action-btn"`
-- Avoid: `class="dashboard-input"` or `class="dashboard-action-btn"` when the element depends on DaisyUI sizing, font, or state rules.
-
-MiSans should use a valid variable font-weight range. Do not work around font loading issues by adding page-specific button weights.
-
-## Data Cards
-
-- Use `bg-base-200/70` for inner read-only result rows or compact data strips.
-- Use `text-sm` for primary row content.
-- Use `text-xs text-base-content/60` for metadata.
-- Use `text-base-content/40` for separators.
-- Use stable heights and grid rows when card height must remain aligned across columns.
-
-## Overview Cards
-
-- Overview cards use `base-container` with inner `bg-base-200/30 rounded-xl p-4` panels.
-- The speed row is the alignment reference for desktop Overview card widths.
-- The Network row should follow the same desktop grid rhythm as the speed row, with narrow screens collapsing to one column.
-- The Latency card uses a compact two-by-two target layout for Baidu, Cloudflare, GitHub, and YouTube.
-- Each target displays the target label, a compact sparkline, a right-side average, and a muted `min` / `max` metadata row.
-- Latency charts should match the Upload/Download visual language: smooth line, subtle area fill, restrained line weight, and small sample symbols.
-- Latency chart colors should use existing low/medium/high latency theme tokens.
-- The latency average belongs visually to the chart row, not the `min` / `max` metadata row.
-- Latency hover should stay compact and show a single sample value such as `120ms`.
-
-## Responsive Behavior
-
-- Desktop uses sidebar plus fixed top controls.
-- Middle/mobile screens use bottom dock navigation.
-- Avoid viewport-scaled font sizes.
-- Preserve text fit with `truncate`, `min-w-0`, stable widths, or wrapping as appropriate.
-- Do not let top controls overlap the window controls. Use existing `CtrlsBar` sizing and content max-width behavior.
-- Core page top controls should be measured against the available right content area and reserved window-control width, so they do not drift during sidebar expand/collapse.
-- Two-column custom sections must collapse naturally to one column on narrow windows.
-- Fixed-width action buttons must keep text on one line.
-
-## When Adding New Styles
-
-Before adding a new class or token, check:
-
-1. Can this use `settings-grid`, `setting-item`, `base-container`, `card`, or `collapse`?
-2. Can this use existing `base-*`, `primary`, `success`, or `warning` tokens?
-3. Can this use `text-base-content/60` or `/40` instead of a new color?
-4. Can this use existing top bar, sidebar, or settings patterns?
-
-If a new style is still needed, include a short comment or document the reason in this file. The reason should explain the reusable purpose, not only the current page.
+A selector existing in CSS is not a visual pass. A renamed renderer is not a failure if behavior and appearance are preserved. Record intentional default/product changes with a reason and the relevant owner approval rather than freezing implementation details indefinitely.

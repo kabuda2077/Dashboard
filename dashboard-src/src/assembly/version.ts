@@ -2,9 +2,12 @@
 // mihomo 与 sing-box 都通过 Clash-compatible /version 探测实际内核。
 import { fetchClashVersion, restartCoreAPI, upgradeCoreAPI } from '@/api/clash'
 import { hasHostBridge, hostState } from '@/composables/hostBridge'
-import { backendSessionGeneration, backendSessionReady, captureBackendSession } from '@/helper/backendSession'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
-import { HOST_BACKEND_UPDATED_EVENT } from '@/constant/hostEvents'
+import {
+  backendSessionGeneration,
+  backendSessionReady,
+  captureBackendSession,
+} from '@/helper/backendSession'
 import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import { computed, ref, watch } from 'vue'
@@ -12,7 +15,9 @@ import { computed, ref, watch } from 'vue'
 export const version = ref()
 export const isCoreUpdateAvailable = ref(false)
 
-export const isSingBoxCore = computed(() => version.value?.includes('sing-box'))
+export const isSingBoxCore = computed(() =>
+  hasHostBridge ? hostState.value.coreType === 'sing-box' : version.value?.includes('sing-box'),
+)
 
 export const mihomo = computed<[MIHOMO, string] | undefined>(() => {
   if (isSingBoxCore.value) return undefined
@@ -38,6 +43,11 @@ const getHostCoreVersion = () => hostState.value.coreVersion || ''
 let versionFetchId = 0
 
 const refreshVersion = async () => {
+  if (hasHostBridge) {
+    version.value = hostState.value.coreVersion ?? ''
+    isCoreUpdateAvailable.value = !!hostState.value.coreUpdateAvailable
+    return
+  }
   const currentFetchId = ++versionFetchId
   const session = captureBackendSession()
   if (!activeBackend.value || !backendSessionReady.value) {
@@ -70,27 +80,23 @@ const refreshVersion = async () => {
       await upgradeCoreAPI('auto')
     }
   } catch {
-    if (currentFetchId === versionFetchId && session.isCurrent()) isCoreUpdateAvailable.value = false
+    if (currentFetchId === versionFetchId && session.isCurrent())
+      isCoreUpdateAvailable.value = false
   }
 }
 
 watch(
-  () => [backendSessionGeneration.value, backendSessionReady.value],
+  () => [
+    backendSessionGeneration.value,
+    backendSessionReady.value,
+    hostState.value.coreVersion,
+    hostState.value.coreUpdateAvailable,
+  ],
   () => {
     void refreshVersion()
   },
   { immediate: true },
 )
-
-// An exe-version result can arrive after the API probe failed. Fill the
-// fallback without issuing another /version request for an unchanged session.
-watch(() => hostState.value.coreVersion, (fallback) => {
-  if (backendSessionReady.value && !version.value && fallback) version.value = fallback
-})
-
-window.addEventListener(HOST_BACKEND_UPDATED_EVENT, () => {
-  if (!hasHostBridge) void refreshVersion()
-})
 
 const CACHE_DURATION = 1000 * 60 * 60
 
@@ -134,7 +140,6 @@ async function fetchWithLocalCache<T>(url: string, version: string): Promise<T> 
   localStorage.setItem(cacheKey, JSON.stringify(newCache))
   return data
 }
-
 
 const check = async (url: string, versionNumber: string) => {
   const { assets } = await fetchWithLocalCache<{ assets: { name: string }[] }>(url, versionNumber)

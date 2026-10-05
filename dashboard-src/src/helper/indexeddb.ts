@@ -2,6 +2,7 @@ import { useStorage } from '@/helper/storage'
 import { customBackgroundURL } from '@/store/settings'
 import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
+import { registerPersistenceFlusher } from './persistenceBarrier'
 
 const useIndexedDB = (dbKey: string) => {
   const cacheMap = new Map<string, string>()
@@ -46,55 +47,49 @@ const useIndexedDB = (dbKey: string) => {
       const store = transaction.objectStore(dbKey)
       const request = operation(store)
 
-      request.onsuccess = () => resolve(request.result)
+      // Request success precedes transaction commit and can still be rolled back.
+      transaction.oncomplete = () => resolve(request.result)
+      transaction.onabort = () => reject(transaction.error ?? new Error('Local database transaction aborted.'))
+      transaction.onerror = () => reject(transaction.error ?? request.error)
       request.onerror = () => reject(request.error)
     })
   }
 
-  const put = async (key: string, value: string) => {
-    await dbPromise
-    cacheMap.set(key, value)
-    return executeTransaction('readwrite', (store) =>
-      store.put({
-        key,
-        value,
-      }),
+  let writes: Promise<void> = Promise.resolve()
+  const failures = new Map<string, unknown>()
+  const write = <T>(key: string, operation: () => Promise<T>) => {
+    const result = writes.then(operation)
+    writes = result.then(
+      () => { failures.delete(key) },
+      (error) => { failures.set(key, error) },
     )
+    return result
   }
+  registerPersistenceFlusher(async () => {
+    await writes
+    if (failures.size) throw new Error(`Local ${dbKey} data has not been saved. Retry before closing.`)
+  })
+  const put = (key: string, value: string) => write(key, async () => {
+    const result = await executeTransaction('readwrite', (store) => store.put({ key, value }))
+    cacheMap.set(key, value)
+    return result
+  })
 
   const get = async (key: string) => {
     await dbPromise
     return cacheMap.get(key)
   }
 
-  const clear = async () => {
-    await dbPromise
+  const clear = () => write('*', async () => {
+    const result = await executeTransaction('readwrite', (store) => store.clear())
     cacheMap.clear()
-    return executeTransaction('readwrite', (store) => store.clear())
-  }
-
-  const isExists = async (key: string) => {
-    await dbPromise
-    return cacheMap.has(key)
-  }
-
-  const del = async (key: string) => {
-    await dbPromise
-    cacheMap.delete(key)
-    return executeTransaction('readwrite', (store) => store.delete(key))
-  }
-
-  const getAllKeys = async () => {
-    await dbPromise
-    return Array.from(cacheMap.keys())
-  }
+    failures.clear()
+    return result
+  })
 
   return {
     put,
     get,
-    del,
-    getAllKeys,
-    isExists,
     clear,
   }
 }

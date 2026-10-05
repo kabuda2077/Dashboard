@@ -1,32 +1,52 @@
-import { readonly, ref } from 'vue'
+// Storage-neutral: this module may be loaded before any preference/backend store.
+import { computed, readonly, ref } from 'vue'
 
-export type HostState = {
+export type CoreKind = 'mihomo' | 'sing-box'
+export type CoreProfile = {
+  revision: number
+  exePath: string
+  configPath: string
+  apiUrl: string
+  secret: string
+  secretDecryptionFailed: boolean
+}
+export type SecretEdit = { action: 'keep' } | { action: 'replace'; value: string }
+export type CoreProfileDraft = {
+  exePath: string
+  configPath: string
+  apiUrl: string
+  secret: SecretEdit
+}
+export type DesktopOptions = {
+  startCoreOnLaunch: boolean
+  minimizeToTray: boolean
+  lightweightMode: boolean
+  autostart: boolean
+}
+export type HostRuntimeState = {
   isRunning?: boolean
   processId?: number | null
-  coreType?: string
+  coreType?: CoreKind
+  runtimeEpoch?: number
   coreTitle?: string
   coreVersion?: string
-  corePath?: string
-  configPath?: string
+  apiStatus?: 'idle' | 'checking' | 'ready' | 'unauthorized' | 'unreachable'
   apiUrl?: string
   secret?: string
   secretDecryptionFailed?: boolean
-  mihomoSecretDecryptionFailed?: boolean
-  singBoxSecretDecryptionFailed?: boolean
-  mihomoCorePath?: string
-  mihomoConfigPath?: string
-  mihomoApiUrl?: string
-  mihomoSecret?: string
-  singBoxCorePath?: string
-  singBoxConfigPath?: string
-  singBoxApiUrl?: string
-  singBoxSecret?: string
+  operation?: string
+  requiresRestart?: boolean
+  canUpgradeCore?: boolean
+  isCoreUpgrading?: boolean
+  isCoreSwitching?: boolean
+  isWindowMaximized?: boolean
+  readOnlyTunEnabled?: boolean | null
+}
+export type HostSnapshot = {
+  runtime: HostRuntimeState
+  profiles: Record<CoreKind, CoreProfile>
+  desktopOptions: DesktopOptions
   setupCompleted?: boolean
-  readOnlyTunEnabled?: boolean
-  startCoreOnLaunch?: boolean
-  minimizeToTray?: boolean
-  lightweightMode?: boolean
-  autostart?: boolean
   isAutostartUpdating?: boolean
   appVersion?: string
   latestAppVersion?: string
@@ -35,169 +55,273 @@ export type HostState = {
   latestCoreVersion?: string
   isCoreUpdateChecking?: boolean
   coreUpdateAvailable?: boolean
-  canUpgradeCore?: boolean
-  isCoreUpgrading?: boolean
-  isCoreSwitching?: boolean
-  isWindowMaximized?: boolean
   logText?: string
+  droppedLogEntries?: number
+  logWriteFailures?: number
   iconCacheMap?: Record<string, string>
-  dashboardSettings?: Record<string, string>
 }
-
-export type HostRuntimeState = Pick<
-  HostState,
-  | 'isRunning'
-  | 'processId'
-  | 'coreTitle'
-  | 'coreVersion'
-  | 'canUpgradeCore'
-  | 'isCoreUpgrading'
-  | 'isCoreSwitching'
-  | 'isWindowMaximized'
->
-
+export type HostState = HostRuntimeState & Partial<Omit<HostSnapshot, 'runtime'>>
+export type CommandResult = {
+  status: 'completed' | 'rejected' | 'failed' | 'cancelled' | 'elevationRequired'
+  code: string
+  message?: string
+  saved?: boolean
+  path?: string
+}
 export type HostMessage = {
-  type?:
-    'state' | 'runtimeState' | 'logAppend' | 'iconCacheUpdated' | 'notice' | 'windowState' | string
+  protocolVersion?: number
+  type?: string
   requestId?: string
-  result?: 'available' | 'upToDate' | 'failed' | 'busy'
+  state?: HostSnapshot
+  runtimeState?: HostRuntimeState
+  preferences?: Record<string, string>
+  result?: CommandResult | 'available' | 'upToDate' | 'failed' | 'busy'
   manual?: boolean
   currentVersion?: string
   latestVersion?: string
-  success?: boolean
-  state?: HostState
-  runtimeState?: HostRuntimeState
   message?: string
+  severity?: 'info' | 'warning' | 'error' | 'success'
   logText?: string
   iconCacheMap?: Record<string, string>
   isMaximized?: boolean
 }
-
 export type HostCommand =
-  | { type: 'windowDrag' }
-  | { type: 'windowResize'; edge: string }
-  | { type: 'windowToggleMaximize' }
-  | { type: 'windowMinimize' }
-  | { type: 'windowClose' }
-  | { type: 'requestWindowState' }
-  | { type: 'requestState' }
-  | { type: 'checkAppUpdate' }
-  | { type: 'openAppRelease' }
-  | { type: 'openCoreRepository' }
-  | { type: 'performance'; name: string; durationMs?: number }
-  | { type: 'saveDashboardSettings'; requestId?: string; settings: Record<string, string> }
-  | ({ type: string } & Record<string, unknown>)
-
-export type HostWindow = Window & {
-  chrome?: {
-    webview?: {
-      postMessage?: (message: unknown) => void
-      addEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
-      removeEventListener?: (
-        type: 'message',
-        listener: (event: MessageEvent<HostMessage>) => void,
-      ) => void
+  | {
+      type:
+        | 'bootstrap'
+        | 'requestState'
+        | 'refreshCoreMetadata'
+        | 'checkAppUpdate'
+        | 'openAppRelease'
+        | 'openCoreRepository'
     }
-  }
-  __mihomoDashboardSettings?: Record<string, string>
-  __mihomoHasDashboardSettings?: boolean
-}
+  | {
+      type:
+        | 'saveProfile'
+        | 'start'
+        | 'restart'
+        | 'switchCore'
+        | 'stop'
+        | 'upgradeCore'
+        | 'completeSetup'
+      coreType: CoreKind
+      draft?: CoreProfileDraft
+      expectedRevision?: number
+      expectedRuntimeEpoch?: number
+      confirmUnverified?: boolean
+    }
+  | {
+      type: 'chooseCoreFile' | 'chooseConfigFile' | 'openCoreLocation' | 'openConfigLocation'
+      coreType: CoreKind
+    }
+  | { type: 'setDesktopOption'; option: keyof DesktopOptions; value: boolean }
+  | { type: 'saveDashboardPreferences'; preferences: Record<string, string> }
+  | { type: 'preferencesFlushed'; requestId: string; value: boolean }
+  | {
+      type:
+        | 'windowDrag'
+        | 'windowToggleMaximize'
+        | 'windowMinimize'
+        | 'windowClose'
+        | 'requestWindowState'
+    }
+  | { type: 'windowResize'; edge: string }
+  | { type: 'performance'; name: string; durationMs: number }
 
+type WebView = {
+  postMessage: (message: unknown) => void
+  addEventListener?: (type: 'message', listener: (event: MessageEvent<HostMessage>) => void) => void
+  removeEventListener?: (
+    type: 'message',
+    listener: (event: MessageEvent<HostMessage>) => void,
+  ) => void
+}
+export type HostWindow = Window & { chrome?: { webview?: WebView } }
 export const hostWindow = window as HostWindow
 export const hasHostBridge = Boolean(hostWindow.chrome?.webview?.postMessage)
+const snapshot = ref<HostSnapshot>()
+export const hostSnapshot = readonly(snapshot)
+export const hostState = computed<HostState>(() =>
+  snapshot.value ? { ...snapshot.value, ...snapshot.value.runtime } : {},
+)
+export const hostSessionGeneration = computed(() => snapshot.value?.runtime.runtimeEpoch ?? 0)
+export const hostWindowMaximized = computed(() => !!snapshot.value?.runtime.isWindowMaximized)
+export const hostIconCache = computed(() => snapshot.value?.iconCacheMap ?? {})
 
-const hostSessionGenerationRef = ref(0)
-export const hostSessionGeneration = readonly(hostSessionGenerationRef)
-let sessionSignature = ''
-const updateHostSession = () => {
-  const state = hostStateRef.value
-  const signature = JSON.stringify([state.coreType, state.apiUrl, state.secret, state.secretDecryptionFailed, state.processId, state.isRunning])
-  if (signature !== sessionSignature) {
-    sessionSignature = signature
-    hostSessionGenerationRef.value++
+const listeners = new Set<(event: MessageEvent<HostMessage>) => void>()
+const pending = new Map<
+  string,
+  {
+    resolve: (message: HostMessage) => void
+    reject: (error: Error) => void
+    timer?: ReturnType<typeof setTimeout>
   }
+>()
+let installed = false
+let closed = false
+export const isPreferencesSnapshot = (value: unknown): value is Record<string, string> =>
+  value !== null &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  Object.entries(value).every(
+    ([key, item]) => key.startsWith('config/') && typeof item === 'string',
+  )
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+const profileValid = (value: unknown): value is CoreProfile =>
+  record(value) &&
+  Number.isSafeInteger(value.revision) &&
+  (value.revision as number) >= 0 &&
+  ['exePath', 'configPath', 'apiUrl', 'secret'].every((key) => typeof value[key] === 'string') &&
+  typeof value.secretDecryptionFailed === 'boolean'
+export const isHostSnapshot = (value: unknown): value is HostSnapshot =>
+  record(value) &&
+  record(value.runtime) &&
+  ['mihomo', 'sing-box'].includes(value.runtime.coreType as string) &&
+  Number.isSafeInteger(value.runtime.runtimeEpoch) &&
+  (value.runtime.runtimeEpoch as number) >= 0 &&
+  typeof value.runtime.isRunning === 'boolean' &&
+  (value.runtime.processId === null ||
+    (Number.isSafeInteger(value.runtime.processId) && (value.runtime.processId as number) > 0)) &&
+  record(value.profiles) &&
+  profileValid(value.profiles.mihomo) &&
+  profileValid(value.profiles['sing-box']) &&
+  record(value.desktopOptions) &&
+  ['startCoreOnLaunch', 'minimizeToTray', 'lightweightMode', 'autostart'].every(
+    (key) => typeof (value.desktopOptions as Record<string, unknown>)[key] === 'boolean',
+  )
+
+export const applyHostState = (state: HostSnapshot | undefined) => {
+  if (!isHostSnapshot(state)) return
+  snapshot.value = state
 }
-const hostStateRef = ref<HostState>({})
-const hostWindowMaximizedRef = ref(false)
-const hostIconCacheRef = ref<Record<string, string>>({})
-
-export const hostState = readonly(hostStateRef)
-export const hostWindowMaximized = readonly(hostWindowMaximizedRef)
-export const hostIconCache = readonly(hostIconCacheRef)
-
-export const postHostMessage = (message: HostCommand | Record<string, unknown>) => {
-  hostWindow.chrome?.webview?.postMessage?.(message)
+export const applyHostRuntimeState = (state: HostRuntimeState | undefined) => {
+  if (state && snapshot.value)
+    snapshot.value = { ...snapshot.value, runtime: { ...snapshot.value.runtime, ...state } }
 }
-
-const messageListeners = new Set<(event: MessageEvent<HostMessage>) => void>()
-let receiverInstalled = false
-const receiveHostMessage = (event: MessageEvent<HostMessage>) => {
-  applyHostMessage(event.data)
-  for (const listener of [...messageListeners]) {
-    try { listener(event) }
-    catch { console.error('Host message subscriber failed') }
+export const applyHostIconCache = (icons: Record<string, string> | undefined) => {
+  if (snapshot.value && icons) snapshot.value = { ...snapshot.value, iconCacheMap: icons }
+}
+export const applyHostMessage = (message: HostMessage | undefined) => {
+  if (!message || message.protocolVersion !== 2) return
+  if (message.state) applyHostState(message.state)
+  if (message.type === 'runtimeState') applyHostRuntimeState(message.runtimeState)
+  if (message.type === 'iconCacheUpdated') applyHostIconCache(message.iconCacheMap)
+  if (message.type === 'windowState')
+    applyHostRuntimeState({ isWindowMaximized: !!message.isMaximized })
+  if (message.type === 'logAppend' && snapshot.value)
+    snapshot.value = {
+      ...snapshot.value,
+      logText: ((snapshot.value.logText ?? '') + (message.logText ?? '')).slice(-8000),
+    }
+}
+const receive = (event: MessageEvent<HostMessage>) => {
+  const message = event.data
+  if (message?.protocolVersion !== 2) return
+  applyHostMessage(message)
+  const request = message.requestId ? pending.get(message.requestId) : undefined
+  if (request && message.requestId) {
+    clearTimeout(request.timer)
+    pending.delete(message.requestId)
+    request.resolve(message)
   }
-}
-
-export const addHostMessageListener = (listener: (event: MessageEvent<HostMessage>) => void) => {
-  if (!receiverInstalled) {
-    hostWindow.chrome?.webview?.addEventListener?.('message', receiveHostMessage)
-    receiverInstalled = true
-  }
-  messageListeners.add(listener)
-  return () => {
-    messageListeners.delete(listener)
-    if (messageListeners.size === 0) {
-      hostWindow.chrome?.webview?.removeEventListener?.('message', receiveHostMessage)
-      receiverInstalled = false
+  for (const listener of [...listeners]) {
+    try {
+      listener(event)
+    } catch {
+      console.error('Host message subscriber failed')
     }
   }
 }
-
-export const applyHostIconCache = (iconCacheMap: Record<string, string> | undefined) => {
-  const next = iconCacheMap || {}
-  const previous = hostIconCacheRef.value
-  if (Object.keys(next).length === Object.keys(previous).length
-    && Object.entries(next).every(([key, value]) => previous[key] === value)) return
-  hostIconCacheRef.value = next
+const install = () => {
+  if (closed || installed || !hasHostBridge) return
+  hostWindow.chrome?.webview?.addEventListener?.('message', receive)
+  installed = true
 }
-
-export const applyHostState = (state: HostState | undefined) => {
-  hostStateRef.value = state || {}
-  updateHostSession()
-  if (state && 'dashboardSettings' in state) {
-    hostWindow.__mihomoDashboardSettings = state.dashboardSettings || {}
-    hostWindow.__mihomoHasDashboardSettings = Boolean(state.dashboardSettings)
-  }
-  hostWindowMaximizedRef.value = !!state?.isWindowMaximized
-  applyHostIconCache(state?.iconCacheMap)
-}
-
-export const applyHostRuntimeState = (runtimeState: HostRuntimeState | undefined) => {
-  if (!runtimeState) return
-
-  hostStateRef.value = {
-    ...hostStateRef.value,
-    ...runtimeState,
-  }
-  updateHostSession()
-  if (typeof runtimeState.isWindowMaximized === 'boolean') {
-    hostWindowMaximizedRef.value = runtimeState.isWindowMaximized
+export const addHostMessageListener = (listener: (event: MessageEvent<HostMessage>) => void) => {
+  install()
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
   }
 }
-
-export const applyHostMessage = (message: HostMessage | undefined) => {
-  if (!message) return
-  if (message.type === 'state') {
-    applyHostState(message.state)
-  } else if (message.type === 'runtimeState') {
-    applyHostRuntimeState(message.runtimeState)
-  } else if (message.type === 'iconCacheUpdated') {
-    applyHostIconCache(message.iconCacheMap)
-  } else if (message.type === 'windowState') {
-    hostWindowMaximizedRef.value = !!message.isMaximized
-  }
+export const requestHost = (command: HostCommand): Promise<HostMessage> => {
+  if (closed || !hasHostBridge) return Promise.reject(new Error('Desktop host is unavailable'))
+  install()
+  const requestId = crypto.randomUUID()
+  const timeout = command.type.startsWith('choose')
+    ? 0
+    : command.type === 'upgradeCore'
+      ? 660000
+      : command.type === 'setDesktopOption'
+        ? 120000
+        : 30000
+  return new Promise((resolve, reject) => {
+    const timer = timeout
+      ? setTimeout(() => {
+          pending.delete(requestId)
+          reject(new Error('宿主操作等待超时，请检查当前状态；已提交的操作可能仍在完成。'))
+        }, timeout)
+      : undefined
+    pending.set(requestId, { resolve, reject, timer })
+    try {
+      hostWindow.chrome!.webview!.postMessage({ ...command, protocolVersion: 2, requestId })
+    } catch (error) {
+      clearTimeout(timer)
+      pending.delete(requestId)
+      reject(error)
+    }
+  })
 }
+export const commandHost = async (command: HostCommand): Promise<CommandResult> => {
+  const response = await requestHost(command)
+  if (
+    !response.result ||
+    typeof response.result === 'string' ||
+    !isHostSnapshot(response.state) ||
+    !['completed', 'rejected', 'failed', 'cancelled', 'elevationRequired'].includes(
+      response.result.status,
+    ) ||
+    typeof response.result.code !== 'string' ||
+    (response.result.saved !== undefined && typeof response.result.saved !== 'boolean')
+  )
+    throw new Error('宿主返回了无效的操作结果。')
+  return response.result
+}
+export const postHostMessage = (command: HostCommand) => {
+  if (closed || !hasHostBridge) return
+  if (
+    command.type.startsWith('window') ||
+    command.type === 'requestWindowState' ||
+    command.type === 'performance' ||
+    command.type === 'preferencesFlushed'
+  ) {
+    install()
+    hostWindow.chrome!.webview!.postMessage({ ...command, protocolVersion: 2 })
+    return
+  }
+  void commandHost(command)
+    .then(async (result) => {
+      if (result.status === 'failed' || result.status === 'rejected') {
+        const { showHostNotice } = await import('@/helper/hostNotice')
+        showHostNotice(result.message ?? result.code, 'error')
+      }
+    })
+    .catch(async (error) => {
+      const { showHostNotice } = await import('@/helper/hostNotice')
+      showHostNotice(error instanceof Error ? error.message : String(error), 'error')
+    })
+}
+export const disposeHostBridge = () => {
+  closed = true
+  hostWindow.chrome?.webview?.removeEventListener?.('message', receive)
+  installed = false
+  for (const request of pending.values()) {
+    clearTimeout(request.timer)
+    request.reject(new Error('Desktop document closed'))
+  }
+  pending.clear()
+  listeners.clear()
+}
+window.addEventListener('pagehide', disposeHostBridge, { once: true })

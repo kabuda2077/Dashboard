@@ -8,8 +8,13 @@ namespace Dashboard;
 
 public sealed class MainForm : Form
 {
+    internal event EventHandler? ExitRequested;
     private readonly DashboardHost _host;
-    private readonly AppSettings _settings;
+    private AppSettings _settings => _host.Settings;
+    private long _navigationGeneration;
+    private TaskCompletionSource<bool>? _preferenceFlush;
+    private string? _preferenceFlushId;
+    private Task<bool>? _preferenceFlushTask;
     private readonly HostMessageRouter _hostMessageRouter;
     private readonly DashboardStatePublisher _statePublisher;
     private readonly Uri _dashboardUri;
@@ -22,6 +27,8 @@ public sealed class MainForm : Form
     private FormWindowState _trayRestoreWindowState = FormWindowState.Normal;
     private bool _hiddenToTray;
     private bool _trayTransitionInProgress;
+    private bool _showAfterTrayTransition;
+    internal bool IsTrayTransitionInProgress => _trayTransitionInProgress;
     private bool _allowClose;
     private bool _initialized;
     private bool _dashboardInitialized;
@@ -83,7 +90,6 @@ public sealed class MainForm : Form
     internal MainForm(DashboardHost host, WebViewContentUpdate webViewContentUpdate)
     {
         _host = host;
-        _settings = host.Settings;
         _dashboardUri = host.DashboardUri;
         _webViewContentUpdate = webViewContentUpdate;
         _webViewTrust = new WebViewTrustPolicy(_dashboardUri);
@@ -106,46 +112,32 @@ public sealed class MainForm : Form
         Icon = _appIcon;
 
         BuildLayout();
-        _hostMessageRouter = new HostMessageRouter(new HostMessageHandlers
+        _hostMessageRouter = new(new HostMessageHandlers
         {
-            WindowDrag = BeginWindowDrag,
-            WindowResize = BeginWindowResize,
-            WindowToggleMaximize = ToggleMaximize,
-            WindowMinimize = MinimizeToTaskbar,
-            WindowClose = Close,
-            SaveSettingsAsync = _host.SaveSettingsAsync,
-            ExecuteSettingsCommandAsync = _host.ExecuteSettingsCommandAsync,
-            ExecuteSettingsUiCommandAsync = (root, command) => _host.ExecuteSettingsUiCommandAsync(root, () =>
+            ExecuteAsync = _host.ExecuteAsync,
+            RequestElevation = _host.RequestElevation,
+            PreferencesFlushed = (id, success) => { if (id == _preferenceFlushId) _preferenceFlush?.TrySetResult(success); },
+            BuildState = () => _host.BuildState(WindowState == FormWindowState.Maximized),
+            Preferences = () => _host.Preferences,
+            ChooseFile = ChooseCoreFile,
+            OpenLocation = (kind, config) => OpenPathLocation(
+                config ? _settings.Profile(kind).ConfigPath : _settings.Profile(kind).ExePath,
+                config ? "配置文件" : "内核文件"),
+            WindowCommand = (type, edge) =>
             {
-                switch (command)
+                switch (type)
                 {
-                    case HostSettingsUiCommand.BrowseCore: BrowseCorePath(); break;
-                    case HostSettingsUiCommand.BrowseConfig: BrowseConfigPath(); break;
-                    case HostSettingsUiCommand.OpenCoreLocation: OpenPathLocation(_settings.ActiveCorePath, "内核文件"); break;
-                    case HostSettingsUiCommand.OpenConfigLocation: OpenPathLocation(_settings.ActiveConfigPath, "配置文件"); break;
+                    case "windowDrag": BeginWindowDrag(); break;
+                    case "windowResize": BeginWindowResize(edge!); break;
+                    case "windowToggleMaximize": ToggleMaximize(); SendWindowChromeState(); break;
+                    case "windowMinimize": MinimizeToTaskbar(); break;
+                    case "windowClose": Close(); break;
+                    case "requestWindowState": SendWindowChromeState(); break;
                 }
-            }),
-            RequestDashboardSettings = requestId => PostDashboardMessage(new
-            {
-                type = "dashboardSettingsSnapshot",
-                requestId,
-                settings = _settings.DashboardSettings
-            }),
-            SaveDashboardSettings = _host.SaveDashboardSettings,
-            DashboardSettingsSaved = (requestId, success) => PostDashboardMessage(new
-            {
-                type = "dashboardSettingsSaved",
-                requestId,
-                success
-            }),
-            StopCore = () => RunCoreOperation(() => _host.StopCore()),
-
+            },
             CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
             OpenAppRelease = _host.OpenAppReleasePage,
-            OpenCoreRepository = _host.OpenCoreRepositoryPage,
-            ShowNotice = ShowDashboardNotice,
-            SendState = SendStateToDashboard,
-            SendWindowChromeState = SendWindowChromeState
+            OpenCoreRepository = _host.OpenCoreRepositoryPage
         });
         BindEvents();
     }
@@ -202,14 +194,14 @@ public sealed class MainForm : Form
         _ = SendMessage(Handle, WM_NCLBUTTONDOWN, new IntPtr(HTCAPTION), IntPtr.Zero);
     }
 
-    private void BeginWindowResize(JsonElement root)
+    private void BeginWindowResize(string edge)
     {
         if (!IsHandleCreated || WindowState == FormWindowState.Maximized)
         {
             return;
         }
 
-        var hitTest = GetResizeHitTest(HostBridgeJson.GetString(root, "edge", string.Empty));
+        var hitTest = GetResizeHitTest(edge);
         if (hitTest == HTCLIENT)
         {
             return;
@@ -288,13 +280,12 @@ public sealed class MainForm : Form
         _host.IconCacheChanged += OnHostIconCacheChanged;
         _host.NoticeRequested += OnHostNoticeRequested;
         _host.AppUpdateResultRequested += OnAppUpdateResultRequested;
-        _dashboardDisposeTimer.Tick += (_, _) =>
+        _dashboardDisposeTimer.Tick += async (_, _) =>
         {
             _dashboardDisposeTimer.Stop();
-            if (_settings.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress)
-            {
+            if (_settings.DesktopOptions.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress
+                && await FlushPreferencesAsync() && _hiddenToTray && !Visible)
                 DisposeDashboardView();
-            }
         };
     }
 
@@ -323,7 +314,7 @@ public sealed class MainForm : Form
         RunOnUiThread(() => ShowDashboardNotice(message));
     }
 
-    private void OnAppUpdateResultRequested(object? sender, HostOutboundMessage message)
+    private void OnAppUpdateResultRequested(object? sender, object message)
     {
         RunOnUiThread(() => PostDashboardMessage(message));
     }
@@ -389,7 +380,7 @@ public sealed class MainForm : Form
         return _webView?.CoreWebView2 is not null;
     }
 
-    private static string WebViewUserDataDirectory => AppSettings.WebViewUserDataDirectory;
+    private string WebViewUserDataDirectory => Path.Combine(_host.DataDirectory, "resources", "webview-data-v2");
 
     private async Task<bool> InitializeWebViewAsync(string trigger)
     {
@@ -416,8 +407,6 @@ public sealed class MainForm : Form
             {
                 stage = "profile";
                 stageStartedAt = Stopwatch.GetTimestamp();
-                AppSettings.MigratePortableDataDirectory("EBWebView", WebViewUserDataDirectory);
-                AppSettings.MigrateResourceDataDirectory("runtime", "EBWebView", WebViewUserDataDirectory);
                 Directory.CreateDirectory(WebViewUserDataDirectory);
                 var profileMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
@@ -449,11 +438,6 @@ public sealed class MainForm : Form
                 await InvalidateStaleContentCachesAsync(webView.CoreWebView2);
                 var contentCacheMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
-                stage = "bootstrap";
-                stageStartedAt = Stopwatch.GetTimestamp();
-
-                var bootstrapMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
-
                 webView.CoreWebView2.NavigationStarting += OnDashboardNavigationStarting;
                 webView.CoreWebView2.NewWindowRequested += OnDashboardNewWindowRequested;
                 webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
@@ -462,7 +446,7 @@ public sealed class MainForm : Form
                     $"webview:initialized id={initializationId} trigger={trigger} attempt={attempt} "
                         + $"controlMs={controlMs:0.0} profileMs={profileMs:0.0} "
                         + $"environmentMs={environmentMs:0.0} controllerMs={controllerMs:0.0} "
-                        + $"settingsMs={settingsMs:0.0} contentCacheMs={contentCacheMs:0.0} bootstrapMs={bootstrapMs:0.0} "
+                        + $"settingsMs={settingsMs:0.0} contentCacheMs={contentCacheMs:0.0} "
                         + $"totalMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0.0} "
                         + $"runtime={environment.BrowserVersionString}");
                 return true;
@@ -594,7 +578,12 @@ public sealed class MainForm : Form
         }
 
         var target = _webViewTrust.ClassifyNavigation(e.Uri);
-        if (target == DashboardNavigationTarget.Dashboard) return;
+        if (target == DashboardNavigationTarget.Dashboard)
+        {
+            Interlocked.Increment(ref _navigationGeneration);
+            _preferenceFlush?.TrySetResult(false);
+            return;
+        }
 
         e.Cancel = true;
         // Redirects and programmatic navigation cannot launch arbitrary applications.
@@ -649,7 +638,12 @@ public sealed class MainForm : Form
 
         try
         {
-            await _hostMessageRouter.RouteAsync(e.WebMessageAsJson);
+            var generation = Interlocked.Read(ref _navigationGeneration);
+            await _hostMessageRouter.RouteAsync(e.WebMessageAsJson, message =>
+            {
+                if (generation == Interlocked.Read(ref _navigationGeneration) && ReferenceEquals(current, _webView?.CoreWebView2))
+                    PostDashboardMessage(message);
+            });
         }
         catch (Exception ex)
         {
@@ -688,11 +682,6 @@ public sealed class MainForm : Form
         }
     }
 
-    private void RunCoreOperation(Action action)
-    {
-        _ = Task.Run(action);
-    }
-
     private void RefreshStatus()
     {
         _statePublisher.SendRuntimeState();
@@ -721,6 +710,36 @@ public sealed class MainForm : Form
             || WindowState == FormWindowState.Minimized;
     }
 
+    internal Task<bool> FlushPreferencesAsync()
+    {
+        if (_webView?.CoreWebView2 is null || _webViewSuspended) return Task.FromResult(true);
+        if (_preferenceFlushTask is { IsCompleted: false }) return _preferenceFlushTask;
+        return _preferenceFlushTask = FlushPreferencesOwnedAsync();
+    }
+
+    private async Task<bool> FlushPreferencesOwnedAsync()
+    {
+        var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _preferenceFlush = pending;
+        _preferenceFlushId = "flush-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            PostDashboardMessage(new { protocolVersion = 2, type = "flushPreferences", requestId = _preferenceFlushId });
+            var saved = await pending.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (!saved) _host.ShowNotice("存在未保存修改或保存尚未确认，暂时保留界面。请保存或放弃核心草稿后重试。");
+            return saved;
+        }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("settings", "Preferences did not flush before view suspension.", error);
+            return false;
+        }
+        finally
+        {
+            if (ReferenceEquals(_preferenceFlush, pending)) { _preferenceFlush = null; _preferenceFlushId = null; }
+        }
+    }
+
     private async void SuspendDashboard()
     {
         var coreWebView = _webView?.CoreWebView2;
@@ -734,6 +753,8 @@ public sealed class MainForm : Form
 
         try
         {
+            if (!await FlushPreferencesAsync() || suspendVersion != _dashboardSuspendVersion
+                || !ReferenceEquals(coreWebView, _webView?.CoreWebView2) || !ShouldHoldDashboardUpdates()) return;
             var suspended = await coreWebView.TrySuspendAsync();
             if (suspendVersion != _dashboardSuspendVersion || !ShouldHoldDashboardUpdates())
             {
@@ -833,34 +854,16 @@ public sealed class MainForm : Form
         coreWebView.PostWebMessageAsJson(HostBridgeJson.Serialize(message));
     }
 
-    private void BrowseCorePath()
+    private string? ChooseCoreFile(CoreKind kind, bool config)
     {
         using var dialog = new OpenFileDialog
         {
-            Title = _settings.IsSingBox ? "选择 sing-box.exe" : "选择 mihomo.exe",
-            Filter = _settings.IsSingBox
-                ? "sing-box executable|sing-box*.exe|Executable|*.exe|All files|*.*"
-                : "Mihomo executable|mihomo*.exe;clash*.exe|Executable|*.exe|All files|*.*"
+            Title = config ? "选择配置文件" : $"选择 {AppSettings.WireKind(kind)} 内核",
+            Filter = config
+                ? kind == CoreKind.SingBox ? "JSON config|*.json|All files|*.*" : "YAML config|*.yaml;*.yml|All files|*.*"
+                : "Executable|*.exe|All files|*.*"
         };
-        if (dialog.ShowDialog(this) == DialogResult.OK)
-        {
-            _host.SetActiveCorePath(dialog.FileName);
-        }
-    }
-
-    private void BrowseConfigPath()
-    {
-        using var dialog = new OpenFileDialog
-        {
-            Title = _settings.IsSingBox ? "选择 config.json" : "选择 config.yaml",
-            Filter = _settings.IsSingBox
-                ? "JSON config|*.json|All files|*.*"
-                : "YAML config|*.yaml;*.yml|All files|*.*"
-        };
-        if (dialog.ShowDialog(this) == DialogResult.OK)
-        {
-            _host.SetActiveConfigPath(dialog.FileName);
-        }
+        return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : null;
     }
 
     private void OpenPathLocation(string path, string label)
@@ -945,8 +948,8 @@ public sealed class MainForm : Form
     {
         HostOperationLogger.Diagnostic(
             "window-lifecycle",
-            $"formClosing reason={e.CloseReason} allowClose={_allowClose} minimizeToTray={_settings.MinimizeToTray} visible={Visible} windowState={WindowState}");
-        if (!_allowClose && _settings.MinimizeToTray && ShouldHideToTrayOnClose(e.CloseReason))
+            $"formClosing reason={e.CloseReason} allowClose={_allowClose} minimizeToTray={_settings.DesktopOptions.MinimizeToTray} visible={Visible} windowState={WindowState}");
+        if (!_allowClose && _settings.DesktopOptions.MinimizeToTray && ShouldHideToTrayOnClose(e.CloseReason))
         {
             e.Cancel = true;
             HostOperationLogger.Diagnostic("window-lifecycle", "formClosing cancelled; hiding to tray.");
@@ -954,6 +957,12 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (!_allowClose && ShouldHideToTrayOnClose(e.CloseReason))
+        {
+            e.Cancel = true;
+            ExitRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
         base.OnFormClosing(e);
     }
 
@@ -984,21 +993,29 @@ public sealed class MainForm : Form
                 WindowState = FormWindowState.Minimized;
             }
 
-            if (IsDisposed)
+            if (IsDisposed || _showAfterTrayTransition)
             {
                 return;
             }
 
             Hide();
-            if (_settings.LightweightMode)
+            if (_settings.DesktopOptions.LightweightMode)
             {
                 ScheduleDashboardViewDispose();
             }
         }
         finally
         {
-            _trayTransitionInProgress = false;
+            CompleteTrayTransition();
         }
+    }
+
+    private void CompleteTrayTransition()
+    {
+        _trayTransitionInProgress = false;
+        var show = _showAfterTrayTransition;
+        _showAfterTrayTransition = false;
+        if (show && !IsDisposed && !Disposing && !_allowClose) ShowFromTray();
     }
 
     public void ShowFromTray()
@@ -1011,9 +1028,11 @@ public sealed class MainForm : Form
         CancelDelayedDashboardDispose();
         if (_trayTransitionInProgress)
         {
+            _showAfterTrayTransition = true;
             return;
         }
 
+        _hiddenToTray = false;
         if (Visible && WindowState != FormWindowState.Minimized)
         {
             ResumeDashboard();
@@ -1060,7 +1079,7 @@ public sealed class MainForm : Form
         }
         finally
         {
-            _trayTransitionInProgress = false;
+            CompleteTrayTransition();
         }
     }
 

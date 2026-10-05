@@ -1,5 +1,5 @@
 <template>
-  <SettingItem :setting-key="GENERAL_ITEM_KEYS.language">
+  <SettingItem>
     <div class="setting-item-label">
       {{ $t('language') }}
     </div>
@@ -17,7 +17,6 @@
 <script setup lang="ts">
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SelectInput from '@/components/common/SelectInput.vue'
-import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { LANG } from '@/constant'
 import { language } from '@/store/settings'
 import { useI18n } from 'vue-i18n'

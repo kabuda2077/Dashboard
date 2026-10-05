@@ -25,59 +25,11 @@ import {
   TEST_URL,
   type THEME,
 } from '@/constant'
+import { normalizeConnectionCardLines, normalizeConnectionFields } from '@/helper/connectionFields'
+import { useDashboardStorage as useStorage } from '@/helper/storage'
 import { getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
 import { computed, watch } from 'vue'
-import { normalizeConnectionFields, normalizeConnectionCardLines } from '@/helper/connectionFields'
-
-const migrateLegacyStorageKey = (legacyKey: string, nextKey: string) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  const legacyValue = localStorage.getItem(legacyKey)
-  const nextValue = localStorage.getItem(nextKey)
-
-  if (legacyValue !== null && nextValue === null) {
-    localStorage.setItem(nextKey, legacyValue)
-  }
-  localStorage.removeItem(legacyKey)
-}
-
-migrateLegacyStorageKey('config/show-seleted-for-now-node', 'config/show-selected-for-now-node')
-migrateLegacyStorageKey('config/use-connecticon-card', 'config/use-connection-card')
-migrateLegacyStorageKey('config/connecticon-table-size', 'config/connection-table-size')
-migrateLegacyStorageKey('config/ipv6-map', 'cache/ipv6-map')
-migrateLegacyStorageKey('config/collapse-group-map', 'cache/collapse-group-map')
-migrateLegacyStorageKey('config/log-search-history', 'cache/log-search-history')
-
-const migrateLegacyConnectionDisplayStyle = () => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  const nextKey = 'config/connection-display-style'
-  const nextValue = localStorage.getItem(nextKey)
-  const legacyKey = 'config/use-connection-card'
-
-  if (nextValue !== null) {
-    return
-  }
-
-  const legacyValue = localStorage.getItem(legacyKey)
-
-  if (legacyValue === 'true' || legacyValue === 'false') {
-    localStorage.setItem(
-      nextKey,
-      legacyValue === 'true' ? CONNECTION_DISPLAY_STYLE.CARD : CONNECTION_DISPLAY_STYLE.TABLE,
-    )
-  }
-
-  localStorage.removeItem(legacyKey)
-}
-
-migrateLegacyConnectionDisplayStyle()
 
 // global
 export const defaultTheme = useStorage<string>('config/default-theme', 'light')
@@ -91,28 +43,12 @@ export const theme = computed(() => {
 })
 export const customThemes = useStorage<THEME[]>('config/custom-themes', [])
 
-const replaceLegacyTheme = (selectedTheme: string, fallback: string) => {
-  const legacyThemeReplacements: Record<string, string> = {
-    'dark-apple': 'dark',
-    lofi: 'light',
-    wireframe: 'light',
-    black: 'dark-neutral',
-    business: 'dark-neutral',
-  }
-
-  if (selectedTheme in legacyThemeReplacements) {
-    return legacyThemeReplacements[selectedTheme]
-  }
-  if ([...ALL_THEME, ...customThemes.value.map((item) => item.name)].includes(selectedTheme)) {
-    return selectedTheme
-  }
-  return fallback
-}
-
-const migratedDefaultTheme = replaceLegacyTheme(defaultTheme.value, 'light')
-if (migratedDefaultTheme !== defaultTheme.value) defaultTheme.value = migratedDefaultTheme
-const migratedDarkTheme = replaceLegacyTheme(darkTheme.value, 'dark')
-if (migratedDarkTheme !== darkTheme.value) darkTheme.value = migratedDarkTheme
+const validTheme = (value: string, fallback: string) =>
+  [...ALL_THEME, ...customThemes.value.map((item) => item.name)].includes(value) ? value : fallback
+const validDefaultTheme = validTheme(defaultTheme.value, 'light')
+if (validDefaultTheme !== defaultTheme.value) defaultTheme.value = validDefaultTheme
+const validDarkTheme = validTheme(darkTheme.value, 'dark')
+if (validDarkTheme !== darkTheme.value) darkTheme.value = validDarkTheme
 
 export const language = useStorage<LANG>(
   'config/language',
@@ -353,16 +289,24 @@ export const connectionCardLines = useStorage<CONNECTIONS_TABLE_ACCESSOR_KEY[][]
 )
 
 // Normalize both stored preferences and later host/import updates before rendering.
-watch(connectionTableColumns, (fields) => {
-  const next = normalizeConnectionFields(fields)
-  if (next.length !== fields.length) {
-    connectionTableColumns.value = next.length ? next : [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]
-  }
-}, { immediate: true, deep: true, flush: 'sync' })
-watch(connectionCardLines, (lines) => {
-  const next = normalizeConnectionCardLines(lines)
-  if (JSON.stringify(next) !== JSON.stringify(lines)) connectionCardLines.value = next
-}, { immediate: true, deep: true, flush: 'sync' })
+watch(
+  connectionTableColumns,
+  (fields) => {
+    const next = normalizeConnectionFields(fields)
+    if (next.length !== fields.length) {
+      connectionTableColumns.value = next.length ? next : [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]
+    }
+  },
+  { immediate: true, deep: true, flush: 'sync' },
+)
+watch(
+  connectionCardLines,
+  (lines) => {
+    const next = normalizeConnectionCardLines(lines)
+    if (JSON.stringify(next) !== JSON.stringify(lines)) connectionCardLines.value = next
+  },
+  { immediate: true, deep: true, flush: 'sync' },
+)
 
 export const sourceIPLabelList = useStorage<SourceIPLabel[]>('config/source-ip-label-list', [])
 
@@ -382,11 +326,3 @@ export const logDisplayStyle = useStorage<LIST_DISPLAY_STYLE>(
   LIST_DISPLAY_STYLE.CARD,
 )
 export const logSearchHistory = useStorage<string[]>('cache/log-search-history', [])
-
-// settings visibility
-// 使用扁平结构，key 格式为 "大设置项.小设置项" 或 "大设置项"（仅大设置项）
-// 默认所有项都可见，只有隐藏的项才会记录在此对象中
-export const hiddenSettingsItems = useStorage<Record<string, boolean>>(
-  'config/hidden-settings-items',
-  {},
-)

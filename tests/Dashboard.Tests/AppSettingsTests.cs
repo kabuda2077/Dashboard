@@ -1,94 +1,124 @@
 using System.Text.Json;
-using Dashboard;
 
 namespace Dashboard.Tests;
 
-public sealed class AppSettingsTests
+public sealed class AppSettingsTests : IDisposable
 {
-    [Fact]
-    public void DefaultsUsePortableAppDirectory()
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+    private sealed class Protector : ISecretProtector
     {
-        CleanSettingsFile();
+        public int Writes;
+        public bool FailRead;
+        public string Protect(string value) { Writes++; return value.Length == 0 ? "" : "test:" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(value)); }
+        public string Unprotect(string value) => value.Length == 0 ? "" : FailRead ? throw new InvalidOperationException("unavailable")
+            : System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(value[5..]));
+    }
+    private static CoreProfileEdit Edit(CoreProfile profile, SecretEdit? secret = null) => new()
+    { ExePath = profile.ExePath, ConfigPath = profile.ConfigPath, ApiUrl = profile.ApiUrl, Secret = secret ?? new() };
 
-        var settings = new AppSettings();
-
-        AssertSamePath(Path.Combine(AppSettings.AppDirectory, "mihomo", "mihomo.exe"), settings.CorePath);
-        AssertSamePath(Path.Combine(AppSettings.AppDirectory, "mihomo", "config.yaml"), settings.ConfigPath);
-        AssertSamePath(Path.Combine(AppSettings.AppDirectory, "sing-box", "sing-box.exe"), settings.SingBoxCorePath);
-        AssertSamePath(Path.Combine(AppSettings.AppDirectory, "sing-box", "config.json"), settings.SingBoxConfigPath);
-        AssertSamePath(Path.Combine(AppSettings.AppDirectory, "resources", "logs"), AppSettings.LogDirectory);
+    [Fact]
+    public void NewDocumentHasTwoProfilesAndExplicitEmptyPreferences()
+    {
+        var store = new SettingsStore(_directory, new Protector());
+        Assert.Equal(2, store.Current.SchemaVersion);
+        Assert.Empty(store.Current.DashboardPreferences);
+        Assert.NotEqual(store.Current.Profiles.Mihomo.ExePath, store.Current.Profiles.SingBox.ExePath);
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(_directory, "settings.json")));
+        Assert.Equal(JsonValueKind.Object, document.RootElement.GetProperty("dashboardPreferences").ValueKind);
     }
 
-    [Fact]
-    public void LoadMigratesLegacyDefaultConfigPathAndNormalizesCoreType()
+    [Theory]
+    [InlineData("{\"CoreType\":\"mihomo\"}")]
+    [InlineData("{\"schemaVersion\":999}")]
+    [InlineData("not-json")]
+    public void UnsupportedOrDamagedDocumentIsNeverOverwritten(string original)
     {
-        CleanSettingsFile();
-        var legacyConfigPath = Path.Combine(AppSettings.AppDirectory, "config", "config.yaml");
-        WriteSettingsJson(new
-        {
-            CoreType = "unknown",
-            ConfigPath = legacyConfigPath,
-            DashboardApiUrl = "http://127.0.0.1:9090"
-        });
-
-        var settings = AppSettings.Load();
-
-        Assert.Equal(AppSettings.CoreTypeMihomo, settings.CoreType);
-        Assert.True(settings.SetupCompleted);
-        AssertSamePath(Path.Combine(AppSettings.AppDirectory, "mihomo", "config.yaml"), settings.ConfigPath);
-    }
-
-    [Fact]
-    public void LoadLeavesDashboardSettingsNullWhenLegacyFileDoesNotContainThem()
-    {
-        CleanSettingsFile();
-        WriteSettingsJson(new
-        {
-            SetupCompleted = true
-        });
-
-        var settings = AppSettings.Load();
-
-        Assert.Null(settings.DashboardSettings);
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "settings.json");
+        File.WriteAllText(path, original);
+        Assert.Throws<AppSettingsLoadException>(() => new SettingsStore(_directory, new Protector()));
+        Assert.Equal(original, File.ReadAllText(path));
     }
 
     [Fact]
-    public void SaveAndLoadPreservesDashboardSettings()
+    public async Task FailedCommitLeavesBothMemoryAndDiskUnchanged()
     {
-        CleanSettingsFile();
-        var settings = new AppSettings
-        {
-            DashboardSettings = new Dictionary<string, string>
-            {
-                ["config/default-theme"] = "\"light\"",
-                ["config/proxy-sort-type"] = "\"default\""
-            }
-        };
-
-        settings.Save();
-        var loaded = AppSettings.Load();
-
-        Assert.NotNull(loaded.DashboardSettings);
-        Assert.Equal("\"light\"", loaded.DashboardSettings["config/default-theme"]);
-        Assert.Equal("\"default\"", loaded.DashboardSettings["config/proxy-sort-type"]);
+        var fail = false;
+        var store = new SettingsStore(_directory, new Protector(), (path, json) =>
+        { if (fail) throw new IOException("disk failed"); SettingsStore.WriteAtomically(path, json); });
+        var before = store.Current;
+        var disk = File.ReadAllText(Path.Combine(_directory, "settings.json"));
+        fail = true;
+        await Assert.ThrowsAsync<IOException>(() => store.SetOptionAsync("minimizeToTray", false));
+        Assert.Same(before, store.Current);
+        Assert.Equal(disk, File.ReadAllText(Path.Combine(_directory, "settings.json")));
     }
 
-    private static void WriteSettingsJson(object value)
+    [Fact]
+    public async Task ConcurrentIndependentCommitsDoNotClobberEachOther()
     {
-        Directory.CreateDirectory(AppSettings.SettingsDirectory);
-        File.WriteAllText(AppSettings.SettingsPath, JsonSerializer.Serialize(value));
+        var store = new SettingsStore(_directory, new Protector());
+        var draft = Edit(store.Current.Profiles.Mihomo) with { ApiUrl = "http://localhost:9191" };
+        await Task.WhenAll(store.UpdateProfileAsync(CoreKind.Mihomo, 0, draft),
+            store.SavePreferencesAsync(new Dictionary<string, string> { ["config/theme"] = "dark" }),
+            store.SetOptionAsync("lightweightMode", false));
+        Assert.Equal("http://localhost:9191", store.Current.Profiles.Mihomo.ApiUrl);
+        Assert.Equal("dark", store.Current.DashboardPreferences["config/theme"]);
+        Assert.False(store.Current.DesktopOptions.LightweightMode);
+        Assert.Equal(1, store.Current.Profiles.Mihomo.Revision);
+        var loaded = new SettingsStore(_directory, new Protector());
+        Assert.Equal(store.Current.Profiles.Mihomo, loaded.Current.Profiles.Mihomo);
     }
 
-    private static void CleanSettingsFile()
+    [Fact]
+    public async Task SecretIsProtectedOnceAndPreferencesReuseCiphertext()
     {
-        if (File.Exists(AppSettings.SettingsPath))
-        {
-            File.Delete(AppSettings.SettingsPath);
-        }
+        var protector = new Protector();
+        var store = new SettingsStore(_directory, protector);
+        await store.UpdateProfileAsync(CoreKind.Mihomo, 0, Edit(store.Current.Profiles.Mihomo,
+            new() { Action = "replace", Value = "private-credential" }));
+        var cipher = store.Current.Profiles.Mihomo.ProtectedSecret;
+        await store.SavePreferencesAsync(new Dictionary<string, string> { ["config/theme"] = "dark" });
+        await store.SetOptionAsync("lightweightMode", false);
+        Assert.Equal(1, protector.Writes);
+        Assert.Equal(cipher, store.Current.Profiles.Mihomo.ProtectedSecret);
+        Assert.DoesNotContain("private-credential", File.ReadAllText(Path.Combine(_directory, "settings.json")));
+        Assert.Equal("private-credential", new SettingsStore(_directory, protector).Current.Profiles.Mihomo.Secret);
     }
 
-    private static void AssertSamePath(string expected, string actual)
+    [Fact]
+    public async Task CurrentFormatCredentialFailureRequiresExplicitReplacement()
     {
-        Assert.Equal(Path.GetFullPath(expected), Path.GetFullPath(actual), ignoreCase: true);
+        var protector = new Protector();
+        var first = new SettingsStore(_directory, protector);
+        await first.UpdateProfileAsync(CoreKind.Mihomo, 0, Edit(first.Current.Profiles.Mihomo, new() { Action = "replace", Value = "credential" }));
+        protector.FailRead = true;
+        var store = new SettingsStore(_directory, protector);
+        var protectedValue = store.Current.Profiles.Mihomo.ProtectedSecret;
+        Assert.True(store.Current.Profiles.Mihomo.SecretDecryptionFailed);
+        await store.UpdateProfileAsync(CoreKind.Mihomo, 1, Edit(store.Current.Profiles.Mihomo));
+        Assert.Equal(protectedValue, store.Current.Profiles.Mihomo.ProtectedSecret);
+        Assert.True(store.Current.Profiles.Mihomo.SecretDecryptionFailed);
+        await store.UpdateProfileAsync(CoreKind.Mihomo, 2, Edit(store.Current.Profiles.Mihomo, new() { Action = "replace", Value = "" }));
+        Assert.False(store.Current.Profiles.Mihomo.SecretDecryptionFailed);
+        Assert.Empty(store.Current.Profiles.Mihomo.ProtectedSecret);
     }
+
+    [Fact]
+    public async Task OldDraftCannotOverwriteACommittedProfile()
+    {
+        var store = new SettingsStore(_directory, new Protector());
+        var draft = Edit(store.Current.Profiles.Mihomo);
+        await store.UpdateProfileAsync(CoreKind.Mihomo, 0, draft);
+        await Assert.ThrowsAsync<SettingsConflictException>(() => store.UpdateProfileAsync(CoreKind.Mihomo, 0, draft));
+    }
+
+    [Theory]
+    [InlineData("file:///C:/test")]
+    [InlineData("http://user:password@localhost")]
+    [InlineData("http://localhost?secret=private")]
+    public void ApiUrlsCannotContainCredentialsOrNonWebProtocols(string url) =>
+        Assert.Throws<ArgumentException>(() => SettingsStore.NormalizeApiUrl(url));
+
+    public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 }

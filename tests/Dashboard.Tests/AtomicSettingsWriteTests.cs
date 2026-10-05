@@ -10,8 +10,8 @@ public sealed class AtomicSettingsWriteTests
         try
         {
             var path = Path.Combine(directory, "settings.json");
-            AppSettings.WriteSettingsAtomically(path, "{\"old\":true}");
-            AppSettings.WriteSettingsAtomically(path, "{\"new\":true}");
+            SettingsStore.WriteAtomically(path, "{\"old\":true}");
+            SettingsStore.WriteAtomically(path, "{\"new\":true}");
             Assert.Equal("{\"new\":true}", File.ReadAllText(path));
             Assert.Single(Directory.GetFiles(directory));
         }
@@ -29,7 +29,7 @@ public sealed class AtomicSettingsWriteTests
             File.WriteAllText(path, "original");
             using (var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                var error = Record.Exception(() => AppSettings.WriteSettingsAtomically(path, "replacement"));
+                var error = Record.Exception(() => SettingsStore.WriteAtomically(path, "replacement"));
                 Assert.True(error is IOException or UnauthorizedAccessException, $"Unexpected error: {error}");
             }
             Assert.Equal("original", File.ReadAllText(path));

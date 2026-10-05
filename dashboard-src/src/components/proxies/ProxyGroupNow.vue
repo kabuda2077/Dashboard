@@ -44,7 +44,6 @@ import ProxyName from './ProxyName.vue'
 
 const props = defineProps<{
   name: string
-  mobile?: boolean
 }>()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const { showTip } = useTooltip()

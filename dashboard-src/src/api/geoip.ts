@@ -1,7 +1,6 @@
 import { getConnectionGeoIPInfoSync } from '@/api/connectionGeoip'
 import { IP_INFO_API } from '@/constant'
 import { IPInfoAPI } from '@/store/settings'
-import * as ipaddr from 'ipaddr.js'
 
 export interface IPInfo {
   ip: string
@@ -144,12 +143,6 @@ export const getIPInfo = async (
       }
     }
   }
-}
-
-export const getPublicIPInfo = async (api: IP_INFO_API): Promise<IPInfo> => {
-  const info = await getIPInfo('', api)
-  if (!ipaddr.isValid(info.ip)) throw new Error(`${api} returned an invalid public IP`)
-  return info
 }
 
 // Backward-compatible facade for connection table callers. The heavy MMDB

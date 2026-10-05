@@ -92,7 +92,7 @@
 <script setup lang="ts" generic="T">
 import { TABLE_SIZE } from '@/constant'
 import { backgroundImage } from '@/helper/indexeddb'
-import { showNotification } from '@/helper/notification'
+import { copyToClipboard } from '@/helper/clipboard'
 import { tableSize } from '@/store/settings'
 import { ArrowDownCircleIcon, ArrowUpCircleIcon, CircleStackIcon } from '@heroicons/vue/24/outline'
 import {
@@ -206,24 +206,6 @@ const cellTitle = (cell: Cell<T, unknown>) => {
   const value = cell.getValue()
 
   return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
-}
-
-const copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showNotification({ content: 'copySuccess', type: 'alert-success', timeout: 2000 })
-  } catch {
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    document.body.appendChild(textArea)
-    textArea.select()
-    try {
-      document.execCommand('copy')
-      showNotification({ content: 'copySuccess', type: 'alert-success', timeout: 2000 })
-    } finally {
-      document.body.removeChild(textArea)
-    }
-  }
 }
 
 const handleCellRightClick = (event: MouseEvent, cell: Cell<T, unknown>) => {

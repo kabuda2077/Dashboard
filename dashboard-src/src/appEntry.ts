@@ -4,15 +4,16 @@ import 'tippy.js/animations/scale.css'
 import 'tippy.js/dist/tippy.css'
 import { createApp } from 'vue'
 import App from './App.vue'
-import './hostBootstrap'
 import { loadFonts } from './assets/load-fonts'
 import './assets/main.css'
-import { installDashboardSettingsSync } from './helper/dashboardSettingsSync'
+import { postHostMessage } from './composables/hostBridge'
 import { applyCustomThemes, applyKsuTheme } from './helper'
+import { installDashboardSettingsSync } from './helper/dashboardSettingsSync'
+import './hostBootstrap'
 import { i18n } from './i18n'
 import router from './router'
 
-const appStartedAt = performance.now()
+performance.mark('application-imports-ready')
 const isEdge = /Edg\//.test(navigator.userAgent)
 
 if (isEdge) {
@@ -38,11 +39,9 @@ app.use(i18n)
 app.mount('#app')
 
 window.requestAnimationFrame(() => {
-  const webview = (window as { chrome?: { webview?: { postMessage?: (message: unknown) => void } } })
-    .chrome?.webview
-  webview?.postMessage?.({
+  postHostMessage({
     type: 'performance',
     name: 'frontendMounted',
-    durationMs: Math.round(performance.now() - appStartedAt),
+    durationMs: Math.round(performance.now()),
   })
 })

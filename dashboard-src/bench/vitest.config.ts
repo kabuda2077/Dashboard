@@ -5,7 +5,8 @@ export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
   test: {
     environment: 'happy-dom',
-    include: ['bench/latency.bench.test.ts'],
+    include: ['bench/*.bench.test.ts'],
+    testTimeout: 30000,
     setupFiles: ['./src/__tests__/setup.ts'],
   },
 })

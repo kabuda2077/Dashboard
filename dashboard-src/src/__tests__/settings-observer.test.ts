@@ -1,117 +1,102 @@
-import { afterEach, expect, it, vi } from 'vitest'
-import { createApp, effectScope, nextTick, ref } from 'vue'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { effectScope, nextTick, ref } from 'vue'
+import { startMockHost } from './hostFixture'
 
-let stop: (() => void) | undefined
-let scope = effectScope()
+beforeEach(() => {
+  vi.resetModules()
+  vi.useFakeTimers()
+  localStorage.clear()
+  sessionStorage.clear()
+})
 afterEach(() => {
-  stop?.(); stop = undefined; scope.stop(); scope = effectScope()
-  vi.useRealTimers(); Reflect.deleteProperty(window, 'chrome')
-  Reflect.deleteProperty(window, '__mihomoHasDashboardSettings')
-  Reflect.deleteProperty(window, '__mihomoDashboardSettings')
+  window.dispatchEvent(new Event('pagehide'))
+  vi.useRealTimers()
+  Reflect.deleteProperty(window, 'chrome')
 })
-
-const install = async () => {
-  vi.resetModules(); vi.useFakeTimers(); localStorage.clear()
-  let receive: (event: MessageEvent) => void = () => {}
-  const post = vi.fn((message) => queueMicrotask(() => receive(new MessageEvent('message', {
-    data: { type: 'dashboardSettingsSaved', requestId: message.requestId, success: true },
-  }))))
-  Object.defineProperty(window, 'chrome', { configurable: true, value: { webview: {
-    postMessage: post, addEventListener: (_: string, fn: typeof receive) => { receive = fn }, removeEventListener: vi.fn(),
-  } } })
+it('keeps defaults absent, observes real writes/imports/cross-document changes, and stops listening', async () => {
+  const host = await startMockHost()
+  host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
+  const { useDashboardStorage } = await import('@/helper/storage')
   const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
-  stop = installDashboardSettingsSync()
-  expect(installDashboardSettingsSync()).toBe(stop)
-  return post
-}
-
-it('observes native writes, imports, and cross-document changes without polling, then disposes', async () => {
-  const post = await install()
-  const { useDashboardStorage } = await import('@/helper/storage')
-  const preference = scope.run(() => useDashboardStorage('config/test', 'default'))!
-  preference.value = 'changed'; await nextTick()
+  const scope = effectScope()
+  const value = scope.run(() => useDashboardStorage('config/test', 'default'))!
+  const dispose = installDashboardSettingsSync()!
   await vi.advanceTimersByTimeAsync(301)
-  expect(post.mock.lastCall?.[0].settings['config/test']).toBe('changed')
-  expect(post).toHaveBeenCalledTimes(1)
+  expect(localStorage.getItem('config/test')).toBeNull()
+  expect(host.post).not.toHaveBeenCalled()
+  value.value = 'changed'
+  await nextTick()
+  await vi.advanceTimersByTimeAsync(301)
+  expect(host.post.mock.lastCall?.[0].preferences['config/test']).toBe('changed')
   const { applyDashboardSettingsToStorage } = await import('@/helper/utils')
-  applyDashboardSettingsToStorage({ 'config/imported': 'value' })
+  applyDashboardSettingsToStorage({ 'config/imported': 'yes' })
   await vi.advanceTimersByTimeAsync(301)
-  expect(post.mock.lastCall?.[0].settings).toMatchObject({ 'config/test': 'changed', 'config/imported': 'value' })
-  localStorage.setItem('config/test', 'other-document')
-  window.dispatchEvent(new StorageEvent('storage', { key: 'config/test', newValue: 'other-document', storageArea: localStorage }))
-  await nextTick(); await vi.advanceTimersByTimeAsync(301)
-  expect(preference.value).toBe('other-document')
-  expect(post.mock.lastCall?.[0].settings['config/test']).toBe('other-document')
-  const count = post.mock.calls.length
-  await vi.advanceTimersByTimeAsync(5000)
-  expect(post).toHaveBeenCalledTimes(count)
-  expect(vi.getTimerCount()).toBe(0)
-  stop?.(); preference.value = 'after-dispose'
-  await nextTick(); await vi.advanceTimersByTimeAsync(2000)
-  expect(post).toHaveBeenCalledTimes(count)
+  expect(host.post.mock.lastCall?.[0].preferences['config/imported']).toBe('yes')
+  localStorage.setItem('config/remote', 'external')
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: 'config/remote',
+      storageArea: localStorage,
+      newValue: 'external',
+    }),
+  )
+  await vi.advanceTimersByTimeAsync(301)
+  expect(host.post.mock.lastCall?.[0].preferences['config/remote']).toBe('external')
+  const count = host.post.mock.calls.length
+  dispose()
+  scope.stop()
+  localStorage.setItem('config/remote', 'later')
+  window.dispatchEvent(
+    new StorageEvent('storage', { key: 'config/remote', storageArea: localStorage }),
+  )
+  await vi.advanceTimersByTimeAsync(301)
+  expect(host.post).toHaveBeenCalledTimes(count)
 })
-
-it('saves lazy and deferred defaults and reactive key changes without a periodic scan', async () => {
-  const post = await install()
-  await vi.advanceTimersByTimeAsync(301)
+it('reactive keys and explicit non-preference defaults retain their distinct semantics', async () => {
+  const host = await startMockHost()
+  host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
   const { useDashboardStorage } = await import('@/helper/storage')
-  const key = ref('config/lazy-first')
-  scope.run(() => useDashboardStorage(key, 'default'))
+  const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
+  const scope = effectScope()
+  const key = ref('config/first')
+  const value = scope.run(() => useDashboardStorage(key, 'default'))!
+  const stamp = scope.run(() =>
+    useDashboardStorage('cache/stamp', 123, undefined, { writeDefaults: true }),
+  )!
+  installDashboardSettingsSync()
+  expect(localStorage.getItem('cache/stamp')).toBe('123')
+  expect(stamp.value).toBe(123)
+  key.value = 'config/second'
+  await nextTick()
+  expect(localStorage.getItem('config/second')).toBeNull()
+  value.value = 'edited'
+  await nextTick()
   await vi.advanceTimersByTimeAsync(301)
-  expect(post.mock.lastCall?.[0].settings['config/lazy-first']).toBe('default')
-  key.value = 'config/lazy-second'; await nextTick()
-  await vi.advanceTimersByTimeAsync(301)
-  expect(post.mock.lastCall?.[0].settings['config/lazy-second']).toBe('default')
-  const app = createApp({ setup() {
-    useDashboardStorage('config/deferred', 'mounted', undefined, { initOnMounted: true })
-    return () => null
-  } })
-  app.mount(document.createElement('div'))
-  try {
-    await nextTick(); await vi.advanceTimersByTimeAsync(301)
-    expect(post.mock.lastCall?.[0].settings['config/deferred']).toBe('mounted')
-    expect(vi.getTimerCount()).toBe(0)
-  } finally { app.unmount() }
+  expect(host.post.mock.lastCall?.[0].preferences).toEqual({ 'config/second': 'edited' })
+  scope.stop()
 })
-
 it.each([
-  ['config/table-column-width', { host: 120 }, { host: 180 }],
-  ['config/table-grouping', [], ['host']],
+  ['config/table-column-width', {}, { host: 120 }],
+  ['config/table-grouping', [], ['Host']],
   ['config/logs-table-sorting', [], [{ id: 'time', desc: true }]],
-  ['config/proxy-folders', { folders: [], seeded: false }, { folders: [], seeded: true }],
+  ['config/proxy-folders', {}, { group: ['a'] }],
   ['config/log-filter-enabled', false, true],
-  ['config/quick-filter-regex', 'direct', 'dns'],
-  ['config/connection-card-group-key', null, 'host'],
-  ['config/import-settings-url', '', 'https://example.test/settings'],
-  ['config/connection-history-auto-cleanup-interval', 0, 7],
-])('preserves serialization/defaults and saves one burst for %s', async (key, initial, changed) => {
-  const post = await install()
+  ['config/quick-filter-regex', '', 'direct'],
+])('serializes a burst once using the native storage adapter: %s', async (key, initial, next) => {
+  const host = await startMockHost()
+  host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
   const { useDashboardStorage } = await import('@/helper/storage')
-  const preference = scope.run(() => useDashboardStorage<unknown>(key, initial, localStorage))!
-  if (initial === null) expect(localStorage.getItem(key)).toBeNull()
-  else expect(localStorage.getItem(key)).not.toBeNull()
-  preference.value = changed; await nextTick()
+  const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
+  const scope = effectScope()
+  const value = scope.run(() => useDashboardStorage<unknown>(key as string, initial))!
+  installDashboardSettingsSync()
+  expect(localStorage.getItem(key as string)).toBeNull()
+  value.value = next
+  await nextTick()
   await vi.advanceTimersByTimeAsync(301)
-  expect(post).toHaveBeenCalledTimes(1)
-  expect(post.mock.lastCall?.[0].settings[key]).toBe(localStorage.getItem(key))
-})
-
-it('keeps absent defaults absent and preserves explicit serializers, merge options and session isolation', async () => {
-  const post = await install()
-  const { useStorage, useDashboardStorage } = await import('@/helper/storage')
-  scope.run(() => useStorage('config/hidden-group-map', {}))
-  expect(localStorage.getItem('config/hidden-group-map')).toBeNull()
-  localStorage.setItem('config/proxy-folders', '{"seeded":true}')
-  const folders = scope.run(() => useDashboardStorage('config/proxy-folders', { seeded: false, folders: [] }, localStorage, { mergeDefaults: true }))!
-  expect(folders.value).toEqual({ seeded: true, folders: [] })
-  const custom = scope.run(() => useDashboardStorage('config/custom', 1, undefined, { writeDefaults: false, serializer: { read: Number, write: v => String(v * 2) } }))!
-  expect(localStorage.getItem('config/custom')).toBeNull()
-  custom.value = 3; await nextTick()
-  expect(localStorage.getItem('config/custom')).toBe('6')
-  const session = scope.run(() => useDashboardStorage('cache/session', false, sessionStorage))!
-  await vi.advanceTimersByTimeAsync(301)
-  const count = post.mock.calls.length
-  session.value = true; await nextTick(); await vi.advanceTimersByTimeAsync(301)
-  expect(post).toHaveBeenCalledTimes(count)
-  expect(post.mock.lastCall?.[0].settings).not.toHaveProperty('cache/session')
+  expect(host.post).toHaveBeenCalledTimes(1)
+  expect(host.post.mock.lastCall?.[0].preferences[key as string]).toBe(
+    localStorage.getItem(key as string),
+  )
+  scope.stop()
 })

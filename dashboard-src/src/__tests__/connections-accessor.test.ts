@@ -1,10 +1,10 @@
-import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
 import {
   createGetConnectionDisplayValue,
   createGetConnectionVisibleSearchValues,
   type ConnectionAccessor,
 } from '@/assembly/connections/accessor'
 import { connectionAccessor as clashConnectionAccessor } from '@/assembly/connections/clash'
+import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
 import { connectionTableColumns } from '@/store/settings'
 import type { Connection } from '@/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -38,9 +38,6 @@ const accessor: ConnectionAccessor = {
   inboundUser: () => '-',
   sniffHost: () => '',
   remoteAddress: () => '',
-  protocol: () => '',
-  outboundType: () => '',
-  fromOutbound: () => '',
   smartBlock: () => undefined,
 }
 
@@ -60,21 +57,27 @@ describe('connection field accessors', () => {
         proxyChainDirection: PROXY_CHAIN_DIRECTION.NORMAL,
       }),
     ).toBe('DIRECT → ProxyA')
-    expect(getValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.Host, {
-      mode: 'table',
-      showFullProxyChain: true,
-      proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
-    })).toBe('example.test:443')
-    expect(getValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol, {
-      mode: 'table',
-      showFullProxyChain: true,
-      proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
-    })).toBe('-')
-    expect(getValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP, {
-      mode: 'table',
-      showFullProxyChain: true,
-      proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
-    })).toBe('Testland / Example ASN')
+    expect(
+      getValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.Host, {
+        mode: 'table',
+        showFullProxyChain: true,
+        proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
+      }),
+    ).toBe('example.test:443')
+    expect(
+      getValue(connection, 'invalid' as CONNECTIONS_TABLE_ACCESSOR_KEY, {
+        mode: 'table',
+        showFullProxyChain: true,
+        proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
+      }),
+    ).toBe('-')
+    expect(
+      getValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP, {
+        mode: 'table',
+        showFullProxyChain: true,
+        proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
+      }),
+    ).toBe('Testland / Example ASN')
   })
 
   it('keeps GeoIP out of the default connection table columns', () => {
@@ -104,8 +107,12 @@ describe('connection field accessors', () => {
         options,
       ),
     ).toEqual(['example.test:443'])
-    expect(
-      getSearchValues(connection, [CONNECTIONS_TABLE_ACCESSOR_KEY.Process], options),
-    ).toEqual(['browser.exe'])
+    expect(getSearchValues(connection, [CONNECTIONS_TABLE_ACCESSOR_KEY.Process], options)).toEqual([
+      'browser.exe',
+    ])
+    const fields = [CONNECTIONS_TABLE_ACCESSOR_KEY.Host]
+    expect(getSearchValues(connection, fields, options)).toEqual(['example.test:443'])
+    fields[0] = CONNECTIONS_TABLE_ACCESSOR_KEY.Process
+    expect(getSearchValues(connection, fields, options)).toEqual(['browser.exe'])
   })
 })

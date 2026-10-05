@@ -30,11 +30,14 @@ import { last } from 'lodash'
 import pLimit from 'p-limit'
 import { isSingBoxCore } from '../version'
 import {
-  getHistoryByName,
+  beginProxyRequest,
+  ensureHistoryByName,
   getLatencyByName,
   getNowProxyNodeName,
+  getProxyRuntimeVersion,
   getTestUrl,
   IPv6Map,
+  isProxyRequestCurrent,
   proxyGroupList,
   proxyMap,
   proxyProviederList,
@@ -43,17 +46,21 @@ import {
 
 import { captureBackendSession } from '@/helper/backendSession'
 
-let fetchTime = 0
+const captureProxyRuntime = () => {
+  const session = captureBackendSession()
+  const runtime = getProxyRuntimeVersion()
+  return { isCurrent: () => session.isCurrent() && runtime === getProxyRuntimeVersion() }
+}
 
 export const fetchProxies = async () => {
   const session = captureBackendSession()
-  const nowTime = ++fetchTime
+  const request = beginProxyRequest()
 
   const [proxyRes, providerRes] = await Promise.all([fetchProxiesAPI(), fetchProxyProviderAPI()])
   const proxyData = proxyRes.data
   const providerData = providerRes.data
 
-  if (!session.isCurrent() || fetchTime !== nowTime) {
+  if (!session.isCurrent() || !isProxyRequestCurrent(request)) {
     return
   }
 
@@ -124,20 +131,28 @@ export const fetchProxies = async () => {
 }
 
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {
-  const session = captureBackendSession()
-  const proxyGroup = proxyMap.value[proxyGroupName]
+  const session = captureProxyRuntime()
+  let proxyGroup = proxyMap.value[proxyGroupName]
   if (!proxyGroup) return
 
   if (proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance) return
   if (proxyGroup.now === proxyName) {
     await fetchProxies()
     if (!session.isCurrent()) return
-    if (proxyGroup.now === proxyName) return
+    proxyGroup = proxyMap.value[proxyGroupName]
+    if (
+      !proxyGroup ||
+      proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance ||
+      proxyGroup.now === proxyName
+    )
+      return
   }
 
   await selectProxyAPI(proxyGroupName, proxyName)
   if (!session.isCurrent()) return
-  proxyMap.value[proxyGroupName].now = proxyName
+  const selectedGroup = proxyMap.value[proxyGroupName]
+  if (!selectedGroup) return
+  selectedGroup.now = proxyName
 
   if (automaticDisconnection.value) {
     activeConnections.value
@@ -174,7 +189,7 @@ const fetchNodeLatency = (proxyName: string, url: string, timeout: number) => {
 }
 
 const latencyTestForSingle = async (proxyName: string, url: string, timeout: number) => {
-  const session = captureBackendSession()
+  const session = captureProxyRuntime()
   const now = getNowProxyNodeName(proxyName)
 
   if (IPv6test.value) {
@@ -205,7 +220,7 @@ export const proxyLatencyTest = async (
   url = speedtestUrlWithDefault.value,
   timeout = speedtestTimeout.value,
 ) => {
-  const session = captureBackendSession()
+  const session = captureProxyRuntime()
   try {
     await latencyTestForSingle(proxyName, url, timeout)
   } catch {
@@ -223,7 +238,7 @@ export const proxyLatencyTest = async (
 }
 
 const setHistory = (proxyName: string, delay: number, groupName?: string) => {
-  const history = getHistoryByName(proxyName, groupName)
+  const history = ensureHistoryByName(proxyName, groupName)
   const now = new Date()
 
   history.push({
@@ -233,7 +248,13 @@ const setHistory = (proxyName: string, delay: number, groupName?: string) => {
 }
 
 const TIP_KEY = 'testLatencyOneByOneWithTip'
-const limiter = pLimit(5)
+let latencyPool:
+  { session: ReturnType<typeof captureProxyRuntime>; limit: ReturnType<typeof pLimit> } | undefined
+const getLatencyLimiter = () => {
+  if (!latencyPool?.session.isCurrent())
+    latencyPool = { session: captureProxyRuntime(), limit: pLimit(5) }
+  return latencyPool.limit
+}
 const untestableProxyTypes = new Set([PROXY_TYPE.Reject, PROXY_TYPE.RejectDrop, PROXY_TYPE.Block])
 const isLatencyTestable = (name: string) => {
   const type = proxyMap.value[name]?.type?.toLowerCase() as PROXY_TYPE | undefined
@@ -247,7 +268,8 @@ const testLatencyOneByOneWithTip = async (
   url = speedtestUrlWithDefault.value,
   groupName?: string,
 ) => {
-  const session = captureBackendSession()
+  const session = captureProxyRuntime()
+  const limiter = getLatencyLimiter()
   const total = nodes.length
   let testDone = 0
   let testFailed = 0
@@ -305,7 +327,7 @@ const testLatencyOneByOneWithTip = async (
 }
 
 export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
-  const session = captureBackendSession()
+  const session = captureProxyRuntime()
   const proxyNode = proxyMap.value[proxyGroupName]
   if (!proxyNode) return
   const all = (proxyNode.all ?? []).filter(isLatencyTestable)
@@ -375,7 +397,7 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
 }
 
 export const allProxiesLatencyTest = async () => {
-  const session = captureBackendSession()
+  const session = captureProxyRuntime()
   if (independentLatencyTest.value) {
     const limit = pLimit(3)
 

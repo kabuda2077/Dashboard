@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div
     :class="cardClass"
     @contextmenu.stop.prevent="handlerLatencyTest"

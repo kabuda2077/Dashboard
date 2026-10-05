@@ -1,4 +1,3 @@
-import { capabilities } from '@/assembly/backend'
 import { connectionAccessor } from '@/assembly/connections'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { NOT_CONNECTED, PROXY_CHAIN_DIRECTION, PROXY_TYPE, ROUTE_NAME } from '@/constant'
@@ -9,9 +8,7 @@ import {
   proxyChainDirection,
   splitOverviewPage,
 } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import type { Connection } from '@/types'
-import * as ipaddr from 'ipaddr.js'
 import { computed } from 'vue'
 
 export const isProxyGroup = (name: string) => {
@@ -61,9 +58,6 @@ export const getConnectionRulePayload = (connection: Connection) =>
 export const getConnectionSourceIP = (connection: Connection) =>
   connectionAccessor().sourceIP(connection)
 
-export const getConnectionSourcePort = (connection: Connection) =>
-  connectionAccessor().sourcePort(connection)
-
 export const getConnectionNetwork = (connection: Connection) =>
   connectionAccessor().network(connection)
 
@@ -88,18 +82,6 @@ export const getNetworkTypeFromConnection = (connection: Connection) =>
 export const getInboundUserFromConnection = (connection: Connection) =>
   connectionAccessor().inboundUser(connection)
 
-export const getDestinationTypeFromConnection = (connection: Connection) => {
-  const destination = getDestinationFromConnection(connection)
-
-  if (ipaddr.IPv4.isIPv4(destination)) {
-    return 'IPv4'
-  } else if (ipaddr.IPv6.isIPv6(destination)) {
-    return 'IPv6'
-  } else {
-    return 'FQDN'
-  }
-}
-
 export const getChainsStringFromConnection = (connection: Connection) => {
   const chains = [...getConnectionChains(connection)]
 
@@ -123,11 +105,6 @@ export const getColorForLatency = (latency: number) => {
 }
 
 export const renderRoutes = computed(() => {
-  const caps = capabilities.value
-  // capability gate per route; routes not listed here are always shown
-  const routeCapable: Partial<Record<ROUTE_NAME, boolean>> = {
-    [ROUTE_NAME.rules]: !activeBackend.value || caps.rules,
-  }
   const routeOrder = [
     ROUTE_NAME.core,
     ROUTE_NAME.proxies,
@@ -138,7 +115,6 @@ export const renderRoutes = computed(() => {
   ]
   return routeOrder.filter((r) => {
     if (!splitOverviewPage.value && r === ROUTE_NAME.overview) return false
-    if (r in routeCapable && routeCapable[r] === false) return false
     return true
   })
 })

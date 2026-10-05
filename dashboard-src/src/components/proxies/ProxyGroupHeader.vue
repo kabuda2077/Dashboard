@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="relative flex w-full items-center gap-2.5 overflow-hidden">
     <ProxyName
       :name="name"

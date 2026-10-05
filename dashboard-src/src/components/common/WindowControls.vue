@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="showWindowControls"
-    class="flex select-none items-center gap-2"
+    class="flex items-center gap-2 select-none"
   >
     <button
       class="btn btn-circle bg-base-100 hover:bg-base-200 h-9 min-h-9 w-9 p-0 shadow-xs transition-colors active:scale-95"
@@ -34,18 +34,16 @@
 </template>
 
 <script setup lang="ts">
-import {
-  hasHostBridge,
-  hostWindowMaximized,
-  postHostMessage,
-} from '@/composables/hostBridge'
+import { hasHostBridge, hostWindowMaximized, postHostMessage } from '@/composables/hostBridge'
 import { MinusIcon, Square2StackIcon, StopIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { onMounted } from 'vue'
 
 const showWindowControls = hasHostBridge || import.meta.env.DEV
 const isMaximized = hostWindowMaximized
 
-const post = (type: string) => {
+const post = (
+  type: 'windowMinimize' | 'windowToggleMaximize' | 'windowClose' | 'requestWindowState',
+) => {
   postHostMessage({ type })
 }
 

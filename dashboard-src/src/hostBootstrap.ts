@@ -1,70 +1,20 @@
-import { showHostNotice } from '@/helper/hostNotice'
-import { getBackendFromUrl } from '@/helper/utils'
-import { addBackend, activeUuid } from '@/store/setup'
 import {
   addHostMessageListener,
   hostWindow,
   postHostMessage,
   type HostMessage,
-  type HostState,
 } from '@/composables/hostBridge'
+import { showHostNotice } from '@/helper/hostNotice'
+import { getBackendFromUrl } from '@/helper/utils'
+import { addBackend } from '@/store/setup'
 import type { Backend } from '@/types'
 
 const RESIZE_BORDER_SIZE = 8
 const RESIZE_HANDLE_Z_INDEX = '2147483647'
 const DRAG_REGION_HEIGHT = 48
 
-const normalizePath = (pathname: string) => {
-  const path = pathname.replace(/\/$/, '')
-  return path === '' || path === '/' ? '' : path
-}
-
-const backendFromApiUrl = (
-  apiUrl: string | undefined,
-  secret: string | undefined,
-  coreType: string | undefined,
-  readOnlyTunEnabled: boolean | undefined,
-) => {
-  if (!apiUrl) return null
-
-  try {
-    const url = new URL(apiUrl)
-    return {
-      type: 'clash',
-      protocol: url.protocol.replace(':', ''),
-      host: url.hostname,
-      port: url.port || (url.protocol === 'https:' ? '443' : '80'),
-      secondaryPath: normalizePath(url.pathname),
-      password: secret || '',
-      label: coreType === 'sing-box' ? '本机 sing-box' : '本机内核',
-      disableUpgradeCore: true,
-      readOnlyTunEnabled: coreType === 'sing-box' && typeof readOnlyTunEnabled === 'boolean'
-        ? readOnlyTunEnabled
-        : undefined,
-    } satisfies Omit<Backend, 'uuid'>
-  } catch {
-    return null
-  }
-}
-
-const applyBackend = (backend: Omit<Backend, 'uuid'> | null, replaceExisting = false) => {
-  if (!backend?.protocol || !backend.host || !backend.port) return
-  addBackend(backend, { replaceExisting })
-}
-
-let backendSignature = ''
-const applyHostState = (state: HostState | undefined) => {
-  const backend = state?.secretDecryptionFailed ? null
-    : backendFromApiUrl(state?.apiUrl, state?.secret, state?.coreType, state?.readOnlyTunEnabled)
-  const nextSignature = backend
-    ? `${backend.protocol}://${backend.host}:${backend.port}${backend.secondaryPath}|${backend.password}|${state?.coreType ?? ''}|${state?.readOnlyTunEnabled ?? ''}`
-    : ''
-
-  if (!backend) activeUuid.value = null
-  if (nextSignature !== backendSignature) {
-    if (backend) applyBackend(backend, true)
-    backendSignature = nextSignature
-  }
+const applyBackend = (backend: Omit<Backend, 'uuid'> | null) => {
+  if (backend?.protocol && backend.host && backend.port) addBackend(backend)
 }
 
 const getResizeEdge = (event: MouseEvent) => {
@@ -265,9 +215,7 @@ if (!hostWindow.chrome?.webview) {
 
 installWindowChromeBridge()
 addHostMessageListener((event: MessageEvent<HostMessage>) => {
-  if (event.data?.type === 'state') {
-    applyHostState(event.data.state)
-  } else if (event.data?.type === 'notice') {
-    showHostNotice(event.data.message ?? '')
+  if (event.data?.type === 'notice') {
+    showHostNotice(event.data.message ?? '', event.data.severity ?? 'info')
   }
 })

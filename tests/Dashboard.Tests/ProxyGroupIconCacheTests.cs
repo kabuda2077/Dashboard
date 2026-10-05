@@ -90,10 +90,8 @@ public sealed class ProxyGroupIconCacheTests
     [InlineData("https://example.test/icon.png", 1)]
     // Path normalization changes the key under any comparer, so both are kept.
     [InlineData("https://example.test/a/../icon.png", 2)]
-    // Host case differs only by case. _cachedFiles is OrdinalIgnoreCase, so the
-    // normalized form collides with the raw one and a single key is stored.
-    // See NormalizedHostCaseCannotBeStoredSeparately for what that costs.
-    [InlineData("https://Example.TEST/icon.png", 1)]
+    // Host normalization must survive the frontend's case-sensitive object lookup.
+    [InlineData("https://Example.TEST/icon.png", 2)]
     public void NonNormalizedIconUrlsAreRecordedUnderBothForms(string iconUrl, int expectedKeyCount)
     {
         var cache = CreateCache();
@@ -110,17 +108,9 @@ public sealed class ProxyGroupIconCacheTests
         }
     }
 
-    // Documents a known limitation rather than asserting desired behavior.
-    //
-    // When a config writes the host in non-lowercase, the map reaches the
-    // frontend keyed by the config's spelling only. If the Clash API ever
-    // returns the host lowercased, ProxyIcon.vue's verbatim lookup misses on
-    // case, its `new URL(icon).href` lookup misses too, and that group falls
-    // back to the remote icon URL. Storing both forms would require changing
-    // _cachedFiles to a case-sensitive comparer, which affects every other
-    // lookup, so the gap is left in place deliberately.
+    // Both spellings are valid lookup keys in the browser.
     [Fact]
-    public void NormalizedHostCaseCannotBeStoredSeparately()
+    public void NormalizedHostCaseIsStoredSeparately()
     {
         var cache = CreateCache();
         const string iconUrl = "https://Example.TEST/icon.png";
@@ -128,9 +118,24 @@ public sealed class ProxyGroupIconCacheTests
         InvokeTryRecordCacheFile(cache, iconUrl, "cached.png");
         var keys = GetCachedFileKeys(cache);
 
-        Assert.Single(keys);
+        Assert.Equal(2, keys.Count);
         Assert.Contains(iconUrl, keys);
-        Assert.DoesNotContain(new Uri(iconUrl).AbsoluteUri, (IEnumerable<string>)keys, StringComparer.Ordinal);
+        Assert.Contains(new Uri(iconUrl).AbsoluteUri, keys);
+    }
+
+    [Fact]
+    public void CachePrunesExpiredFilesAndCapsItsFileCount()
+    {
+        var cache = CreateCache();
+        for (var index = 0; index < ProxyGroupIconCache.MaxCacheFiles + 10; index++)
+            File.WriteAllText(Path.Combine(cache.CacheDirectory, $"{index}.png"), "icon");
+        var expired = Path.Combine(cache.CacheDirectory, "expired.png");
+        File.WriteAllText(expired, "expired");
+        File.SetLastWriteTimeUtc(expired, DateTime.UtcNow.AddDays(-31));
+        cache.PruneCache();
+        Assert.False(File.Exists(expired));
+        Assert.Equal(ProxyGroupIconCache.MaxCacheFiles, Directory.GetFiles(cache.CacheDirectory).Length);
+        Directory.Delete(cache.CacheDirectory, true);
     }
 
     [Fact]
@@ -166,7 +171,7 @@ public sealed class ProxyGroupIconCacheTests
             BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new MissingMethodException(typeof(ProxyGroupIconCache).FullName, "TryRecordCacheFile");
 
-        return (bool)method.Invoke(cache, new object[] { iconUrl, fileName })!;
+        return (bool)method.Invoke(cache, new object?[] { iconUrl, fileName, null })!;
     }
 
     private static ICollection<string> GetCachedFileKeys(ProxyGroupIconCache cache)

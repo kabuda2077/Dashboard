@@ -28,6 +28,10 @@ jobs:
         with:
           package_json_file: dashboard-src/package.json
 
+      - name: Check build tooling and documentation
+        shell: pwsh
+        run: .\tools\check-maintenance.ps1
+
       - name: Run checks
-        shell: powershell
+        shell: pwsh
         run: .\tools\check.ps1 -Configuration Release

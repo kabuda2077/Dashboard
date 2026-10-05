@@ -159,7 +159,9 @@ const setAlert = (
 
   const contentDiv = document.createElement('div')
   contentDiv.className = 'app-toast__content'
-  contentDiv.innerHTML = t(content, params)
+  // API/host error strings are untrusted text in a page with native privileges.
+  contentDiv.textContent = t(content, params)
+  contentDiv.style.whiteSpace = 'pre-line'
 
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
@@ -186,15 +188,6 @@ const setAlert = (
   alert.onmouseleave = () => resumeTimer(alertKey)
 
   return progressBar
-}
-
-/** 收掉一条还挂着的提示 —— 动作结束却没有自己的结果提示时用(如已被内部提示接手)。 */
-export const dismissNotification = (key: string) => {
-  const alertData = alertMap.get(key)
-
-  if (!alertData) return
-
-  closeAlert(alertData.alert, key)
 }
 
 /**

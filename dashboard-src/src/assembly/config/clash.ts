@@ -1,7 +1,7 @@
 // Clash REST 后端的 config 组装:拉取 /configs、PATCH /configs,写入门面状态。
 import { getConfigsAPI, patchConfigsAPI } from '@/api/clash'
 
-export const fetchConfigs = async () => (await getConfigsAPI()).data
+export const fetchConfigs = async (signal?: AbortSignal) => (await getConfigsAPI(signal)).data
 
 export const updateConfigs = async (cfg: Record<string, string | boolean | object | number>) => {
   await patchConfigsAPI(cfg)

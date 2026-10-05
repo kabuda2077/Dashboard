@@ -1,7 +1,7 @@
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
+import { isSupportedConnectionField } from '@/helper/connectionFields'
 import { useDashboardStorage as useStorage } from '@/helper/storage'
 import { computed, ref, watch } from 'vue'
-import { isSupportedConnectionField } from '@/helper/connectionFields'
 
 export type ConnectionCardGroupKey =
   | CONNECTIONS_TABLE_ACCESSOR_KEY.Type
@@ -17,9 +17,6 @@ export type ConnectionCardGroupKey =
   | CONNECTIONS_TABLE_ACCESSOR_KEY.GeoIP
   | CONNECTIONS_TABLE_ACCESSOR_KEY.RemoteAddress
   | CONNECTIONS_TABLE_ACCESSOR_KEY.InboundUser
-  | CONNECTIONS_TABLE_ACCESSOR_KEY.Protocol
-  | CONNECTIONS_TABLE_ACCESSOR_KEY.OutboundType
-  | CONNECTIONS_TABLE_ACCESSOR_KEY.FromOutbound
 
 export const CONNECTION_CARD_GROUPABLE_KEYS: ConnectionCardGroupKey[] = [
   CONNECTIONS_TABLE_ACCESSOR_KEY.Type,
@@ -42,9 +39,13 @@ export const connectionCardGroupKey = useStorage<ConnectionCardGroupKey | null>(
   null,
 )
 
-watch(connectionCardGroupKey, (key) => {
-  if (key && !isSupportedConnectionField(key)) connectionCardGroupKey.value = null
-}, { immediate: true, flush: 'sync' })
+watch(
+  connectionCardGroupKey,
+  (key) => {
+    if (key && !isSupportedConnectionField(key)) connectionCardGroupKey.value = null
+  },
+  { immediate: true, flush: 'sync' },
+)
 
 const groupIds = ref<string[]>([])
 const expandedGroupIds = ref(new Set<string>())

@@ -1,120 +1,126 @@
 import {
   addHostMessageListener,
+  commandHost,
   hasHostBridge,
-  hostWindow,
   postHostMessage,
 } from '@/composables/hostBridge'
 import { getDashboardSettingsFromStorage, isDashboardSettingKey } from '@/helper/utils'
-import { DASHBOARD_SETTINGS_CHANGED } from './settingsChanges'
+import { restoredPreferences } from './dashboardStartup'
+import { coreDrafts, isDraftDirty } from './hostDraft'
+import { flushLocalPersistence } from './persistenceBarrier'
+import { canPersistPreferences, DASHBOARD_SETTINGS_CHANGED } from './settingsChanges'
 
-const SAVE_DEBOUNCE_MS = 300
-const SAVE_TIMEOUT_MS = 10000
-let saveQueue: Promise<void> = Promise.resolve()
-let acknowledgedSnapshot: string | undefined
+type Snapshot = { sequence: number; settings: Record<string, string>; signature: string }
+type Waiter = { sequence: number; resolve: () => void; reject: (error: unknown) => void }
+const normalize = (settings: Record<string, string>) =>
+  JSON.stringify(Object.entries(settings).sort(([a], [b]) => a.localeCompare(b)))
+let acknowledged: string | undefined
+let sequence = 0
+let active: Snapshot | undefined
+let latest: Snapshot | undefined
+let waiters: Waiter[] = []
+let timer: ReturnType<typeof setTimeout> | undefined
+let dispose: (() => void) | undefined
 
-let disposeSync: (() => void) | undefined
-let saveTimer: ReturnType<typeof window.setTimeout> | undefined
-
-const normalizeSnapshot = (settings: Record<string, string>) => JSON.stringify(
-  Object.entries(settings).sort(([left], [right]) => left.localeCompare(right)),
-)
-
-export const saveDashboardSettingsToHost = async (_options: { beforeReload?: boolean } = {}) => {
-  if (!hasHostBridge) return
-  if (saveTimer) {
-    window.clearTimeout(saveTimer)
-    saveTimer = undefined
-  }
-  const settings = getDashboardSettingsFromStorage()
-  const snapshot = normalizeSnapshot(settings)
-  const save = () => {
-    // Check when this queued save starts: an earlier identical save may have
-    // succeeded or failed since this snapshot was captured.
-    if (snapshot === acknowledgedSnapshot) return Promise.resolve()
-    return new Promise<void>((resolve, reject) => {
-      const requestId = crypto.randomUUID()
-      let removeListener = () => {}
-      const finish = (error?: Error) => {
-        window.clearTimeout(timer)
-        removeListener()
-        if (error) reject(error)
-        else {
-          acknowledgedSnapshot = snapshot
-          resolve()
-        }
-      }
-      const timer = window.setTimeout(
-        () => finish(new Error('保存设置超时，请重试后再刷新。')),
-        SAVE_TIMEOUT_MS,
-      )
-      removeListener = addHostMessageListener(({ data }) => {
-        if (data?.type !== 'dashboardSettingsSaved' || data.requestId !== requestId) return
-        if (data.success === true) finish()
-        else finish(new Error('设置保存失败，请检查目录写入权限后重试。'))
+const drain = async () => {
+  if (active || !latest) return
+  const job = latest
+  latest = undefined
+  active = job
+  let failure: unknown
+  try {
+    if (job.signature !== acknowledged) {
+      const result = await commandHost({
+        type: 'saveDashboardPreferences',
+        preferences: job.settings,
       })
-      try {
-        postHostMessage({ type: 'saveDashboardSettings', requestId, settings })
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
-  }
-  const result = saveQueue.then(save)
-  saveQueue = result.catch(() => undefined)
-  return result.catch(async (error) => {
+      if (result.status !== 'completed' || !result.saved)
+        throw new Error(result.message ?? '界面设置保存失败。')
+      acknowledged = job.signature
+    }
+  } catch (error) {
+    failure = error
     const { notifyRequestError } = await import('@/helper/requestError')
     notifyRequestError(error)
-    throw error
-  })
+  } finally {
+    const completed = waiters.filter((waiter) => waiter.sequence <= job.sequence)
+    waiters = waiters.filter((waiter) => waiter.sequence > job.sequence)
+    active = undefined
+    for (const waiter of completed) {
+      if (failure) waiter.reject(failure)
+      else waiter.resolve()
+    }
+    void drain()
+  }
+}
+
+export const saveDashboardSettingsToHost = (): Promise<void> => {
+  if (!hasHostBridge) return Promise.resolve()
+  if (!canPersistPreferences())
+    return Promise.reject(new Error('Preference storage needs recovery before it can be saved.'))
+  clearTimeout(timer)
+  timer = undefined
+  const settings = getDashboardSettingsFromStorage()
+  const signature = normalize(settings)
+  if (!active && !latest && signature === acknowledged) return Promise.resolve()
+  const targetSequence = active?.signature === signature && !latest ? active.sequence : ++sequence
+  if (targetSequence !== active?.sequence)
+    latest = { sequence: targetSequence, settings, signature }
+  const completion = new Promise<void>((resolve, reject) =>
+    waiters.push({ sequence: targetSequence, resolve, reject }),
+  )
+  void drain()
+  return completion
 }
 
 export const scheduleDashboardSettingsSave = () => {
   if (!hasHostBridge) return
-
-  if (saveTimer) {
-    window.clearTimeout(saveTimer)
-  }
-
-  saveTimer = window.setTimeout(() => {
-    void saveDashboardSettingsToHost().catch(() => undefined)
-  }, SAVE_DEBOUNCE_MS)
+  clearTimeout(timer)
+  timer = setTimeout(() => {
+    void saveDashboardSettingsToHost().catch(() => {})
+  }, 300)
 }
 
 export const installDashboardSettingsSync = () => {
-  if (disposeSync || !hasHostBridge) return disposeSync
-  if (acknowledgedSnapshot === undefined && hostWindow.__mihomoHasDashboardSettings === true) {
-    acknowledgedSnapshot = normalizeSnapshot(hostWindow.__mihomoDashboardSettings ?? {})
-  }
-  const onStorage = (event: StorageEvent) => {
+  if (dispose || !hasHostBridge) return dispose
+  acknowledged ??= normalize(restoredPreferences)
+  const storage = (event: StorageEvent) => {
     if (
-      event.storageArea === window.localStorage &&
+      event.storageArea === localStorage &&
       (event.key === null || isDashboardSettingKey(event.key))
-    ) {
+    )
       scheduleDashboardSettingsSave()
-    }
   }
-  const onUnload = () => {
-    void saveDashboardSettingsToHost().catch(() => undefined)
+  const unload = () => {
+    void saveDashboardSettingsToHost().catch(() => {})
   }
+  const removeFlush = addHostMessageListener(({ data }) => {
+    if (data.type !== 'flushPreferences' || !data.requestId) return
+    const requestId = data.requestId
+    void flushLocalPersistence().then(saveDashboardSettingsToHost).then(
+      () => {
+        // Inspect drafts after the disk ACK, not when the flush request arrived:
+        // edits made while a preference write is in flight must also keep the view alive.
+        const hasUnsavedDraft = Object.values(coreDrafts).some(
+          (draft) => draft && isDraftDirty(draft),
+        )
+        postHostMessage({ type: 'preferencesFlushed', requestId, value: !hasUnsavedDraft })
+      },
+      () => postHostMessage({ type: 'preferencesFlushed', requestId, value: false }),
+    )
+  })
   window.addEventListener(DASHBOARD_SETTINGS_CHANGED, scheduleDashboardSettingsSave)
-  window.addEventListener('storage', onStorage)
-  window.addEventListener('beforeunload', onUnload)
-  let stopped = false
-  disposeSync = () => {
-    if (stopped) return
-    stopped = true
-    window.clearTimeout(saveTimer)
-    saveTimer = undefined
+  window.addEventListener('storage', storage)
+  window.addEventListener('beforeunload', unload)
+  dispose = () => {
+    removeFlush()
+    clearTimeout(timer)
     window.removeEventListener(DASHBOARD_SETTINGS_CHANGED, scheduleDashboardSettingsSave)
-    window.removeEventListener('storage', onStorage)
-    window.removeEventListener('beforeunload', onUnload)
-    window.removeEventListener('pagehide', stop)
-    disposeSync = undefined
+    window.removeEventListener('storage', storage)
+    window.removeEventListener('beforeunload', unload)
+    dispose = undefined
   }
-  const stop = disposeSync
-  window.addEventListener('pagehide', stop, { once: true })
-  // Reconcile defaults written before listeners were installed. Later lazy
-  // imports notify through the preference adapter; no periodic scan is needed.
+  window.addEventListener('pagehide', dispose, { once: true })
   scheduleDashboardSettingsSave()
-  return stop
+  return dispose
 }

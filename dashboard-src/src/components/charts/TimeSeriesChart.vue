@@ -1,14 +1,12 @@
 <template>
   <div
-    class="relative w-full overflow-hidden"
-    :class="xAxisMode === 'seconds' ? 'h-36' : 'h-28'"
+    class="relative h-28 w-full overflow-hidden"
   >
     <div
       ref="chartRef"
       class="h-full w-full"
     />
     <button
-      v-if="showPauseButton"
       class="btn btn-ghost btn-xs absolute right-1 bottom-0"
       @click="isPaused = !isPaused"
     >
@@ -33,14 +31,10 @@ const props = withDefaults(
     labelFormatter: (value: number) => string
     tooltipFormatter: (value: ChartTooltipParam[]) => string
     yAxisFloor?: number
-    xAxisMode?: 'time' | 'seconds'
     windowSeconds?: number
-    showPauseButton?: boolean
   }>(),
   {
-    xAxisMode: 'time',
     windowSeconds: 20,
-    showPauseButton: true,
   },
 )
 
@@ -49,9 +43,8 @@ const isPaused = ref(false)
 const { colors, fontFamily } = useChartTheme(chartRef)
 
 const options = computed<EChartOption>(() => {
-  const isSeconds = props.xAxisMode === 'seconds'
   const lastPoint = props.data[0]?.data.at(-1)
-  const latest = lastPoint ? getChartPointValue(lastPoint)[0] : isSeconds ? 0 : Date.now()
+  const latest = lastPoint ? getChartPointValue(lastPoint)[0] : Date.now()
 
   return {
     animationDurationUpdate: 1000,
@@ -65,9 +58,7 @@ const options = computed<EChartOption>(() => {
         fontSize: 10,
       },
     },
-    grid: isSeconds
-      ? { left: 8, top: 15, right: 8, bottom: 40, containLabel: true }
-      : { left: 50, top: 15, right: 8, bottom: 25 },
+    grid: { left: 50, top: 15, right: 8, bottom: 25 },
     tooltip: {
       show: true,
       trigger: 'axis',
@@ -83,31 +74,15 @@ const options = computed<EChartOption>(() => {
       },
       formatter: props.tooltipFormatter,
     },
-    xAxis: isSeconds
-      ? {
-          type: 'value',
-          min: latest - props.windowSeconds,
-          max: latest,
-          axisLine: { show: false },
-          axisTick: { show: false },
-          splitLine: { show: false },
-          axisLabel: {
-            show: true,
-            color: colors.baseContent,
-            fontFamily: fontFamily.value,
-            fontSize: 10,
-            formatter: (value: number) => (value < 0 ? '' : `${Math.round(value)} s`),
-          },
-        }
-      : {
-          type: 'time',
-          min: latest - (props.windowSeconds - 1) * 1000,
-          max: latest - 1000,
-          axisLine: { show: false },
-          axisTick: { show: false },
-          splitLine: { show: false },
-          axisLabel: { show: false },
-        },
+    xAxis: {
+      type: 'time',
+      min: latest - (props.windowSeconds - 1) * 1000,
+      max: latest - 1000,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+    },
     yAxis: {
       type: 'value',
       splitNumber: 4,
@@ -130,7 +105,8 @@ const options = computed<EChartOption>(() => {
         color: colors.baseContent,
         fontFamily: fontFamily.value,
         fontSize: 10,
-        ...(isSeconds ? {} : { align: 'left', padding: [0, 0, 0, -35] }),
+        align: 'left',
+        padding: [0, 0, 0, -35],
       },
     },
     series: props.data.map((item, index) => {

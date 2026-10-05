@@ -1,5 +1,4 @@
 using System.Text;
-using System.Threading.Channels;
 
 namespace Dashboard;
 
@@ -7,20 +6,12 @@ internal static class HostOperationLogger
 {
     private const long MaxLogFileBytes = 2 * 1024 * 1024;
     private const int RetainedArchiveCount = 3;
-    private static readonly Channel<LogEntry> Entries = Channel.CreateUnbounded<LogEntry>(
-        new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false,
-            AllowSynchronousContinuations = false
-        });
     private static readonly HostLogFileWriter FileWriter = new(
-        AppSettings.LogDirectory,
-        MaxLogFileBytes,
-        RetainedArchiveCount);
-    private static readonly Task WriterTask = Task.Run(ProcessEntriesAsync);
+        AppSettings.LogDirectory, MaxLogFileBytes, RetainedArchiveCount);
+    private static readonly HostLogQueue Queue = new(FileWriter.Write);
+    internal static long DroppedEntries => Queue.Dropped;
+    internal static long WriteFailures => FileWriter.WriteFailures + Queue.WriterFailures;
     private static int _diagnosticEnabled = DefaultDiagnosticEnabled ? 1 : 0;
-    private static int _shutdownStarted;
 
 #if DEBUG
     private const bool DefaultDiagnosticEnabled = true;
@@ -62,29 +53,12 @@ internal static class HostOperationLogger
 
     public static void Shutdown(TimeSpan timeout)
     {
-        if (Interlocked.Exchange(ref _shutdownStarted, 1) == 0)
-        {
-            Entries.Writer.TryComplete();
-        }
-
-        try
-        {
-            WriterTask.Wait(timeout);
-        }
-        catch
-        {
-        }
+        try { Queue.StopAsync().Wait(timeout); }
+        catch { }
     }
 
-    private static void Enqueue(string category, string message, Exception? exception)
-    {
-        if (Volatile.Read(ref _shutdownStarted) != 0)
-        {
-            return;
-        }
-
-        Entries.Writer.TryWrite(new LogEntry(category, FormatEntry(message, exception)));
-    }
+    private static void Enqueue(string category, string message, Exception? exception) =>
+        Queue.Enqueue(category, FormatEntry(message, exception), exception is not null);
 
     private static string FormatEntry(string message, Exception? exception)
     {
@@ -94,24 +68,10 @@ internal static class HostOperationLogger
             text += $"{Environment.NewLine}{exception}";
         }
 
+        if (text.Length > 8192) text = text[..8192] + " [truncated]";
         return text + Environment.NewLine + Environment.NewLine;
     }
 
-    private static async Task ProcessEntriesAsync()
-    {
-        try
-        {
-            await foreach (var entry in Entries.Reader.ReadAllAsync())
-            {
-                FileWriter.Write(entry.Category, entry.Text);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private sealed record LogEntry(string Category, string Text);
 }
 
 internal sealed class HostLogFileWriter
@@ -120,6 +80,8 @@ internal sealed class HostLogFileWriter
     private readonly long _maxFileBytes;
     private readonly int _archiveCount;
     private readonly object _writeLock = new();
+    private long _writeFailures;
+    public long WriteFailures => Interlocked.Read(ref _writeFailures);
 
     public HostLogFileWriter(string directory, long maxFileBytes, int archiveCount)
     {
@@ -146,6 +108,8 @@ internal sealed class HostLogFileWriter
         }
         catch
         {
+            // No recursive logging into the failing writer.
+            Interlocked.Increment(ref _writeFailures);
         }
     }
 

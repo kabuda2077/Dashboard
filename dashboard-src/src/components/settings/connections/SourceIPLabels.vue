@@ -1,9 +1,5 @@
 <template>
-  <SettingItem
-    v-if="settingKey"
-    :setting-key="settingKey"
-    :when="showTrigger"
-  >
+  <SettingItem :when="showTrigger">
     <div class="setting-item-label">
       {{ $t('sourceIPLabels') }}
       <template v-if="sourceIPLabelList.length"> ({{ sourceIPLabelList.length }}) </template>
@@ -15,21 +11,6 @@
       <PencilSquareIcon class="h-4 w-4" />
     </button>
   </SettingItem>
-  <div
-    v-else-if="showTrigger"
-    class="setting-item"
-  >
-    <div class="setting-item-label">
-      {{ $t('sourceIPLabels') }}
-      <template v-if="sourceIPLabelList.length"> ({{ sourceIPLabelList.length }}) </template>
-    </div>
-    <button
-      class="btn btn-sm"
-      @click="dialogVisible = true"
-    >
-      <PencilSquareIcon class="h-4 w-4" />
-    </button>
-  </div>
 
   <DialogWrapper
     v-model="dialogVisible"
@@ -114,13 +95,11 @@ const props = withDefaults(
     defaultKey?: string
     modelValue?: boolean
     showTrigger?: boolean
-    settingKey?: string
   }>(),
   {
     defaultKey: '',
     modelValue: undefined,
     showTrigger: true,
-    settingKey: '',
   },
 )
 

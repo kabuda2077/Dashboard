@@ -19,9 +19,9 @@ public sealed class DashboardServerTests
         using var client = new HttpClient();
         var baseUri = server.StartForTests();
 
-        var body = await client.GetStringAsync($"{baseUri.AbsoluteUri}%2e%2e%2Fsecret.txt");
-
-        Assert.Equal("INDEX", body);
+        using var response = await client.GetAsync($"{baseUri.AbsoluteUri}%2e%2e%2Fsecret.txt");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("SECRET", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class DashboardServerTests
         Assert.Equal(33291, attemptedPort);
         Assert.Equal("http://127.0.0.1:33291/", DashboardServer.DashboardOrigin.AbsoluteUri);
         Assert.Same(bindFailure, exception.InnerException);
-        Assert.Contains("saved preferences and history", exception.Message);
+        Assert.Contains("33291", exception.Message);
     }
 
     [Fact]

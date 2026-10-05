@@ -1,3 +1,4 @@
+// Clash WS 后端的日志订阅。WS 每条消息即一条 { type, payload } 日志,逐条产出。
 import { createClashWebSocket } from '@/api/clash'
 import type { Log } from '@/types'
 import { watch } from 'vue'

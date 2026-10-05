@@ -66,8 +66,5 @@ public sealed class WebViewTrustPolicyTests
         var policy = new WebViewTrustPolicy(new Uri("http://127.0.0.1:49821/"));
         Assert.True(policy.IsTrustedDocument("http://127.0.0.1:49821/#/core"));
         Assert.False(policy.IsTrustedDocument("http://127.0.0.1:33291/#/core"));
-        Assert.Contains("http://127.0.0.1:49821", policy.DocumentGuardScript);
-        Assert.Contains("window.top !== window", policy.DocumentGuardScript);
-        Assert.Contains("location.pathname", policy.DocumentGuardScript);
     }
 }

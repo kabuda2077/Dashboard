@@ -1,7 +1,8 @@
 import { SETTINGS_MENU_KEY } from '@/constant'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, ref, type App } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeHostSnapshot } from './hostFixture'
 
 // Mount the production App, not a test component that installs useKeyboard.
 // Stub unrelated visuals/transport; keep App wiring and the keyboard hook real.
@@ -36,6 +37,7 @@ describe('production App desktop wiring', () => {
     vi.doMock('@/router', () => ({ default: router }))
     vi.doMock('@/helper', () => ({ renderRoutes: ref(['core', 'proxies']) }))
     vi.doMock('@/helper/indexeddb', () => ({ backgroundImage: ref(null) }))
+    vi.doMock('@/helper/backendRuntime', () => ({ startBackendRuntime: vi.fn() }))
     vi.doMock('@/composables/useAppearanceVars', () => ({ useAppearanceVars: vi.fn() }))
     vi.doMock('@/components/common/ConfirmDialogHost.vue', () => ({
       default: { render: () => null },
@@ -104,14 +106,22 @@ describe('production App desktop wiring', () => {
     await mountApp()
     const setup = await import('@/store/setup')
     const backend = {
-      type: 'clash' as const, protocol: 'http', host: '127.0.0.1', port: '9090',
-      secondaryPath: '', password: '',
+      type: 'clash' as const,
+      protocol: 'http',
+      host: '127.0.0.1',
+      port: '9090',
+      secondaryPath: '',
+      password: '',
     }
-    setup.backendList.value = [{ ...backend, uuid: 'a' }, { ...backend, uuid: 'b' }]
-    setup.activeUuid.value = 'a'
+    setup.backendList.value = [
+      { ...backend, uuid: 'a' },
+      { ...backend, uuid: 'b' },
+    ]
+    const bridge = await import('@/composables/hostBridge')
+    bridge.applyHostState(makeHostSnapshot())
     expect(press('p').defaultPrevented).toBe(false)
     expect(press('n').defaultPrevented).toBe(false)
-    expect(setup.activeUuid.value).toBe('a')
+    expect(setup.activeUuid.value).toBe('desktop:mihomo')
     press('s')
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('core'))
     expect(router.currentRoute.value.query.scrollTo).toBe(SETTINGS_MENU_KEY.backend)
@@ -126,7 +136,11 @@ describe('production App desktop wiring', () => {
   it('imports once per document, including concurrent App mounts', async () => {
     enabled.value = true
     let complete!: (value: boolean) => void
-    importSettings.mockReturnValue(new Promise<boolean>((resolve) => { complete = resolve }))
+    importSettings.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        complete = resolve
+      }),
+    )
     await mountApp()
     await mountApp()
     expect(importSettings).toHaveBeenCalledTimes(1)
@@ -139,9 +153,11 @@ describe('production App desktop wiring', () => {
     enabled.value = true
     importSettings.mockRejectedValue(new Error('import unavailable'))
     await mountApp()
-    await vi.waitFor(() => expect(showNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'import unavailable', type: 'alert-error' }),
-    ))
+    await vi.waitFor(() =>
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'import unavailable', type: 'alert-error' }),
+      ),
+    )
     expect(importSettings).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,205 +1,63 @@
-using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Dashboard;
 
-internal sealed record CoreUpdateCheckResult(
-    string CurrentVersion,
-    string LatestVersion,
-    bool UpdateAvailable);
+internal sealed record CoreUpdateCheckResult(string CurrentVersion, string LatestVersion, bool UpdateAvailable);
 
-internal static partial class CoreUpdateChecker
+internal static class CoreUpdateChecker
 {
-    private const string MihomoStableApi = "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest";
-    private const string MihomoAlphaApi = "https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/Prerelease-Alpha";
-    private const string MihomoSmartApi = "https://api.github.com/repos/vernesong/mihomo/releases/tags/Prerelease-Alpha";
-    private const string SingBoxReleasesApi = "https://api.github.com/repos/reF1nd/sing-box-releases/releases?per_page=50";
-
-    public static async Task<CoreUpdateCheckResult> CheckAsync(
-        string corePath,
-        bool isSingBox,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(corePath) || !File.Exists(corePath))
-        {
-            return new CoreUpdateCheckResult("", "", false);
-        }
-
-        var versionOutput = await ReadVersionOutputAsync(corePath, isSingBox, cancellationToken);
-        if (string.IsNullOrWhiteSpace(versionOutput))
-        {
-            throw new InvalidOperationException("无法读取当前内核版本。");
-        }
-
-        var client = CoreUpgradeSupport.SharedClient;
-        return await CheckReleaseAsync(client, versionOutput, isSingBox, cancellationToken);
-    }
-
-    internal static async Task<CoreUpdateCheckResult> CheckReleaseAsync(
-        HttpClient client,
-        string versionOutput,
-        bool isSingBox,
-        CancellationToken cancellationToken = default)
+    internal static async Task<CoreUpdateCheckResult> CheckReleaseAsync(HttpClient client, string versionOutput,
+        bool isSingBox, CancellationToken cancellationToken = default)
     {
         if (isSingBox)
         {
-            var singBoxCurrentVersion = ExtractVersion(versionOutput);
-            if (string.IsNullOrWhiteSpace(singBoxCurrentVersion))
-            {
-                throw new InvalidOperationException("无法识别当前内核版本。");
-            }
-
-            using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(
-                client,
-                SingBoxReleasesApi,
-                cancellationToken);
-            var release = SingBoxUpdater.FindMatchingRelease(document.RootElement, singBoxCurrentVersion);
-            var latestVersion = release.GetProperty("tag_name").GetString() ?? "";
-            return new CoreUpdateCheckResult(
-                singBoxCurrentVersion,
-                latestVersion,
-                !SingBoxUpdater.IsSameVersion(singBoxCurrentVersion, latestVersion));
+            var current = ExtractVersion(versionOutput);
+            if (current.Length == 0) throw new InvalidOperationException("无法识别当前内核版本。");
+            using var releases = await CoreUpgradeSupport.GetReleaseJsonAsync(client,
+                "https://api.github.com/repos/reF1nd/sing-box-releases/releases?per_page=50", cancellationToken).ConfigureAwait(false);
+            var release = SingBoxUpdater.FindMatchingRelease(releases.RootElement, current);
+            var latest = release.GetProperty("tag_name").GetString() ?? "";
+            return new(current, latest, !SingBoxUpdater.IsSameVersion(current, latest));
         }
-
-        var channel = DetectMihomoChannel(versionOutput);
-        var currentVersion = channel == MihomoChannel.Stable
-            ? ExtractVersion(versionOutput)
-            : ExtractAlphaBuild(versionOutput) ?? ExtractVersion(versionOutput);
-        if (string.IsNullOrWhiteSpace(currentVersion))
-        {
-            throw new InvalidOperationException("无法识别当前内核版本。");
-        }
-
-        var releaseApi = channel switch
-        {
-            MihomoChannel.Alpha => MihomoAlphaApi,
-            MihomoChannel.Smart => MihomoSmartApi,
-            _ => MihomoStableApi
-        };
-        using var releaseDocument = await CoreUpgradeSupport.GetReleaseJsonAsync(
-            client,
-            releaseApi,
-            cancellationToken);
-        var root = releaseDocument.RootElement;
-        var latest = root.GetProperty("tag_name").GetString() ?? "";
-
-        var updateAvailable = channel == MihomoChannel.Stable
-            ? AppUpdateChecker.CompareVersions(latest, currentVersion) > 0
-            : !ReleaseContainsCurrentBuild(root, versionOutput, currentVersion);
-        return new CoreUpdateCheckResult(currentVersion, latest, updateAvailable);
+        var smart = versionOutput.Contains("alpha-smart", StringComparison.OrdinalIgnoreCase)
+            || versionOutput.Contains("mihomo smart", StringComparison.OrdinalIgnoreCase);
+        var alpha = smart || versionOutput.Contains("alpha", StringComparison.OrdinalIgnoreCase);
+        var installed = alpha ? ExtractAlphaBuild(versionOutput) ?? ExtractVersion(versionOutput) : ExtractVersion(versionOutput);
+        if (installed.Length == 0) throw new InvalidOperationException("无法识别当前内核版本。");
+        var url = smart ? "https://api.github.com/repos/vernesong/mihomo/releases/tags/Prerelease-Alpha"
+            : alpha ? "https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/Prerelease-Alpha"
+            : "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest";
+        using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(client, url, cancellationToken).ConfigureAwait(false);
+        var root = document.RootElement;
+        var target = root.GetProperty("tag_name").GetString() ?? "";
+        var available = alpha ? !ReleaseContainsBuild(root, ExtractAlphaBuild(versionOutput) ?? installed)
+            : AppUpdateChecker.CompareVersions(target, installed) > 0;
+        return new(installed, target, available);
     }
 
-    private static bool ReleaseContainsCurrentBuild(
-        JsonElement release,
-        string versionOutput,
-        string currentVersion)
-    {
-        var marker = ExtractAlphaBuild(versionOutput) ?? currentVersion;
-        if (string.IsNullOrWhiteSpace(marker)
-            || !release.TryGetProperty("assets", out var assets)
-            || assets.ValueKind != JsonValueKind.Array)
-        {
-            return false;
-        }
+    private static bool ReleaseContainsBuild(JsonElement release, string marker) => marker.Length > 0
+        && release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array
+        && assets.EnumerateArray().Any(asset => asset.TryGetProperty("name", out var name)
+            && name.ValueKind == JsonValueKind.String && name.GetString()!.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
-        return assets.EnumerateArray().Any(asset =>
-            asset.TryGetProperty("name", out var name)
-            && name.ValueKind == JsonValueKind.String
-            && name.GetString()?.Contains(marker, StringComparison.OrdinalIgnoreCase) == true);
+    internal static string DisplayVersion(string output, CoreKind kind)
+    {
+        var match = Regex.Match(output, @"(?im)^(?:Mihomo (?:Meta |Smart )?|Clash(?:\.Meta)? |sing-box version )(?<version>\S+)");
+        if (!match.Success) return "";
+        var version = match.Groups["version"].Value;
+        return kind == CoreKind.SingBox ? "sing-box " + version.TrimStart('v', 'V') : version;
     }
 
-    private static MihomoChannel DetectMihomoChannel(string versionOutput)
+    internal static string ExtractVersion(string output)
     {
-        if (versionOutput.Contains("alpha-smart", StringComparison.OrdinalIgnoreCase)
-            || versionOutput.Contains("mihomo smart", StringComparison.OrdinalIgnoreCase))
-        {
-            return MihomoChannel.Smart;
-        }
-
-        return versionOutput.Contains("alpha", StringComparison.OrdinalIgnoreCase)
-            ? MihomoChannel.Alpha
-            : MihomoChannel.Stable;
-    }
-
-    private static string ExtractVersion(string value)
-    {
-        var match = VersionPattern().Match(value);
+        var match = Regex.Match(output, @"v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?", RegexOptions.IgnoreCase);
         return match.Success ? match.Value.TrimStart('v', 'V') : "";
     }
 
-    private static string? ExtractAlphaBuild(string value)
+    private static string? ExtractAlphaBuild(string output)
     {
-        var match = AlphaBuildPattern().Match(value);
+        var match = Regex.Match(output, @"(?:alpha-smart|alpha)[-\s]+(?<build>[A-Za-z0-9]+)", RegexOptions.IgnoreCase);
         return match.Success ? match.Groups["build"].Value : null;
     }
-
-    private static async Task<string> ReadVersionOutputAsync(
-        string corePath,
-        bool isSingBox,
-        CancellationToken cancellationToken)
-    {
-        var startInfo = new ProcessStartInfo(corePath, isSingBox ? "version" : "-v")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("无法启动内核版本探测进程。");
-        return await ReadVersionProcessAsync(process, cancellationToken);
-    }
-
-    internal static async Task<string> ReadVersionProcessAsync(Process process, CancellationToken cancellationToken)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        var outputTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
-        var errorTask = process.StandardError.ReadToEndAsync(timeout.Token);
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-            return $"{await outputTask} {await errorTask}".Trim();
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
-            catch (Exception ex) { HostOperationLogger.Error("update", "Failed to reap version probe after cancellation.", ex); }
-            // Observe both redirected readers even if one was cancelled first.
-            try { await Task.WhenAll(outputTask, errorTask); }
-            catch (OperationCanceledException) { }
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new TimeoutException("读取内核版本超时。");
-        }
-    }
-
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private enum MihomoChannel
-    {
-        Stable,
-        Alpha,
-        Smart
-    }
-
-    [GeneratedRegex(@"v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?", RegexOptions.IgnoreCase)]
-    private static partial Regex VersionPattern();
-
-    [GeneratedRegex(@"(?:alpha-smart|alpha)[-\s]+(?<build>[A-Za-z0-9]+)", RegexOptions.IgnoreCase)]
-    private static partial Regex AlphaBuildPattern();
 }

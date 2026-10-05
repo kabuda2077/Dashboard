@@ -43,7 +43,7 @@ Object.defineProperty(navigator, 'standalone', {
   value: false,
 })
 
-const createSuccessRequest = <T>(result: T): IDBRequest<T> => {
+const createSuccessRequest = <T>(result: T, complete?: () => void): IDBRequest<T> => {
   const request = {
     result,
     error: null,
@@ -52,6 +52,7 @@ const createSuccessRequest = <T>(result: T): IDBRequest<T> => {
   }
   queueMicrotask(() => {
     request.onsuccess?.({ target: request } as unknown as Event)
+    if (complete) queueMicrotask(complete)
   })
   return request as IDBRequest<T>
 }
@@ -63,14 +64,18 @@ const createDatabase = (name: string): IDBDatabase => {
       contains: () => true,
     },
     createObjectStore: vi.fn(),
-    transaction: () => ({
-      objectStore: () => ({
-        openCursor: () => createSuccessRequest<IDBCursorWithValue | null>(null),
-        put: () => createSuccessRequest(undefined),
-        clear: () => createSuccessRequest(undefined),
-        delete: () => createSuccessRequest(undefined),
-      }),
-    }),
+    transaction: () => {
+      const transaction = {
+        oncomplete: null as (() => void) | null,
+        objectStore: () => ({
+          openCursor: () => createSuccessRequest<IDBCursorWithValue | null>(null),
+          put: () => createSuccessRequest(undefined, () => transaction.oncomplete?.()),
+          clear: () => createSuccessRequest(undefined, () => transaction.oncomplete?.()),
+          delete: () => createSuccessRequest(undefined, () => transaction.oncomplete?.()),
+        }),
+      }
+      return transaction
+    },
   }
   return db as unknown as IDBDatabase
 }

@@ -4,11 +4,12 @@ import { captureBackendSession } from '@/helper/backendSession'
 import { showConfirmDialog } from '@/helper/confirmDialog'
 import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { showNotification } from '@/helper/notification'
-import { applyDashboardSettingsToStorage } from '@/helper/utils'
+import { useDashboardStorage } from '@/helper/storage'
+import { applyDashboardSettingsToStorage, parseSettingsDocument } from '@/helper/utils'
 import { i18n } from '@/i18n'
 import { useStorage } from '@vueuse/core'
-import { useDashboardStorage } from '@/helper/storage'
 import { isEmpty } from 'lodash'
+import { cancelBackgroundUpdates } from './backgroundUpdates'
 const IMPORT_SETTINGS_URL_KEY = 'config/import-settings-url'
 
 export const DEFAULT_SETTINGS_URL = './zashboard-settings.json'
@@ -72,7 +73,6 @@ export const syncSettingsFromCore = async ({
   force?: boolean
   notify?: boolean
   confirm?: boolean
-  preserveAutoSyncSetting?: boolean
 } = {}) => {
   if (hasHostBridge) {
     return false
@@ -103,8 +103,10 @@ export const syncSettingsFromCore = async ({
   }
   if (!session.isCurrent()) return false
 
+  await cancelBackgroundUpdates()
+  if (!session.isCurrent()) return false
   applyDashboardSettingsToStorage(data)
-  await saveDashboardSettingsToHost({ beforeReload: true })
+  await saveDashboardSettingsToHost()
   if (!session.isCurrent()) return false
   autoSyncSettingsHash.value = newHash
 
@@ -139,7 +141,7 @@ export const importSettingsFromUrl = async ({
   }
   let settings: Record<string, unknown> = {}
   try {
-    settings = await res.json()
+    settings = parseSettingsDocument(await res.json())
   } catch {
     errorHandler()
     return false
@@ -170,8 +172,9 @@ export const importSettingsFromUrl = async ({
   if (settings[IMPORT_SETTINGS_URL_KEY] === '') {
     delete settings[IMPORT_SETTINGS_URL_KEY]
   }
+  await cancelBackgroundUpdates()
   applyDashboardSettingsToStorage(settings)
-  await saveDashboardSettingsToHost({ beforeReload: true })
+  await saveDashboardSettingsToHost()
   autoImportSettingsHash.value = newHash
   location.reload()
   return true

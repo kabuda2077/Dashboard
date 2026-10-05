@@ -29,7 +29,6 @@
         />
         <ProxyGroupNow
           :name="proxyGroup.name"
-          :mobile="true"
         />
       </div>
       <div

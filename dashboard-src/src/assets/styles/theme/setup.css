@@ -1,4 +1,7 @@
-/* Tailwind configuration and daisyUI plugin registration. */
+/*
+ * 框架挂载点：Tailwind 的 JS 配置与 daisyUI 插件。
+ * 只放"接入框架"的声明，具体的主题值在 presets.css / tokens.css。
+ */
 
 @config '../../../../tailwind.config.ts';
 

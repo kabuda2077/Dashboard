@@ -4,197 +4,111 @@ namespace Dashboard.Tests;
 
 public sealed class HostMessageRouterTests
 {
-    private static HostMessageRouter CreateRouter(
-        List<string> calls,
-        bool failSave = false,
-        Func<JsonElement, CoreConfigurationCommand, string, bool, Task<ConfigurationCommandResult>>? executeSettingsCommandAsync = null) => new(new HostMessageHandlers
+    private static HostMessageRouter Router(List<string> calls, Func<HostRequest, Task<CommandResult>>? execute = null) => new(new()
     {
-        RequestDashboardSettings = id => calls.Add("snapshot:" + id),
-        WindowDrag = () => calls.Add("drag"),
-        WindowResize = _ => calls.Add("resize"),
-        WindowToggleMaximize = () => calls.Add("maximize"),
-        WindowMinimize = () => calls.Add("minimize"),
-        WindowClose = () => calls.Add("close"),
-        SaveSettingsAsync = (_, _) => { calls.Add("save"); return Task.CompletedTask; },
-        ExecuteSettingsCommandAsync = executeSettingsCommandAsync ?? ((_, command, target, completeSetup) =>
-        {
-            calls.Add("transaction:begin");
-            calls.Add("save");
-            if (completeSetup) calls.Add("completeSetup");
-            calls.Add(command switch
-            {
-                CoreConfigurationCommand.Start => "start",
-                CoreConfigurationCommand.Restart => "restart",
-                CoreConfigurationCommand.Switch => "switch:" + target,
-                CoreConfigurationCommand.Upgrade => "upgrade",
-                _ => "commandOnly"
-            });
-            calls.Add("transaction:end");
-            return Task.FromResult(ConfigurationCommandResult.Executed);
-        }),
-        ExecuteSettingsUiCommandAsync = (_, command) =>
-        {
-            calls.Add("save");
-            calls.Add(command switch
-            {
-                HostSettingsUiCommand.BrowseCore => "browseCore",
-                HostSettingsUiCommand.BrowseConfig => "browseConfig",
-                HostSettingsUiCommand.OpenCoreLocation => "openCoreLocation",
-                _ => "openConfigLocation"
-            });
-            return Task.CompletedTask;
-        },
-        SaveDashboardSettings = _ =>
-        {
-            calls.Add("dashboardSettings");
-            if (failSave) throw new IOException("test write failure");
-        },
-        DashboardSettingsSaved = (id, success) => calls.Add($"ack:{id}:{success}"),
-        StopCore = () => calls.Add("stop"),
-        CheckAppUpdateAsync = () => { calls.Add("checkUpdate"); return Task.CompletedTask; },
-        OpenAppRelease = () => calls.Add("release"),
-        OpenCoreRepository = () => calls.Add("repository"),
-        ShowNotice = _ => calls.Add("notice"),
-        SendState = () => calls.Add("state"),
-        SendWindowChromeState = () => calls.Add("windowState")
+        ExecuteAsync = execute ?? (request => { calls.Add(request.Type); return Task.FromResult(CommandResult.Completed()); }),
+        BuildState = () => new(), Preferences = () => new Dictionary<string, string>(),
+        ChooseFile = (_, _) => { calls.Add("choose"); return "C:/chosen.exe"; },
+        OpenLocation = (_, _) => calls.Add("location"),
+        WindowCommand = (type, _) => calls.Add(type),
+        CheckAppUpdateAsync = () => { calls.Add("check"); return Task.CompletedTask; },
+        OpenAppRelease = () => calls.Add("release"), OpenCoreRepository = () => calls.Add("repository"),
+        RequestElevation = () => calls.Add("elevation")
     });
 
     [Theory]
     [InlineData("{}")]
-    [InlineData("{\"type\":\"unknown\"}")]
-    [InlineData("{\"type\":42}")]
-    public async Task UnknownCommandsDoNotDiscloseState(string json)
-    {
-        var calls = new List<string>();
-        await CreateRouter(calls).RouteAsync(json);
-        Assert.Empty(calls);
-    }
-
-    [Theory]
-    [InlineData("{\"type\":\"requestDashboardSettings\"}")]
-    [InlineData("{\"type\":\"requestDashboardSettings\",\"requestId\":42}")]
     [InlineData("[]")]
     [InlineData("null")]
-    [InlineData("{\"type\":\"start\",\"mihomoSecret\":false}")]
-    [InlineData("{\"type\":\"save\",\"replaceMihomoSecret\":\"true\"}")]
-    [InlineData("{\"type\":\"save\",\"replaceSingBoxSecret\":1}")]
-    [InlineData("{\"type\":\"save\",\"autostart\":\"true\"}")]
-    [InlineData("{\"type\":\"start\",\"coreType\":\"other\"}")]
-    [InlineData("{\"type\":\"switchCore\"}")]
-    [InlineData("{\"type\":\"switchCore\",\"targetCoreType\":\"other\"}")]
-    [InlineData("{\"type\":\"windowResize\",\"edge\":\"unknown\"}")]
-    [InlineData("{\"type\":\"saveDashboardSettings\",\"settings\":[]}")]
-    [InlineData("{\"type\":\"saveDashboardSettings\",\"settings\":{\"setup/api-list\":\"[]\"}}")]
-    [InlineData("{\"type\":\"saveDashboardSettings\",\"settings\":{\"config/test\":true}}")]
-    [InlineData("{\"type\":\"saveDashboardSettings\",\"settings\":{\"config/a\":\"1\",\"config/a\":\"2\"}}")]
-    [InlineData("{\"type\":\"stop\",\"type\":\"start\"}")]
-    [InlineData("{\"type\":\"performance\",\"name\":\"line\\nforged\"}")]
-    [InlineData("{\"type\":\"performance\",\"name\":\"mount\",\"durationMs\":1e400}")]
-    [InlineData("{\"type\":\"performance\",\"name\":\"mount\",\"durationMs\":-1}")]
-    public async Task InvalidPayloadHasNoSideEffects(string json)
+    [InlineData("{\"protocolVersion\":1,\"type\":\"requestState\",\"requestId\":\"x\"}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"unknown\",\"requestId\":\"x\"}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"start\",\"requestId\":\"x\",\"coreType\":\"other\"}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"start\",\"requestId\":\"x\",\"coreType\":1}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"requestState\",\"requestId\":\"x\",\"unknown\":true}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"stop\",\"type\":\"start\",\"requestId\":\"x\"}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"saveDashboardPreferences\",\"requestId\":\"x\",\"preferences\":{\"setup/a\":\"bad\"}}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"saveDashboardPreferences\",\"requestId\":\"x\",\"preferences\":{\"config/a\":\"1\",\"config/a\":\"2\"}}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"setDesktopOption\",\"requestId\":\"x\",\"option\":\"secret\",\"value\":true}")]
+    public async Task InvalidOrOldProtocolHasNoSideEffectsOrStateDisclosure(string json)
     {
         var calls = new List<string>();
-        await Assert.ThrowsAsync<ArgumentException>(() => CreateRouter(calls).RouteAsync(json));
+        var replies = new List<object>();
+        var error = await Record.ExceptionAsync(() => Router(calls).RouteAsync(json, replies.Add));
+        Assert.True(error is ArgumentException or JsonException, error?.ToString());
         Assert.Empty(calls);
+        Assert.Empty(replies);
     }
 
     [Fact]
-    public async Task MalformedJsonHasNoSideEffects()
+    public async Task FileSelectionIsNotAnImplicitSaveOrCoreOperation()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new SettingsStore(directory);
+            using var process = new CoreProcessManager();
+            using var lifecycle = new CoreLifecycleController(store, process, () => true);
+            var calls = new List<string>();
+            var replies = new List<object>();
+            await Router(calls, lifecycle.ExecuteAsync).RouteAsync("""
+                {"protocolVersion":2,"type":"chooseCoreFile","coreType":"mihomo","requestId":"choose-1"}
+                """, replies.Add);
+            Assert.Equal(new[] { "choose" }, calls);
+            Assert.Equal(0, store.Current.ActiveProfile.Revision);
+            Assert.Equal("C:/chosen.exe", Assert.IsType<HostReply>(Assert.Single(replies)).Result.Path);
+            var profile = store.Current.ActiveProfile;
+            var result = await lifecycle.ExecuteAsync(new()
+            {
+                Type = "saveProfile", CoreType = CoreKind.Mihomo, ExpectedRevision = 0,
+                Draft = new() { ExePath = profile.ExePath, ConfigPath = profile.ConfigPath, ApiUrl = profile.ApiUrl }
+            });
+            Assert.Equal("completed", result.Status);
+            await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task RequestAckWaitsForRealOperationResult()
+    {
+        var completion = new TaskCompletionSource<CommandResult>();
+        var replies = new List<object>();
+        var request = Router(new(), _ => completion.Task).RouteAsync("""
+            {"protocolVersion":2,"type":"setDesktopOption","option":"lightweightMode","value":false,"requestId":"save-1"}
+            """, replies.Add);
+        Assert.Empty(replies);
+        completion.SetResult(CommandResult.Failed("saveFailed"));
+        await request;
+        var reply = Assert.IsType<HostReply>(Assert.Single(replies));
+        Assert.Equal("save-1", reply.RequestId);
+        Assert.Equal("failed", reply.Result.Status);
+    }
+
+    [Fact]
+    public async Task ElevationIsRequestedOnlyAfterTheCommandAcknowledgement()
     {
         var calls = new List<string>();
-        await Assert.ThrowsAnyAsync<JsonException>(() => CreateRouter(calls).RouteAsync("{"));
-        Assert.Empty(calls);
+        await Router(calls, _ => Task.FromResult(new CommandResult("elevationRequired", "elevationRequired", Saved: true)))
+            .RouteAsync("""{"protocolVersion":2,"type":"start","coreType":"mihomo","requestId":"start"}""", reply =>
+            {
+                Assert.True(Assert.IsType<HostReply>(reply).Result.Saved);
+                calls.Add("reply");
+            });
+        Assert.Equal(["reply", "elevation"], calls);
     }
 
     [Theory]
-    [InlineData("{\"type\":\"requestDashboardSettings\",\"requestId\":\"doc-1\"}", "snapshot:doc-1")]
-    [InlineData("{\"type\":\"requestState\"}", "state")]
-    [InlineData("{\"type\":\"requestWindowState\"}", "windowState")]
-    [InlineData("{\"type\":\"windowDrag\"}", "drag")]
-    [InlineData("{\"type\":\"windowResize\",\"edge\":\"bottomRight\"}", "resize")]
-    [InlineData("{\"type\":\"windowToggleMaximize\"}", "maximize,windowState")]
-    [InlineData("{\"type\":\"windowMinimize\"}", "minimize")]
-    [InlineData("{\"type\":\"windowClose\"}", "close")]
-    [InlineData("{\"type\":\"save\",\"coreType\":\"mihomo\",\"autostart\":false}", "save,state")]
-    [InlineData("{\"type\":\"start\",\"mihomoCorePath\":\"C:/mihomo.exe\"}", "transaction:begin,save,start,transaction:end,state")]
-    [InlineData("{\"type\":\"stop\"}", "stop,state")]
-    [InlineData("{\"type\":\"restart\"}", "transaction:begin,save,restart,transaction:end,state")]
-    [InlineData("{\"type\":\"switchCore\",\"targetCoreType\":\"sing-box\"}", "transaction:begin,save,switch:sing-box,transaction:end")]
-    [InlineData("{\"type\":\"upgradeCore\"}", "transaction:begin,save,upgrade,transaction:end,state")]
-    [InlineData("{\"type\":\"browseCore\"}", "save,browseCore,state")]
-    [InlineData("{\"type\":\"browseConfig\"}", "save,browseConfig,state")]
-    [InlineData("{\"type\":\"openCoreLocation\"}", "save,openCoreLocation,state")]
-    [InlineData("{\"type\":\"openConfigLocation\"}", "save,openConfigLocation,state")]
-    [InlineData("{\"type\":\"completeSetup\"}", "transaction:begin,save,completeSetup,commandOnly,transaction:end,notice,state")]
-    [InlineData("{\"type\":\"checkAppUpdate\"}", "checkUpdate,state")]
-    [InlineData("{\"type\":\"openAppRelease\"}", "release")]
-    [InlineData("{\"type\":\"openCoreRepository\"}", "repository")]
-    public async Task ValidCommandsRetainTheirDispatchOrder(string json, string expected)
-    {
-        var calls = new List<string>();
-        await CreateRouter(calls).RouteAsync(json);
-        Assert.Equal(expected, string.Join(',', calls));
-    }
+    [InlineData("{\"protocolVersion\":2,\"type\":\"upgradeCore\",\"coreType\":\"sing-box\",\"requestId\":\"u\",\"confirmUnverified\":true}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"upgradeCore\",\"coreType\":\"sing-box\",\"requestId\":\"u\",\"expectedRuntimeEpoch\":-1}")]
+    public void UpgradeConfirmationRequiresBoundedContext(string json) => Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(json));
 
     [Fact]
-    public async Task HeldLifecycleGateRejectsCompleteSetupWithoutSavingOrSuccessNotice()
+    public async Task LegitimateLargeCssPreferenceIsAccepted()
     {
         var calls = new List<string>();
-        using var process = new CoreProcessManager();
-        using var lifecycle = new CoreLifecycleController(new AppSettings(), process, new CoreLifecycleServices
-        {
-            IsRunningAsAdministrator = () => true,
-            ShouldKeepMinimizedForRelaunch = () => false,
-            RelaunchAsAdministrator = (_, _, _) => { },
-            ShowNotice = _ => { },
-            PublishState = () => { },
-            RefreshIconCache = () => { },
-            ShowTrayNotification = _ => { },
-            ShowMessage = (_, _, _) => { },
-            RunOnUiThread = action => action()
-        });
-        using var heldLease = lifecycle.TryEnterConfigurationChange();
-        var saveCalled = false;
-        var router = CreateRouter(
-            calls,
-            executeSettingsCommandAsync: (_, command, target, _) => lifecycle.ExecuteConfigurationCommandAsync(
-                () =>
-                {
-                    saveCalled = true;
-                    return Task.CompletedTask;
-                },
-                command,
-                target));
-
-        await router.RouteAsync("{\"type\":\"completeSetup\"}");
-
-        Assert.False(saveCalled);
-        Assert.DoesNotContain("notice", calls);
-        Assert.Equal(new[] { "state" }, calls);
-    }
-
-    [Theory]
-    [InlineData(false, "dashboardSettings,ack:save-1:True")]
-    [InlineData(true, "dashboardSettings,ack:save-1:False")]
-    public async Task AcknowledgesOnlyAfterPersistenceReturns(bool fail, string expected)
-    {
-        var calls = new List<string>();
-        await CreateRouter(calls, fail).RouteAsync("""
-            {"type":"saveDashboardSettings","requestId":"save-1","settings":{"config/theme":"light"}}
-            """);
-        Assert.Equal(expected, string.Join(',', calls));
-    }
-
-    [Fact]
-    public async Task CustomCssIsNotRejectedByAnArbitrarySmallPayloadLimit()
-    {
-        var calls = new List<string>();
-        var json = JsonSerializer.Serialize(new
-        {
-            type = "saveDashboardSettings",
-            settings = new Dictionary<string, string> { ["config/custom-css"] = new string(' ', 128 * 1024) }
-        });
-        await CreateRouter(calls).RouteAsync(json);
-        Assert.Equal(new[] { "dashboardSettings" }, calls);
+        var json = JsonSerializer.Serialize(new { protocolVersion = 2, type = "saveDashboardPreferences", requestId = "css",
+            preferences = new Dictionary<string, string> { ["config/custom-css"] = new string(' ', 128 * 1024) } });
+        await Router(calls).RouteAsync(json, _ => { });
+        Assert.Equal(new[] { "saveDashboardPreferences" }, calls);
     }
 }

@@ -3,42 +3,112 @@ using System.Text.Json.Serialization;
 
 namespace Dashboard;
 
-internal static class HostBridgeCommand
+internal static class HostBridgeJson
 {
-    public const string WindowDrag = "windowDrag";
-    public const string WindowResize = "windowResize";
-    public const string WindowToggleMaximize = "windowToggleMaximize";
-    public const string WindowMinimize = "windowMinimize";
-    public const string WindowClose = "windowClose";
-    public const string RequestWindowState = "requestWindowState";
-    public const string RequestState = "requestState";
-    public const string Performance = "performance";
-    public const string Save = "save";
-    public const string CompleteSetup = "completeSetup";
-    public const string Start = "start";
-    public const string Restart = "restart";
-    public const string SwitchCore = "switchCore";
-    public const string Stop = "stop";
-    public const string UpgradeCore = "upgradeCore";
-    public const string BrowseCore = "browseCore";
-    public const string BrowseConfig = "browseConfig";
-    public const string OpenCoreLocation = "openCoreLocation";
-    public const string OpenConfigLocation = "openConfigLocation";
-    public const string CheckAppUpdate = "checkAppUpdate";
-    public const string OpenAppRelease = "openAppRelease";
-    public const string OpenCoreRepository = "openCoreRepository";
-    public const string SaveDashboardSettings = "saveDashboardSettings";
+    public const int ProtocolVersion = 2;
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        Converters = { new JsonStringEnumConverter<CoreKind>(allowIntegerValues: false) }
+    };
+    public static string Serialize(object message) => JsonSerializer.Serialize(message, JsonOptions);
 }
 
-internal static class HostBridgeMessageType
+internal sealed record HostRequest
 {
-    public const string State = "state";
-    public const string RuntimeState = "runtimeState";
-    public const string LogAppend = "logAppend";
-    public const string IconCacheUpdated = "iconCacheUpdated";
-    public const string Notice = "notice";
-    public const string AppUpdateResult = "appUpdateResult";
-    public const string WindowState = "windowState";
+    public int ProtocolVersion { get; init; }
+    public required string Type { get; init; }
+    public string? RequestId { get; init; }
+    public CoreKind? CoreType { get; init; }
+    public long? ExpectedRevision { get; init; }
+    public long? ExpectedRuntimeEpoch { get; init; }
+    public CoreProfileEdit? Draft { get; init; }
+    public string? Option { get; init; }
+    public bool? Value { get; init; }
+    public IReadOnlyDictionary<string, string>? Preferences { get; init; }
+    public string? Edge { get; init; }
+    public string? Name { get; init; }
+    public double? DurationMs { get; init; }
+    public bool ConfirmUnverified { get; init; }
+}
+
+internal sealed record CommandResult(string Status, string Code, string? Message = null,
+    bool Saved = false, string? Path = null)
+{
+    public static CommandResult Completed(string code = "completed", bool saved = false) => new("completed", code, Saved: saved);
+    public static CommandResult Rejected(string code) => new("rejected", code);
+    public static CommandResult Failed(string code, string? message = null, bool saved = false) => new("failed", code, message, saved);
+}
+
+internal sealed record HostReply(string RequestId, CommandResult Result, DashboardState State)
+{
+    public string Type => "commandResult";
+    public int ProtocolVersion => HostBridgeJson.ProtocolVersion;
+}
+
+internal sealed record BootstrapReply(string RequestId, DashboardState State,
+    IReadOnlyDictionary<string, string> Preferences)
+{
+    public string Type => "bootstrap";
+    public int ProtocolVersion => HostBridgeJson.ProtocolVersion;
+}
+
+internal sealed record CoreProfileState(long Revision, string ExePath, string ConfigPath,
+    string ApiUrl, string Secret, bool SecretDecryptionFailed);
+
+internal record DashboardRuntimeState
+{
+    public bool IsRunning { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)] public int? ProcessId { get; init; }
+    public CoreKind CoreType { get; init; }
+    public long RuntimeEpoch { get; init; }
+    public string CoreTitle { get; init; } = "";
+    public string CoreVersion { get; init; } = "";
+    public string ApiStatus { get; init; } = "idle";
+    public string ApiUrl { get; init; } = "";
+    public string Secret { get; init; } = "";
+    public bool SecretDecryptionFailed { get; init; }
+    public string Operation { get; init; } = "idle";
+    public bool RequiresRestart { get; init; }
+    public bool CanUpgradeCore { get; init; }
+    public bool IsCoreUpgrading => Operation == "upgradeCore";
+    public bool IsCoreSwitching => Operation == "switchCore";
+    public bool IsWindowMaximized { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)] public bool? ReadOnlyTunEnabled { get; init; }
+}
+
+internal sealed record DashboardState
+{
+    public DashboardRuntimeState Runtime { get; init; } = new();
+    public IReadOnlyDictionary<string, CoreProfileState> Profiles { get; init; } = new Dictionary<string, CoreProfileState>();
+    public DesktopOptions DesktopOptions { get; init; } = new();
+    public bool SetupCompleted { get; init; }
+    public bool IsAutostartUpdating { get; init; }
+    public string AppVersion { get; init; } = "";
+    public string LatestAppVersion { get; init; } = "";
+    public bool IsAppUpdateChecking { get; init; }
+    public bool AppUpdateAvailable { get; init; }
+    public string LatestCoreVersion { get; init; } = "";
+    public bool IsCoreUpdateChecking { get; init; }
+    public bool CoreUpdateAvailable { get; init; }
+    public string LogText { get; init; } = "";
+    public long DroppedLogEntries { get; init; }
+    public long LogWriteFailures { get; init; }
+    public IReadOnlyDictionary<string, string> IconCacheMap { get; init; } = new Dictionary<string, string>();
+}
+
+internal static class HostOutboundMessage
+{
+    public static object StateMessage(DashboardState state) => new { protocolVersion = 2, type = "state", state };
+    public static object Runtime(DashboardRuntimeState runtimeState) => new { protocolVersion = 2, type = "runtimeState", runtimeState };
+    public static object Notice(string message, string severity = "info", string code = "notice") => new { protocolVersion = 2, type = "notice", message, severity, code };
+    public static object WindowState(bool isMaximized) => new { protocolVersion = 2, type = "windowState", isMaximized };
+    public static object LogAppend(string logText) => new { protocolVersion = 2, type = "logAppend", logText };
+    public static object IconCacheUpdated(IReadOnlyDictionary<string, string> iconCacheMap) => new { protocolVersion = 2, type = "iconCacheUpdated", iconCacheMap };
+    public static object AppUpdateResult(string result, bool manual, string? currentVersion = null, string? latestVersion = null) =>
+        new { protocolVersion = 2, type = "appUpdateResult", result, manual, currentVersion, latestVersion };
 }
 
 internal static class AppUpdateResultKind
@@ -47,163 +117,4 @@ internal static class AppUpdateResultKind
     public const string UpToDate = "upToDate";
     public const string Failed = "failed";
     public const string Busy = "busy";
-}
-
-internal static class HostBridgeJson
-{
-    public static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
-    public static string Serialize(object message)
-    {
-        return JsonSerializer.Serialize(message, JsonOptions);
-    }
-
-    public static string GetString(JsonElement root, string propertyName, string fallback)
-    {
-        return root.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
-            ? property.GetString() ?? fallback
-            : fallback;
-    }
-
-    public static bool GetBool(JsonElement root, string propertyName, bool fallback)
-    {
-        return root.TryGetProperty(propertyName, out var property)
-            && property.ValueKind is JsonValueKind.True or JsonValueKind.False
-            ? property.GetBoolean()
-            : fallback;
-    }
-
-    public static double GetDouble(JsonElement root, string propertyName, double fallback)
-    {
-        return root.TryGetProperty(propertyName, out var property)
-            && property.ValueKind == JsonValueKind.Number
-            && property.TryGetDouble(out var value)
-            ? value
-            : fallback;
-    }
-}
-
-internal sealed record HostOutboundMessage
-{
-    public required string Type { get; init; }
-    public DashboardState? State { get; init; }
-    public DashboardRuntimeState? RuntimeState { get; init; }
-    public string? Message { get; init; }
-    public string? Result { get; init; }
-    public bool? Manual { get; init; }
-    public string? CurrentVersion { get; init; }
-    public string? LatestVersion { get; init; }
-    public string? LogText { get; init; }
-    public IReadOnlyDictionary<string, string>? IconCacheMap { get; init; }
-    public bool? IsMaximized { get; init; }
-
-    public static HostOutboundMessage StateMessage(DashboardState state) => new()
-    {
-        Type = HostBridgeMessageType.State,
-        State = state
-    };
-
-    public static HostOutboundMessage Notice(string message) => new()
-    {
-        Type = HostBridgeMessageType.Notice,
-        Message = message
-    };
-
-    public static HostOutboundMessage AppUpdateResult(
-        string result,
-        bool manual,
-        string? currentVersion = null,
-        string? latestVersion = null) => new()
-    {
-        Type = HostBridgeMessageType.AppUpdateResult,
-        Result = result,
-        Manual = manual,
-        CurrentVersion = currentVersion,
-        LatestVersion = latestVersion
-    };
-
-    public static HostOutboundMessage WindowState(bool isMaximized) => new()
-    {
-        Type = HostBridgeMessageType.WindowState,
-        IsMaximized = isMaximized
-    };
-
-    public static HostOutboundMessage Runtime(DashboardRuntimeState state) => new()
-    {
-        Type = HostBridgeMessageType.RuntimeState,
-        RuntimeState = state
-    };
-
-    public static HostOutboundMessage LogAppend(string logText) => new()
-    {
-        Type = HostBridgeMessageType.LogAppend,
-        LogText = logText
-    };
-
-    public static HostOutboundMessage IconCacheUpdated(IReadOnlyDictionary<string, string> iconCacheMap) => new()
-    {
-        Type = HostBridgeMessageType.IconCacheUpdated,
-        IconCacheMap = iconCacheMap
-    };
-}
-
-internal sealed record DashboardRuntimeState
-{
-    public required bool IsRunning { get; init; }
-    public required int? ProcessId { get; init; }
-    public required string CoreTitle { get; init; }
-    public required string CoreVersion { get; init; }
-    public required bool CanUpgradeCore { get; init; }
-    public required bool IsCoreUpgrading { get; init; }
-    public required bool IsCoreSwitching { get; init; }
-    public required bool IsWindowMaximized { get; init; }
-}
-
-internal sealed record DashboardState
-{
-    public required bool IsRunning { get; init; }
-    public required int? ProcessId { get; init; }
-    public required string CoreType { get; init; }
-    public required string CoreTitle { get; init; }
-    public required string CoreVersion { get; init; }
-    public required string CorePath { get; init; }
-    public required string ConfigPath { get; init; }
-    public required string ApiUrl { get; init; }
-    public required string Secret { get; init; }
-    public bool SecretDecryptionFailed { get; init; }
-    public bool MihomoSecretDecryptionFailed { get; init; }
-    public bool SingBoxSecretDecryptionFailed { get; init; }
-    public required string MihomoCorePath { get; init; }
-    public required string MihomoConfigPath { get; init; }
-    public required string MihomoApiUrl { get; init; }
-    public required string MihomoSecret { get; init; }
-    public required string SingBoxCorePath { get; init; }
-    public required string SingBoxConfigPath { get; init; }
-    public required string SingBoxApiUrl { get; init; }
-    public required string SingBoxSecret { get; init; }
-    public required bool SetupCompleted { get; init; }
-    public required bool? ReadOnlyTunEnabled { get; init; }
-    public required bool StartCoreOnLaunch { get; init; }
-    public required bool MinimizeToTray { get; init; }
-    public required bool LightweightMode { get; init; }
-    public required bool Autostart { get; init; }
-    public bool IsAutostartUpdating { get; init; }
-    public required string AppVersion { get; init; }
-    public required string LatestAppVersion { get; init; }
-    public required bool IsAppUpdateChecking { get; init; }
-    public required bool AppUpdateAvailable { get; init; }
-    public required string LatestCoreVersion { get; init; }
-    public required bool IsCoreUpdateChecking { get; init; }
-    public required bool CoreUpdateAvailable { get; init; }
-    public required bool CanUpgradeCore { get; init; }
-    public required bool IsCoreUpgrading { get; init; }
-    public required bool IsCoreSwitching { get; init; }
-    public required bool IsWindowMaximized { get; init; }
-    public required string LogText { get; init; }
-    public required IReadOnlyDictionary<string, string> IconCacheMap { get; init; }
-    public IReadOnlyDictionary<string, string>? DashboardSettings { get; init; }
 }

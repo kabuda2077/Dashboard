@@ -1,7 +1,7 @@
 // 组装层 · Clash-compatible proxies 门面。
 import { isSingBoxCore } from '@/assembly/version'
-import { captureBackendSession } from '@/helper/backendSession'
 import { NOT_CONNECTED, PROXY_TAB_TYPE, PROXY_TYPE, TEST_URL } from '@/constant'
+import { captureBackendSession } from '@/helper/backendSession'
 import { useStorage } from '@/helper/storage'
 import { groupTestUrls, independentLatencyTest, speedtestUrl } from '@/store/settings'
 import type { Proxy, ProxyProvider } from '@/types'
@@ -38,17 +38,23 @@ export const getTestUrl = (groupName?: string) => {
   return proxyNode?.testUrl || speedtestUrlWithDefault.value
 }
 
-export const getLatencyFromHistory = (history: Proxy['history']) => {
+export const getLatencyFromHistory = (history?: Proxy['history']) => {
   return last(history)?.delay ?? NOT_CONNECTED
 }
 
-export const getLatencyByName = (proxyName: string, groupName?: string) => {
-  const history = getHistoryByName(proxyName, groupName)
-
-  return getLatencyFromHistory(history)
+export const getHistoryByName = (proxyName: string, groupName?: string): Proxy['history'] => {
+  const node = proxyMap.value[proxyName]
+  return (
+    (independentLatencyTest.value && !isSingBoxCore.value && node?.extra
+      ? node.extra[getTestUrl(groupName)]?.history
+      : proxyMap.value[getNowProxyNodeName(proxyName)]?.history) ?? []
+  )
 }
 
-export const getHistoryByName = (proxyName: string, groupName?: string) => {
+export const getLatencyByName = (proxyName: string, groupName?: string) =>
+  getLatencyFromHistory(getHistoryByName(proxyName, groupName))
+
+export const ensureHistoryByName = (proxyName: string, groupName?: string) => {
   if (independentLatencyTest.value && !isSingBoxCore.value) {
     const proxyNode = proxyMap.value[proxyName]
     const url = getTestUrl(groupName)
@@ -60,7 +66,7 @@ export const getHistoryByName = (proxyName: string, groupName?: string) => {
     if (!proxyNode?.extra) {
       const nowNode = proxyMap.value[getNowProxyNodeName(proxyName)]
 
-      return nowNode?.history
+      return nowNode ? (nowNode.history ??= []) : []
     }
 
     if (!proxyNode.extra?.[url]) {
@@ -75,7 +81,7 @@ export const getHistoryByName = (proxyName: string, groupName?: string) => {
 
   const nowNode = proxyMap.value[getNowProxyNodeName(proxyName)]
 
-  return nowNode?.history
+  return nowNode ? (nowNode.history ??= []) : []
 }
 
 export const getIPv6ByName = (proxyName: string) => {
@@ -89,7 +95,10 @@ export const getNowProxyNodeName = (name: string) => {
     return name
   }
 
+  const visited = new Set<string>()
   while (node.now && node.now !== node.name) {
+    if (visited.has(node.name)) return node.name
+    visited.add(node.name)
     const nextNode = proxyMap.value[node.now]
 
     if (!nextNode) {
@@ -110,12 +119,15 @@ export const getProxyGroupChains = (name: string) => {
   }
 
   const result = [name]
+  const visited = new Set([name])
 
   while (
     proxyNode.now &&
     proxyNode.now !== proxyNode.name &&
     proxyGroupList.value.includes(proxyNode.now)
   ) {
+    if (visited.has(proxyNode.now) || !proxyMap.value[proxyNode.now]) break
+    visited.add(proxyNode.now)
     result.push(proxyNode.now)
     proxyNode = proxyMap.value[proxyNode.now]
   }
@@ -168,7 +180,14 @@ export const proxyGroupLatencyTest = (proxyGroupName: string) =>
 
 export const allProxiesLatencyTest = () => withBackend((backend) => backend.allProxiesLatencyTest())
 
+let proxyRequest = 0
+let proxyRuntime = 0
+export const beginProxyRequest = () => ++proxyRequest
+export const isProxyRequestCurrent = (request: number) => request === proxyRequest
+export const getProxyRuntimeVersion = () => proxyRuntime
 export const resetProxies = () => {
+  proxyRequest++
+  proxyRuntime++
   proxyMap.value = {}
   proxyGroupList.value = []
   proxyProviederList.value = []

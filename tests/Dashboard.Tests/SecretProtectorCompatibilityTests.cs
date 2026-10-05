@@ -1,37 +1,26 @@
-using System.Security.Cryptography;
-using System.Text;
-
 namespace Dashboard.Tests;
 
+// Only the current format is supported. Historical entropy is intentionally not read.
 public sealed class SecretProtectorCompatibilityTests
 {
     [Theory]
     [InlineData("")]
-    [InlineData("independent-test-secret")]
-    public void CurrentDpapiRoundTripsWithoutPlaintext(string secret)
+    [InlineData("secret-中文")]
+    public void CurrentUserCredentialRoundTripsWithoutWritingPlaintext(string secret)
     {
-        var protectedValue = SecretProtector.Protect(secret);
-        Assert.Equal(secret, SecretProtector.Unprotect(protectedValue));
+        var cipher = SecretProtector.Protect(secret);
+        Assert.Equal(secret, SecretProtector.Unprotect(cipher));
         if (secret.Length > 0)
         {
-            Assert.StartsWith("dpapi:", protectedValue);
-            Assert.DoesNotContain(secret, protectedValue);
+            Assert.StartsWith("dpapi:v2:", cipher);
+            Assert.DoesNotContain(secret, cipher);
         }
     }
 
-    [Fact]
-    public void ReadsLegacyDpapiEntropy()
-    {
-        var encrypted = ProtectedData.Protect(Encoding.UTF8.GetBytes("legacy-test-secret"),
-            Encoding.UTF8.GetBytes("MihomoDashboard.Secret.v1"), DataProtectionScope.CurrentUser);
-        Assert.Equal("legacy-test-secret", SecretProtector.Unprotect("dpapi:" + Convert.ToBase64String(encrypted)));
-    }
-
     [Theory]
-    [InlineData("not-protected")]
-    [InlineData("dpapi:broken-base64")]
-    public void InvalidProtectedValueDoesNotBecomeAnEmptySecret(string value)
-    {
-        Assert.ThrowsAny<Exception>(() => SecretProtector.Unprotect(value));
-    }
+    [InlineData("plain-secret")]
+    [InlineData("dpapi:old-format")]
+    [InlineData("dpapi:v2:invalid")]
+    public void InvalidOrOldCredentialDoesNotBecomeAnEmptySecret(string value) =>
+        Assert.NotNull(Record.Exception(() => SecretProtector.Unprotect(value)));
 }

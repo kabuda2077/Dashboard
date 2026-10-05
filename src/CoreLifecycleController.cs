@@ -1,580 +1,393 @@
 namespace Dashboard;
 
+// All core mutations enter here. Window dialogs and desktop options never hold this gate.
 internal sealed class CoreLifecycleController : IDisposable
 {
-    private static readonly TimeSpan ApiProbeRequestTimeout = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan ApiProbeTotalTimeout = TimeSpan.FromSeconds(30);
-    private static readonly HttpClient ApiProbeClient = new();
-
-    private readonly AppSettings _settings;
+    private readonly SettingsStore _settings;
     private readonly CoreProcessManager _core;
-    private readonly CoreLifecycleServices _services;
-    private readonly CoreOperationGate _operations = new();
+    private readonly CoreOperationGate _gate = new();
     private readonly ShutdownTaskTracker _tasks = new();
-    private readonly CancellationTokenSource _shutdown = new();
-    private readonly object _shutdownSync = new();
-    private readonly object _probeSync = new();
-    private Task? _drainTask;
-    private CancellationTokenSource? _probeCancellation;
-    private long _probeGeneration;
-    private bool _shutdownBegun;
-    private bool _shutdownResourcesDisposed;
-    private bool _elevatedRetryPending;
+    private readonly object _sync = new();
+    private readonly Func<bool> _isAdministrator;
+    private static readonly HttpClient ApiClient = new();
+    private readonly HttpClient _upgradeClient;
+    private CancellationTokenSource? _probe;
+    private CoreLaunchSpec? _running;
+    private CoreProfile? _connection;
+    private int? _observedPid;
+    private long _epoch;
+    private string _apiStatus = "idle";
+    private string _apiVersion = "";
+    private string _operation = "idle";
+    private bool _closing;
+    private Task<bool>? _shutdownTask;
 
-    public IDisposable? TryEnterConfigurationChange()
+    public event EventHandler? Changed;
+    public long Epoch { get { lock (_sync) return _epoch; } }
+    public string ApiVersion { get { lock (_sync) return _apiVersion; } }
+    public string ApiStatus { get { lock (_sync) return _apiStatus; } }
+    public string Operation { get { lock (_sync) return _operation; } }
+    public CoreLaunchSpec? Running { get { lock (_sync) return _running; } }
+    public bool IsUpgradeInProgress => Operation == "upgradeCore";
+    public bool IsSwitchInProgress => Operation == "switchCore";
+    public bool IsBusy => Operation != "idle";
+    public CoreProfile Connection { get { lock (_sync) return _core.IsRunning ? _connection ?? _settings.Current.ActiveProfile : _settings.Current.ActiveProfile; } }
+    public CoreKind Kind => _core.IsRunning && Running is { } running ? running.Kind : _settings.Current.ActiveCoreKind;
+    public bool RequiresRestart => _core.IsRunning && Running is { } running
+        && !running.SameProcessTarget(new CoreLaunchSpec(running.Kind, _settings.Current.Profile(running.Kind)));
+
+    public CoreLifecycleController(SettingsStore settings, CoreProcessManager core, Func<bool>? isAdministrator = null,
+        HttpClient? upgradeClient = null)
     {
-        var lease = _operations.TryEnter();
-        if (lease is not null) CancelProbe();
-        return lease;
+        _settings = settings;
+        _core = core;
+        _upgradeClient = upgradeClient ?? CoreUpgradeSupport.SharedClient;
+        _isAdministrator = isAdministrator ?? DashboardHost.IsRunningAsAdministrator;
+        _core.StatusChanged += OnProcessChanged;
+    }
+
+    public Task<CommandResult> ExecuteAsync(HostRequest request)
+    {
+        if (_closing) return Task.FromResult(CommandResult.Rejected("closing"));
+        var lease = _gate.TryEnter();
+        if (lease is null) return Task.FromResult(CommandResult.Rejected("busy"));
+        lock (_sync) _operation = request.Type;
+        Publish();
+        return RunAcceptedAsync(request, lease);
+    }
+
+    private async Task<CommandResult> RunAcceptedAsync(HostRequest request, IDisposable lease)
+    {
+        var result = CommandResult.Rejected("closing");
+        try
+        {
+            await _tasks.Run(token => Task.Run(async () => result = await ExecuteOwnedAsync(request, token), token)).ConfigureAwait(false);
+            return result;
+        }
+        catch (OperationCanceledException) { return new CommandResult("cancelled", "cancelled"); }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("core", "Core command failed.", error);
+            return CommandResult.Failed("operationFailed", error.Message);
+        }
+        finally
+        {
+            lock (_sync) _operation = "idle";
+            lease.Dispose();
+            Publish();
+        }
+    }
+
+    private async Task<CommandResult> ExecuteOwnedAsync(HostRequest request, CancellationToken token)
+    {
+        var kind = request.CoreType ?? _settings.Current.ActiveCoreKind;
+        var saved = false;
+        try
+        {
+            if (request.Type == "start" && _core.IsRunning) return CommandResult.Rejected("alreadyRunning");
+            if (request.Type is "restart" or "upgradeCore" && _core.IsRunning && Kind != kind)
+                return CommandResult.Rejected("wrongCore");
+            if (request.Type == "upgradeCore")
+            {
+                if (request.Draft is not null) return CommandResult.Rejected("invalidInput");
+                if (request.ConfirmUnverified && (request.ExpectedRevision is null || request.ExpectedRuntimeEpoch is null))
+                    return CommandResult.Rejected("confirmationExpired");
+                if (request.ExpectedRevision is { } revision && revision != _settings.Current.Profile(kind).Revision)
+                    return CommandResult.Rejected("staleRevision");
+                if (request.ExpectedRuntimeEpoch is { } epoch && epoch != Epoch)
+                    return CommandResult.Rejected("staleRuntime");
+            }
+            if (request.Type == "completeSetup")
+            {
+                if (!_core.IsRunning || ApiStatus != "ready") return CommandResult.Rejected("apiNotReady");
+                await _settings.CompleteSetupAsync(token).ConfigureAwait(false);
+                return CommandResult.Completed("setupCompleted", saved: true);
+            }
+            if (request.Draft is not null)
+            {
+                var before = _settings.Current.Profile(kind);
+                await _settings.UpdateProfileAsync(kind, request.ExpectedRevision ?? -1, request.Draft, token).ConfigureAwait(false);
+                saved = true;
+                var current = _settings.Current.Profile(kind);
+                if (_core.IsRunning && Kind == kind && (before.ApiUrl != current.ApiUrl || before.Secret != current.Secret
+                    || before.SecretDecryptionFailed != current.SecretDecryptionFailed))
+                    Connect(current);
+            }
+            switch (request.Type)
+            {
+                case "saveProfile":
+                    if (!saved) return CommandResult.Rejected("missingDraft");
+                    return CommandResult.Completed("profileSaved", saved: true);
+                case "stop":
+                    CancelProbe();
+                    await _core.StopAsync().ConfigureAwait(false);
+                    return CommandResult.Completed("stopped");
+                case "start":
+                case "restart":
+                    ValidateLaunch(new CoreLaunchSpec(kind, _settings.Current.Profile(kind)));
+                    if (request.Type == "restart")
+                    {
+                        CancelProbe();
+                        await _core.StopAsync().ConfigureAwait(false);
+                    }
+                    if (_settings.Current.ActiveCoreKind != kind)
+                        await _settings.SetActiveCoreAsync(kind, token).ConfigureAwait(false);
+                    return await StartAsync(new CoreLaunchSpec(kind, _settings.Current.Profile(kind)), saved, token).ConfigureAwait(false);
+                case "switchCore":
+                    return await SwitchAsync(kind, saved, token).ConfigureAwait(false);
+                case "upgradeCore":
+                    return await UpgradeAsync(kind, saved, request.ConfirmUnverified, token).ConfigureAwait(false);
+                default:
+                    return CommandResult.Rejected("unknownCommand");
+            }
+        }
+        catch (SettingsConflictException) { return CommandResult.Rejected("staleRevision"); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { return new("cancelled", "cancelled", Saved: saved); }
+        catch (UnverifiedReleaseException error) { return new("rejected", "confirmationRequired", error.Message, saved); }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("core", $"Core operation {request.Type} failed.", error);
+            return CommandResult.Failed(error is ArgumentException ? "invalidInput" : "operationFailed", error.Message, saved);
+        }
+    }
+
+    private async Task<CommandResult> StartAsync(CoreLaunchSpec spec, bool saved, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (_closing) return CommandResult.Rejected("closing");
+        if (!_isAdministrator()) return new("elevationRequired", "elevationRequired", Saved: saved);
+        if (spec.Profile.SecretDecryptionFailed) return CommandResult.Rejected("credentialRecoveryRequired");
+        lock (_sync) { _running = spec; _connection = spec.Profile; }
+        await _core.StartAsync(spec, token).ConfigureAwait(false);
+        if (!_core.IsRunning) return CommandResult.Failed("processStartFailed", saved: saved);
+        Connect(spec.Profile);
+        return CommandResult.Completed("processStarted", saved);
+    }
+
+    private static void ValidateLaunch(CoreLaunchSpec spec)
+    {
+        if (!File.Exists(spec.Profile.ExePath)) throw new FileNotFoundException("找不到内核文件。", spec.Profile.ExePath);
+        if (!File.Exists(spec.Profile.ConfigPath)) throw new FileNotFoundException("找不到核心配置文件。", spec.Profile.ConfigPath);
+        if (spec.Profile.SecretDecryptionFailed) throw new InvalidOperationException("请先明确替换无法解密的 Secret。");
+    }
+
+    private async Task<CommandResult> SwitchAsync(CoreKind kind, bool saved, CancellationToken token)
+    {
+        var target = new CoreLaunchSpec(kind, _settings.Current.Profile(kind));
+        ValidateLaunch(target);
+        var previousKind = Kind;
+        var previous = _core.IsRunning ? Running : null;
+        CancelProbe();
+        // A failed stop leaves the existing active selection/owned Process unchanged.
+        await _core.StopAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+        try
+        {
+            await _settings.SetActiveCoreAsync(kind, token).ConfigureAwait(false);
+            var result = await StartAsync(new(kind, _settings.Current.Profile(kind)), saved, token).ConfigureAwait(false);
+            if (result.Status is "failed" or "rejected") await RecoverAsync(previousKind, previous, token).ConfigureAwait(false);
+            return result;
+        }
+        catch (Exception) when (!token.IsCancellationRequested)
+        {
+            await RecoverAsync(previousKind, previous, token).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task RecoverAsync(CoreKind kind, CoreLaunchSpec? previous, CancellationToken token)
+    {
+        if (_closing || token.IsCancellationRequested) return;
+        try
+        {
+            if (_core.IsRunning) await _core.StopAsync().ConfigureAwait(false);
+            await _settings.SetActiveCoreAsync(kind, token).ConfigureAwait(false);
+            if (previous is not null)
+            {
+                var connection = _settings.Current.Profile(kind);
+                var recovery = previous with
+                {
+                    Profile = previous.Profile with
+                    {
+                        ApiUrl = connection.ApiUrl,
+                        Secret = connection.Secret,
+                        SecretDecryptionFailed = connection.SecretDecryptionFailed
+                    }
+                };
+                await StartAsync(recovery, saved: false, token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception error) { HostOperationLogger.Error("core", "One-shot recovery failed; no further restart attempted.", error); }
+    }
+
+    private async Task<CommandResult> UpgradeAsync(CoreKind kind, bool saved, bool confirmUnverified, CancellationToken token)
+    {
+        if (_core.IsRunning && RequiresRestart) return CommandResult.Rejected("restartRequired");
+        var profile = _settings.Current.Profile(kind);
+        if (profile.SecretDecryptionFailed) return CommandResult.Rejected("credentialRecoveryRequired");
+        if (kind == CoreKind.Mihomo)
+        {
+            if (!_core.IsRunning || ApiStatus != "ready") return CommandResult.Rejected("apiNotReady");
+            var result = await MihomoApiUpdater.UpgradeAsync(profile.ApiUrl, profile.Secret, token).ConfigureAwait(false);
+            if (result.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
+            Connect(profile);
+            return CommandResult.Completed("upgraded", saved);
+        }
+        var previous = _core.IsRunning ? Running : null;
+        CoreUpgradeResult? upgrade = null;
+        try
+        {
+            upgrade = await SingBoxUpdater.UpgradeAsync(profile.ExePath,
+                () => { CancelProbe(); _core.Stop(TimeSpan.FromSeconds(8)); }, token, confirmUnverified,
+                _upgradeClient, CoreVersionReader.ReadAsync).ConfigureAwait(false);
+            if (upgrade.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
+            if (previous is not null)
+            {
+                var started = await StartAsync(new(kind, profile), saved, token).ConfigureAwait(false);
+                if (started.Status != "completed") throw new InvalidOperationException("升级后内核未能启动。");
+                await Task.Delay(250, token).ConfigureAwait(false);
+                if (!_core.IsRunning) throw new InvalidOperationException("升级后的内核立即退出。");
+            }
+            return CommandResult.Completed("upgraded", saved);
+        }
+        catch (Exception) when (!_closing && !token.IsCancellationRequested)
+        {
+            if (upgrade is { IsAlreadyLatest: false } && File.Exists(upgrade.BackupPath))
+            {
+                try
+                {
+                    await _core.StopAsync().ConfigureAwait(false);
+                    CoreUpgradeSupport.ReplaceCoreWithRollback(upgrade.BackupPath, profile.ExePath, upgrade.BackupPath);
+                }
+                catch (Exception recoveryError) { HostOperationLogger.Error("upgrade", "Upgrade rollback failed; backup retained.", recoveryError); throw; }
+            }
+            if (previous is not null && !_core.IsRunning) await RecoverAsync(kind, previous, token).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private void OnProcessChanged(object? sender, EventArgs args)
+    {
+        var pid = _core.ProcessId;
+        lock (_sync)
+        {
+            if (_observedPid != pid)
+            {
+                _observedPid = pid;
+                _epoch++;
+                _apiStatus = pid is null ? "idle" : "checking";
+                _apiVersion = "";
+            }
+        }
+        if (pid is null) CancelProbe();
+        Publish();
+    }
+
+    public CommandResult RefreshConnection()
+    {
+        using var lease = _gate.TryEnter();
+        if (lease is null) return CommandResult.Rejected(_closing ? "closing" : "busy");
+        if (!_core.IsRunning) return CommandResult.Rejected("apiNotReady");
+        Connect(_settings.Current.Profile(Kind));
+        return CommandResult.Completed();
+    }
+
+    private void Connect(CoreProfile profile)
+    {
+        CancelProbe();
+        if (_closing || !_core.IsRunning) return;
+        CancellationTokenSource probe;
+        long epoch;
+        lock (_sync)
+        {
+            _connection = profile;
+            epoch = ++_epoch;
+            _apiVersion = "";
+            _apiStatus = profile.SecretDecryptionFailed ? "unauthorized" : "checking";
+            probe = CancellationTokenSource.CreateLinkedTokenSource(_tasks.Token);
+            _probe = probe;
+        }
+        Publish();
+        _ = _tasks.Run(async _ =>
+        {
+            try
+            {
+                var result = profile.SecretDecryptionFailed ? new CoreApiStatus("unauthorized", "")
+                    : await CoreApiProbe.ProbeAsync(ApiClient, profile.ApiUrl, profile.Secret,
+                        TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(500), probe.Token).ConfigureAwait(false);
+                lock (_sync)
+                {
+                    if (_closing || epoch != _epoch || probe.IsCancellationRequested || !_core.IsRunning) return;
+                    _apiStatus = result.Status;
+                    _apiVersion = result.Version;
+                }
+                Publish();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception error)
+            {
+                lock (_sync)
+                {
+                    if (_closing || epoch != _epoch || probe.IsCancellationRequested || !_core.IsRunning) return;
+                    _apiStatus = "unreachable";
+                    _apiVersion = "";
+                }
+                HostOperationLogger.Error("api", "API readiness probe failed.", error);
+                Publish();
+            }
+            finally
+            {
+                lock (_sync) { if (ReferenceEquals(_probe, probe)) _probe = null; }
+                probe.Dispose();
+            }
+        });
     }
 
     private void CancelProbe()
     {
-        lock (_probeSync)
+        lock (_sync)
         {
-            Interlocked.Increment(ref _probeGeneration);
-            _probeCancellation?.Cancel();
+            try { _probe?.Cancel(); } catch (ObjectDisposedException) { }
+            _probe = null;
+            if (_apiStatus == "checking") _apiStatus = "unreachable";
         }
     }
 
-    public void BeginShutdown()
+    private void Publish()
     {
-        lock (_shutdownSync)
-        {
-            if (_shutdownBegun) return;
-            _shutdownBegun = true;
-            _operations.Close();
-            CancelProbe();
-            _shutdown.Cancel();
-        }
+        if (!_closing) Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task<bool> WaitForShutdownAsync(TimeSpan timeout)
+    public Task<bool> ShutdownAsync(TimeSpan timeout)
     {
-        BeginShutdown();
-        Task drainTask;
-        lock (_shutdownSync)
-        {
-            if (_shutdownResourcesDisposed) return true;
-            drainTask = _drainTask ??= DrainAndDisposeAsync();
-        }
+        lock (_sync) return _shutdownTask ??= ShutdownOwnedAsync(timeout);
+    }
 
+    private async Task<bool> ShutdownOwnedAsync(TimeSpan timeout)
+    {
+        _closing = true;
+        _gate.Close();
+        CancelProbe();
+        var drain = _tasks.StopAndWaitAsync(timeout);
+        var stop = _core.StopAsync();
         try
         {
-            await drainTask.WaitAsync(timeout);
-            return true;
+            await Task.WhenAll(drain, stop).WaitAsync(timeout).ConfigureAwait(false);
+            return await drain;
         }
-        catch (TimeoutException)
+        catch (Exception error)
         {
+            HostOperationLogger.Error("shutdown", "Core shutdown did not finish within its budget.", error);
+            _ = stop.ContinueWith(task => { _ = task.Exception; }, TaskScheduler.Default);
             return false;
-        }
-    }
-
-    private async Task DrainAndDisposeAsync()
-    {
-        // Ensure disposal cannot run inline while the caller holds _shutdownSync.
-        await Task.Yield();
-        var operationWait = _operations.WaitForIdleAsync(Timeout.InfiniteTimeSpan);
-        var taskWait = _tasks.StopAndWaitAsync(Timeout.InfiniteTimeSpan);
-        await Task.WhenAll(operationWait, taskWait);
-
-        lock (_shutdownSync)
-        {
-            if (_shutdownResourcesDisposed) return;
-            _tasks.Dispose();
-            _shutdown.Dispose();
-            _shutdownResourcesDisposed = true;
         }
     }
 
     public void Dispose()
     {
-        BeginShutdown();
-        _ = WaitForShutdownAsync(TimeSpan.Zero);
-    }
-
-    private IDisposable? EnterOperation()
-    {
-        var lease = _operations.TryEnter();
-        if (lease is null && !_operations.IsClosing) _services.ShowNotice("内核操作正在进行，请稍后重试。");
-        return lease;
-    }
-
-    public CoreLifecycleController(
-        AppSettings settings,
-        CoreProcessManager core,
-        CoreLifecycleServices services)
-    {
-        _settings = settings;
-        _core = core;
-        _services = services;
-    }
-
-    public bool IsUpgradeInProgress { get; private set; }
-    public bool IsSwitchInProgress { get; private set; }
-
-    public void Start(bool showTrayNotification = false)
-    {
-        using var operation = EnterOperation();
-        if (operation is null) return;
-        StartInternal(showTrayNotification);
-    }
-
-    private void StartInternal(bool showTrayNotification = false)
-    {
-        if (_operations.IsClosing) return;
-        try
-        {
-            if (!_core.IsRunning && !_services.IsRunningAsAdministrator())
-            {
-                ResetTunRetry();
-                _services.RelaunchAsAdministrator(
-                    true,
-                    _services.ShouldKeepMinimizedForRelaunch(),
-                    true);
-                return;
-            }
-
-            _elevatedRetryPending = !_services.IsRunningAsAdministrator();
-            _core.Start(_settings);
-            if (showTrayNotification)
-            {
-                _services.ShowTrayNotification("内核已启动");
-            }
-
-            _services.RefreshIconCache();
-            _ = _tasks.Run(_ => WaitForApiAndNotifyAsync());
-        }
-        catch (Exception ex)
-        {
-            ResetTunRetry();
-            HostOperationLogger.Error("core", "Failed to start core.", ex);
-            _services.ShowMessage("启动失败", ex.Message, MessageBoxIcon.Error);
-        }
-        finally
-        {
-            _services.PublishState();
-        }
-    }
-
-    public void Stop()
-    {
-        Stop(showTrayNotification: false);
-    }
-
-    public void Stop(bool showTrayNotification)
-    {
-        using var operation = EnterOperation();
-        if (operation is null) return;
+        _closing = true;
+        _gate.Close();
         CancelProbe();
-        ResetTunRetry();
-        var wasRunning = _core.IsRunning;
-        try
-        {
-            _core.Stop();
-            if (showTrayNotification && wasRunning)
-            {
-                _services.ShowTrayNotification("内核已关闭");
-            }
-        }
-        catch (Exception ex)
-        {
-            HostOperationLogger.Error("core", "Failed to stop core.", ex);
-            _services.ShowMessage("停止失败", ex.Message, MessageBoxIcon.Error);
-        }
-        finally
-        {
-            _services.PublishState();
-        }
+        _core.StatusChanged -= OnProcessChanged;
+        if (_shutdownTask is { IsCompletedSuccessfully: true } && _shutdownTask.Result) _tasks.Dispose();
     }
-
-    public bool Restart(bool showTrayNotification = false)
-    {
-        using var operation = EnterOperation();
-        if (operation is null) return false;
-        return RestartInternal(showTrayNotification);
-    }
-
-    private bool RestartInternal(bool showTrayNotification = false)
-    {
-        CancelProbe();
-        var beforeProcessId = _core.ProcessId;
-        try
-        {
-            if (!_services.IsRunningAsAdministrator())
-            {
-                HostOperationLogger.Info(
-                    "core",
-                    $"Restart requires elevation; requesting elevated Dashboard restart. currentPid={beforeProcessId?.ToString() ?? "none"}.");
-                _services.RelaunchAsAdministrator(
-                    true,
-                    _services.ShouldKeepMinimizedForRelaunch(),
-                    true);
-                return false;
-            }
-
-            if (_core.IsRunning)
-            {
-                _core.Stop();
-            }
-
-            StartInternal();
-            var started = _core.IsRunning;
-            HostOperationLogger.Info(
-                "core",
-                $"Core restart {(started ? "started" : "failed to start")}. previousPid={beforeProcessId?.ToString() ?? "none"}, currentPid={_core.ProcessId?.ToString() ?? "none"}.");
-            if (!started)
-            {
-                return false;
-            }
-
-            _services.ShowNotice("内核已重启。");
-            if (showTrayNotification)
-            {
-                _services.ShowTrayNotification("内核已重启");
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            HostOperationLogger.Error(
-                "core",
-                $"Failed to restart core. previousPid={beforeProcessId?.ToString() ?? "none"}.",
-                ex);
-            _services.ShowMessage("重启失败", ex.Message, MessageBoxIcon.Error);
-            return false;
-        }
-        finally
-        {
-            _services.PublishState();
-        }
-    }
-
-    public Task SwitchAsync(string targetCoreType) => _tasks.Run(async _ =>
-    {
-        using var operation = EnterOperation();
-        if (operation is null) return;
-        await SwitchInternalAsync(targetCoreType);
-    });
-
-    private async Task SwitchInternalAsync(string targetCoreType)
-    {
-        CancelProbe();
-
-        var fallbackCoreType = _settings.IsSingBox
-            ? AppSettings.CoreTypeMihomo
-            : AppSettings.CoreTypeSingBox;
-        targetCoreType = AppSettings.NormalizeCoreType(
-            string.IsNullOrWhiteSpace(targetCoreType) ? fallbackCoreType : targetCoreType);
-        var targetTitle = AppSettings.CoreTitleFor(targetCoreType);
-
-        IsSwitchInProgress = true;
-        _services.PublishState();
-        _services.ShowNotice($"正在切换到 {targetTitle}。");
-
-        try
-        {
-            if (_core.IsRunning)
-            {
-                _core.Stop(TimeSpan.FromSeconds(8));
-                await _services.DelayAsync(TimeSpan.FromMilliseconds(600), _shutdown.Token);
-            }
-
-            _shutdown.Token.ThrowIfCancellationRequested();
-            HostSettingsTransaction.Execute(
-                _settings,
-                () => _settings.CoreType = targetCoreType,
-                _settings.Save);
-            _services.RefreshIconCache();
-            StartInternal();
-
-            if (_core.IsRunning)
-            {
-                _services.ShowNotice($"已切换到 {targetTitle}。");
-            }
-        }
-        catch (Exception ex)
-        {
-            HostOperationLogger.Error("core", "Failed to switch core.", ex);
-            _services.ShowNotice($"切换内核失败：{ex.Message}");
-        }
-        finally
-        {
-            IsSwitchInProgress = false;
-            if (!_operations.IsClosing) _services.PublishState();
-        }
-    }
-
-    public Task UpgradeAsync() => _tasks.Run(async _ =>
-    {
-        using var operation = EnterOperation();
-        if (operation is null) return;
-        await UpgradeInternalAsync();
-    });
-
-    public async Task<ConfigurationCommandResult> ExecuteConfigurationCommandAsync(
-        Func<Task> saveAsync,
-        CoreConfigurationCommand command,
-        string targetCoreType = "")
-    {
-        var result = ConfigurationCommandResult.Rejected;
-        await _tasks.Run(async _ =>
-        {
-            using var operation = EnterOperation();
-            if (operation is null) return;
-            CancelProbe();
-            await saveAsync();
-            switch (command)
-            {
-                case CoreConfigurationCommand.SaveOnly:
-                    break;
-                case CoreConfigurationCommand.Start:
-                    StartInternal();
-                    break;
-                case CoreConfigurationCommand.Restart:
-                    RestartInternal();
-                    break;
-                case CoreConfigurationCommand.Switch:
-                    await SwitchInternalAsync(targetCoreType);
-                    break;
-                case CoreConfigurationCommand.Upgrade:
-                    await UpgradeInternalAsync();
-                    break;
-            }
-            result = ConfigurationCommandResult.Executed;
-        });
-        return result;
-    }
-
-    private async Task UpgradeInternalAsync()
-    {
-        if (_settings.ActiveSecretDecryptionFailed)
-        {
-            _services.ShowNotice("Secret 无法解密，请在 Core 页面重新填写并确认替换后再升级。");
-            return;
-        }
-        var isSingBox = _settings.IsSingBox;
-        var corePath = _settings.ActiveCorePath;
-        var apiUrl = _settings.ActiveDashboardApiUrl;
-        var secret = _settings.ActiveSecret;
-        if (!isSingBox && !_core.IsRunning)
-        {
-            _services.ShowNotice("请先启动 mihomo 内核，再执行升级。");
-            return;
-        }
-
-        var wasRunning = _core.IsRunning;
-        var stoppedForUpgrade = false;
-        IsUpgradeInProgress = true;
-        _services.PublishState();
-        _services.ShowNotice(isSingBox
-            ? "正在升级 sing-box 内核，请稍候。"
-            : "正在升级内核，请稍候。");
-
-        try
-        {
-            if (!isSingBox)
-            {
-                var mihomoResult = await _services.UpgradeMihomoAsync(apiUrl, secret, _shutdown.Token);
-                if (_operations.IsClosing) return;
-                if (mihomoResult.IsAlreadyLatest)
-                {
-                    var versionText = string.IsNullOrWhiteSpace(mihomoResult.Version)
-                        ? ""
-                        : $"（{mihomoResult.Version}）";
-                    _services.ShowNotice($"当前已是最新版本{versionText}。");
-                    return;
-                }
-
-                _services.ShowNotice("mihomo 内核升级成功。");
-                return;
-            }
-
-            var result = await _services.UpgradeSingBoxAsync(
-                corePath,
-                StopRunningCoreForUpgrade,
-                _shutdown.Token);
-
-            void StopRunningCoreForUpgrade()
-            {
-                _shutdown.Token.ThrowIfCancellationRequested();
-                if (wasRunning && _core.IsRunning)
-                {
-                    _core.Stop(TimeSpan.FromSeconds(8));
-                    stoppedForUpgrade = true;
-                }
-            }
-
-            if (_operations.IsClosing) return;
-            if (result.IsAlreadyLatest)
-            {
-                HostOperationLogger.Info("upgrade", $"Core is already latest: {result.Version}.");
-                _services.ShowNotice($"当前内核已经是最新版本（{result.Version}）。");
-                return;
-            }
-
-            _services.ShowNotice($"内核已升级到 {result.Version}。");
-            HostOperationLogger.Info("upgrade", $"Core upgraded to {result.Version} from asset {result.AssetName}. Backup: {result.BackupPath}");
-            if (!string.IsNullOrWhiteSpace(result.Warning))
-            {
-                HostOperationLogger.Info("upgrade", result.Warning);
-                _services.ShowNotice(result.Warning);
-            }
-
-            if (stoppedForUpgrade)
-            {
-                StartInternal();
-            }
-        }
-        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
-        {
-        }
-        catch (MihomoApiUpgradeException ex)
-        {
-            HostOperationLogger.Error("upgrade", "Failed to upgrade mihomo through its API.", ex);
-            _services.ShowNotice(ex.UserMessage);
-        }
-        catch (Exception ex)
-        {
-            HostOperationLogger.Error("upgrade", "Failed to upgrade core.", ex);
-            var message = ex switch
-            {
-                HttpRequestException => "升级失败：无法连接 mihomo API，请确认内核正在运行。",
-                TaskCanceledException => "升级失败：请求超时，请稍后重试。",
-                _ => "升级失败：发生意外错误，详情请查看 upgrade.log。"
-            };
-            _services.ShowNotice(message);
-            if (stoppedForUpgrade && !_core.IsRunning && !_operations.IsClosing)
-            {
-                StartInternal();
-            }
-        }
-        finally
-        {
-            IsUpgradeInProgress = false;
-            if (!_operations.IsClosing) _services.PublishState();
-        }
-    }
-
-    public void ObserveLogEntry(string? logEntry)
-    {
-        if (_operations.IsClosing || !_elevatedRetryPending || !IsTunPermissionFailure(logEntry))
-        {
-            return;
-        }
-
-        using var operation = EnterOperation();
-        if (operation is null) return;
-        ResetTunRetry();
-        CancelProbe();
-        try
-        {
-            _core.Stop();
-            if (!_operations.IsClosing)
-                _services.RelaunchAsAdministrator(true, _services.ShouldKeepMinimizedForRelaunch(), true);
-        }
-        catch (Exception ex)
-        {
-            HostOperationLogger.Error("core", "Failed to stop core before elevated retry.", ex);
-        }
-    }
-
-    private async Task WaitForApiAndNotifyAsync()
-    {
-        if (_settings.ActiveSecretDecryptionFailed)
-        {
-            _services.ShowNotice("Secret 无法解密，API 连接已暂停。请在 Core 页面重新填写并确认替换。");
-            _services.PublishState();
-            return;
-        }
-        using var probe = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
-        long generation;
-        lock (_probeSync)
-        {
-            CancelProbe();
-            generation = Interlocked.Read(ref _probeGeneration);
-            _probeCancellation = probe;
-        }
-        var processId = _core.ProcessId;
-        bool IsCurrent() => !_operations.IsClosing && generation == Interlocked.Read(ref _probeGeneration)
-            && processId == _core.ProcessId;
-        var apiUrl = _settings.ActiveDashboardApiUrl;
-        var secret = _settings.ActiveSecret;
-        bool reachable;
-        try
-        {
-            reachable = await CoreApiProbe.WaitAsync(ApiProbeClient, apiUrl, secret,
-                ApiProbeRequestTimeout, ApiProbeTotalTimeout, TimeSpan.FromMilliseconds(500), probe.Token);
-        }
-        catch (OperationCanceledException) { return; }
-        catch (Exception ex)
-        {
-            if (IsCurrent()) HostOperationLogger.Error("core", "Core API probe failed.", ex);
-            return;
-        }
-        finally
-        {
-            lock (_probeSync)
-            {
-                if (ReferenceEquals(_probeCancellation, probe)) _probeCancellation = null;
-            }
-        }
-        _services.RunOnUiThread(() =>
-        {
-            if (!IsCurrent()) return;
-            ResetTunRetry();
-            if (reachable)
-            {
-                _services.RefreshIconCache();
-                _services.PublishState();
-            }
-            else _services.ShowNotice($"内核已启动，但无法连接 API：{apiUrl}");
-        });
-    }
-
-    private void ResetTunRetry()
-    {
-        _elevatedRetryPending = false;
-    }
-
-    private static bool IsTunPermissionFailure(string? logEntry)
-    {
-        return !string.IsNullOrWhiteSpace(logEntry)
-            && (logEntry.Contains("Start TUN listening error", StringComparison.OrdinalIgnoreCase)
-                || logEntry.Contains("configure tun interface: Access is denied", StringComparison.OrdinalIgnoreCase));
-    }
-}
-
-internal enum CoreConfigurationCommand
-{
-    SaveOnly,
-    Start,
-    Restart,
-    Switch,
-    Upgrade
-}
-
-internal enum ConfigurationCommandResult
-{
-    Executed,
-    Rejected
-}
-
-internal sealed class CoreLifecycleServices
-{
-    public required Func<bool> IsRunningAsAdministrator { get; init; }
-    public required Func<bool> ShouldKeepMinimizedForRelaunch { get; init; }
-    public required Action<bool, bool, bool> RelaunchAsAdministrator { get; init; }
-    public required Action<string> ShowNotice { get; init; }
-    public required Action PublishState { get; init; }
-    public required Action RefreshIconCache { get; init; }
-    public required Action<string> ShowTrayNotification { get; init; }
-    public required Action<string, string, MessageBoxIcon> ShowMessage { get; init; }
-    public required Action<Action> RunOnUiThread { get; init; }
-    public Func<TimeSpan, CancellationToken, Task> DelayAsync { get; init; } = Task.Delay;
-    public Func<string, string, CancellationToken, Task<MihomoApiUpgradeResult>> UpgradeMihomoAsync { get; init; } =
-        MihomoApiUpdater.UpgradeAsync;
-    public Func<string, Action?, CancellationToken, Task<CoreUpgradeResult>> UpgradeSingBoxAsync { get; init; } =
-        (path, beforeReplace, token) => SingBoxUpdater.UpgradeLatestAsync(path, beforeReplace, token);
 }

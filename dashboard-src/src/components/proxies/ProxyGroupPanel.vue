@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div
     v-if="proxyGroup"
     class="flex flex-col gap-3 p-4"

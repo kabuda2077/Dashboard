@@ -4,12 +4,9 @@
     <OverviewCard />
   </template>
 
-  <div
-    v-if="hasVisibleItems"
-    class="flex flex-col gap-3 text-sm"
-  >
+  <div class="flex flex-col gap-3 text-sm">
     <div class="settings-grid">
-      <SettingItem :setting-key="k.splitOverviewPage">
+      <SettingItem>
         <div class="setting-item-label">
           {{ $t('splitOverviewPage') }}
         </div>
@@ -19,7 +16,7 @@
           v-model="splitOverviewPage"
         />
       </SettingItem>
-      <SettingItem :setting-key="k.autoIPCheckWhenStart">
+      <SettingItem>
         <div class="setting-item-label">
           {{ $t('autoIPCheckWhenStart') }}
         </div>
@@ -29,7 +26,7 @@
           v-model="autoIPCheck"
         />
       </SettingItem>
-      <SettingItem :setting-key="k.autoConnectionCheckWhenStart">
+      <SettingItem>
         <div class="setting-item-label">
           {{ $t('autoConnectionCheckWhenStart') }}
         </div>
@@ -39,10 +36,7 @@
           v-model="autoConnectionCheck"
         />
       </SettingItem>
-      <SettingItem
-        :setting-key="k.showStatisticsWhenSidebarCollapsed"
-        class="max-md:hidden"
-      >
+      <SettingItem class="max-md:hidden">
         <div class="setting-item-label">
           {{ $t('showStatisticsWhenSidebarCollapsed') }}
         </div>
@@ -52,10 +46,7 @@
           v-model="showStatisticsWhenSidebarCollapsed"
         />
       </SettingItem>
-      <SettingItem
-        :setting-key="k.numberOfChartsInSidebar"
-        class="max-md:hidden"
-      >
+      <SettingItem class="max-md:hidden">
         <div class="setting-item-label">
           {{ $t('numberOfChartsInSidebar') }}
         </div>
@@ -78,9 +69,7 @@
 
 <script setup lang="ts">
 import SettingItem from '@/components/settings/SettingItem.vue'
-import { useHasAnyVisibleSetting } from '@/composables/settings'
-import { getItemKeysByCategory, OVERVIEW_ITEM_KEYS } from '@/config/settingsItems'
-import { SETTINGS_MENU_KEY } from '@/constant'
+import { defineAsyncComponent } from 'vue'
 import {
   autoConnectionCheck,
   autoIPCheck,
@@ -88,10 +77,5 @@ import {
   showStatisticsWhenSidebarCollapsed,
   splitOverviewPage,
 } from '@/store/settings'
-import OverviewCard from './OverviewCard.vue'
-
-const k = OVERVIEW_ITEM_KEYS
-
-const overviewGridKeys = getItemKeysByCategory(SETTINGS_MENU_KEY.overview).slice(2)
-const hasVisibleItems = useHasAnyVisibleSetting(overviewGridKeys)
+const OverviewCard = defineAsyncComponent(() => import('./OverviewCard.vue'))
 </script>

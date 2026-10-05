@@ -27,7 +27,7 @@ const mountExpandedSettings = async () => {
   app.config.globalProperties.$t = (key: string) => key
   app.mount(host)
   host.querySelector('button')!.click()
-  await nextTick()
+  await vi.waitFor(() => expect(host!.querySelector('[data-key="connectionSettings"]')).not.toBeNull())
   await nextTick()
 }
 

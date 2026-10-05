@@ -2,254 +2,155 @@ using System.Text.Json;
 
 namespace Dashboard;
 
-internal sealed class HostMessageRouter
+internal sealed class HostMessageRouter(HostMessageHandlers handlers)
 {
-    private readonly HostMessageHandlers _handlers;
+    private static readonly HashSet<string> CoreCommands = ["saveProfile", "start", "restart", "switchCore", "stop", "upgradeCore", "completeSetup"];
+    private static readonly HashSet<string> WindowCommands = ["windowDrag", "windowResize", "windowToggleMaximize", "windowMinimize", "windowClose", "requestWindowState"];
+    private static readonly HashSet<string> Edges = ["left", "right", "top", "bottom", "topLeft", "topRight", "bottomLeft", "bottomRight"];
+    private static readonly HashSet<string> Options = ["startCoreOnLaunch", "minimizeToTray", "lightweightMode", "autostart"];
+    internal const int MaximumMessageCharacters = 4 * 1024 * 1024;
 
-    public HostMessageRouter(HostMessageHandlers handlers)
+    public async Task RouteAsync(string json, Action<object> reply)
     {
-        _handlers = handlers;
-    }
-
-    public async Task RouteAsync(string messageJson)
-    {
-        using var document = JsonDocument.Parse(messageJson);
-        var root = document.RootElement;
-        var type = ValidateCommand(root);
-        if (type is null) return;
-
-        switch (type)
+        var request = Parse(json);
+        if (request.Type == "performance")
         {
-            case HostBridgeCommand.WindowDrag:
-                _handlers.WindowDrag();
-                return;
-            case HostBridgeCommand.WindowResize:
-                _handlers.WindowResize(root);
-                return;
-            case HostBridgeCommand.WindowToggleMaximize:
-                _handlers.WindowToggleMaximize();
-                _handlers.SendWindowChromeState();
-                return;
-            case HostBridgeCommand.WindowMinimize:
-                _handlers.WindowMinimize();
-                return;
-            case HostBridgeCommand.WindowClose:
-                _handlers.WindowClose();
-                return;
-            case HostBridgeCommand.RequestWindowState:
-                _handlers.SendWindowChromeState();
-                return;
-            case HostBridgeCommand.Performance:
+            HostOperationLogger.Diagnostic("performance", $"frontend:{request.Name} durationMs={request.DurationMs:0}");
+            return;
+        }
+        if (WindowCommands.Contains(request.Type))
+        {
+            handlers.WindowCommand(request.Type, request.Edge);
+            return;
+        }
+        var id = request.RequestId!;
+        if (request.Type == "preferencesFlushed")
+        {
+            handlers.PreferencesFlushed(id, request.Value == true);
+            return;
+        }
+        if (request.Type == "bootstrap")
+        {
+            reply(new BootstrapReply(id, handlers.BuildState(), handlers.Preferences()));
+            return;
+        }
+        CommandResult result;
+        try
+        {
+            switch (request.Type)
             {
-                var name = HostBridgeJson.GetString(root, "name", "unknown");
-                var durationMs = HostBridgeJson.GetDouble(root, "durationMs", 0);
-                HostOperationLogger.Diagnostic("performance", $"frontend:{name} durationMs={durationMs:0}");
-                return;
+                case "requestState": result = CommandResult.Completed(); break;
+                case "chooseCoreFile":
+                case "chooseConfigFile":
+                    var path = handlers.ChooseFile(request.CoreType!.Value, request.Type == "chooseConfigFile");
+                    result = path is null ? new("cancelled", "cancelled") : new("completed", "fileSelected", Path: path);
+                    break;
+                case "openCoreLocation":
+                case "openConfigLocation":
+                    handlers.OpenLocation(request.CoreType!.Value, request.Type == "openConfigLocation");
+                    result = CommandResult.Completed(); break;
+                case "checkAppUpdate":
+                    await handlers.CheckAppUpdateAsync(); result = CommandResult.Completed(); break;
+                case "openAppRelease": handlers.OpenAppRelease(); result = CommandResult.Completed(); break;
+                case "openCoreRepository": handlers.OpenCoreRepository(); result = CommandResult.Completed(); break;
+                default: result = await handlers.ExecuteAsync(request); break;
             }
-            case "requestDashboardSettings":
-                _handlers.RequestDashboardSettings(HostBridgeJson.GetString(root, "requestId", ""));
-                return;
-            case HostBridgeCommand.RequestState:
+        }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("host-bridge", "Host command failed.", error);
+            result = CommandResult.Failed("operationFailed", error.Message);
+        }
+        reply(new HostReply(id, result, handlers.BuildState()));
+        // The browser must receive its saved-profile acknowledgement before the
+        // native owner asks it to flush drafts and decide whether it can exit.
+        if (result.Status == "elevationRequired") handlers.RequestElevation();
+    }
+
+    internal static HostRequest Parse(string json)
+    {
+        if (json.Length > MaximumMessageCharacters) throw new ArgumentException("Host message exceeds size limit.");
+        using var document = JsonDocument.Parse(json, new() { MaxDepth = 32 });
+        ValidateUniqueFields(document.RootElement);
+        var request = JsonSerializer.Deserialize<HostRequest>(json, HostBridgeJson.JsonOptions)
+            ?? throw new ArgumentException("Missing command.");
+        if (request.ProtocolVersion != HostBridgeJson.ProtocolVersion) throw new ArgumentException("Unsupported host protocol version.");
+        if (request.CoreType.HasValue && !Enum.IsDefined(request.CoreType.Value)) throw new ArgumentException("Unknown core kind.");
+        if (request.ExpectedRevision is < 0 || request.ExpectedRuntimeEpoch is < 0) throw new ArgumentException("Invalid operation revision.");
+        if (request.ConfirmUnverified && (request.Type != "upgradeCore" || request.ExpectedRevision is null || request.ExpectedRuntimeEpoch is null))
+            throw new ArgumentException("An upgrade confirmation requires its original profile revision and runtime epoch.");
+        if (request.Type == "performance")
+        {
+            if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 100 || request.Name.Any(char.IsControl)
+                || request.DurationMs is null || !double.IsFinite(request.DurationMs.Value) || request.DurationMs < 0)
+                throw new ArgumentException("Invalid performance event.");
+            return request;
+        }
+        if (WindowCommands.Contains(request.Type))
+        {
+            if (request.Type == "windowResize" && (request.Edge is null || !Edges.Contains(request.Edge))) throw new ArgumentException("Invalid resize edge.");
+            return request;
+        }
+        if (string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 128) throw new ArgumentException("A requestId is required.");
+        if (CoreCommands.Contains(request.Type))
+        {
+            if (request.CoreType is null) throw new ArgumentException("A core type is required.");
+            if (request.Draft is not null && request.ExpectedRevision is null) throw new ArgumentException("A draft requires its expected revision.");
+            if (request.Type == "saveProfile" && request.Draft is null) throw new ArgumentException("A profile draft is required.");
+            if (request.Type == "upgradeCore" && request.Draft is not null) throw new ArgumentException("An upgrade cannot change its target profile draft.");
+            return request;
+        }
+        switch (request.Type)
+        {
+            case "chooseCoreFile":
+            case "chooseConfigFile":
+            case "openCoreLocation":
+            case "openConfigLocation":
+                if (request.CoreType is null) throw new ArgumentException("A core type is required.");
                 break;
-            case HostBridgeCommand.SaveDashboardSettings:
+            case "setDesktopOption":
+                if (request.Option is null || !Options.Contains(request.Option) || request.Value is null) throw new ArgumentException("Invalid desktop option.");
+                break;
+            case "preferencesFlushed":
+                if (request.Value is null) throw new ArgumentException("Missing flush result.");
+                break;
+            case "saveDashboardPreferences":
+                if (request.Preferences is null || request.Preferences.Any(item => !item.Key.StartsWith("config/", StringComparison.Ordinal) || item.Value is null))
+                    throw new ArgumentException("Invalid preferences.");
+                break;
+            case "bootstrap": case "requestState": case "refreshCoreMetadata": case "checkAppUpdate": case "openAppRelease": case "openCoreRepository": break;
+            default: throw new ArgumentException("Unknown host command.");
+        }
+        return request;
+    }
+
+    private static void ValidateUniqueFields(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in element.EnumerateObject())
             {
-                var requestId = HostBridgeJson.GetString(root, "requestId", "");
-                try
-                {
-                    _handlers.SaveDashboardSettings(root);
-                }
-                catch (Exception ex)
-                {
-                    if (requestId.Length == 0) throw;
-                    HostOperationLogger.Error("settings", "Failed to persist dashboard settings.", ex);
-                    _handlers.DashboardSettingsSaved(requestId, false);
-                    return;
-                }
-                if (requestId.Length > 0) _handlers.DashboardSettingsSaved(requestId, true);
-                return;
+                if (!names.Add(property.Name)) throw new ArgumentException("Duplicate command field.");
+                ValidateUniqueFields(property.Value);
             }
-            case HostBridgeCommand.Save:
-                await _handlers.SaveSettingsAsync(root, true);
-                break;
-            case HostBridgeCommand.CompleteSetup:
-                var result = await _handlers.ExecuteSettingsCommandAsync(
-                    root, CoreConfigurationCommand.SaveOnly, string.Empty, true);
-                if (result == ConfigurationCommandResult.Executed)
-                    _handlers.ShowNotice("首次启动设置已完成。");
-                break;
-            case HostBridgeCommand.Start:
-                await _handlers.ExecuteSettingsCommandAsync(
-                    root, CoreConfigurationCommand.Start, string.Empty, false);
-                break;
-            case HostBridgeCommand.Restart:
-                await _handlers.ExecuteSettingsCommandAsync(
-                    root, CoreConfigurationCommand.Restart, string.Empty, false);
-                break;
-            case HostBridgeCommand.SwitchCore:
-                await _handlers.ExecuteSettingsCommandAsync(
-                    root,
-                    CoreConfigurationCommand.Switch,
-                    HostBridgeJson.GetString(root, "targetCoreType", string.Empty),
-                    false);
-                return;
-            case HostBridgeCommand.Stop:
-                _handlers.StopCore();
-                break;
-            case HostBridgeCommand.UpgradeCore:
-                await _handlers.ExecuteSettingsCommandAsync(
-                    root, CoreConfigurationCommand.Upgrade, string.Empty, false);
-                break;
-            case HostBridgeCommand.BrowseCore:
-                await _handlers.ExecuteSettingsUiCommandAsync(root, HostSettingsUiCommand.BrowseCore);
-                break;
-            case HostBridgeCommand.BrowseConfig:
-                await _handlers.ExecuteSettingsUiCommandAsync(root, HostSettingsUiCommand.BrowseConfig);
-                break;
-            case HostBridgeCommand.OpenCoreLocation:
-                await _handlers.ExecuteSettingsUiCommandAsync(root, HostSettingsUiCommand.OpenCoreLocation);
-                break;
-            case HostBridgeCommand.OpenConfigLocation:
-                await _handlers.ExecuteSettingsUiCommandAsync(root, HostSettingsUiCommand.OpenConfigLocation);
-                break;
-            case HostBridgeCommand.CheckAppUpdate:
-                await _handlers.CheckAppUpdateAsync();
-                break;
-            case HostBridgeCommand.OpenAppRelease:
-                _handlers.OpenAppRelease();
-                return;
-            case HostBridgeCommand.OpenCoreRepository:
-                _handlers.OpenCoreRepository();
-                return;
         }
-
-        _handlers.SendState();
+        else if (element.ValueKind == JsonValueKind.Array)
+            foreach (var child in element.EnumerateArray()) ValidateUniqueFields(child);
     }
-
-    private static string? ValidateCommand(JsonElement root)
-    {
-        if (root.ValueKind != JsonValueKind.Object)
-            throw new ArgumentException("宿主命令必须是 JSON 对象。");
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var field in root.EnumerateObject())
-        {
-            if (!seen.Add(field.Name)) throw new ArgumentException("宿主命令包含重复字段。");
-        }
-        var type = HostBridgeJson.GetString(root, "type", "");
-        if (!KnownCommands.Contains(type)) return null; // Unknown commands must not disclose state.
-
-        foreach (var name in StringFields)
-        {
-            if (root.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.String)
-                throw new ArgumentException($"命令字段 {name} 必须是字符串。");
-        }
-        foreach (var name in BooleanFields)
-        {
-            if (root.TryGetProperty(name, out var value)
-                && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                throw new ArgumentException($"命令字段 {name} 必须是布尔值。");
-        }
-        if (root.TryGetProperty("coreType", out var coreType)
-            && coreType.GetString() is not (AppSettings.CoreTypeMihomo or AppSettings.CoreTypeSingBox))
-            throw new ArgumentException("未知的内核类型。");
-
-        switch (type)
-        {
-            case "requestDashboardSettings":
-                var snapshotRequestId = HostBridgeJson.GetString(root, "requestId", "");
-                if (string.IsNullOrWhiteSpace(snapshotRequestId) || snapshotRequestId.Length > 128)
-                    throw new ArgumentException("无效的设置读取请求标识。");
-                break;
-            case HostBridgeCommand.WindowResize:
-                if (HostBridgeJson.GetString(root, "edge", "") is not
-                    ("left" or "right" or "top" or "bottom" or "topLeft" or "topRight" or "bottomLeft" or "bottomRight"))
-                    throw new ArgumentException("无效的窗口缩放边缘。");
-                break;
-            case HostBridgeCommand.SwitchCore:
-                if (HostBridgeJson.GetString(root, "targetCoreType", "") is not
-                    (AppSettings.CoreTypeMihomo or AppSettings.CoreTypeSingBox))
-                    throw new ArgumentException("必须指定有效的目标内核。");
-                break;
-            case HostBridgeCommand.SaveDashboardSettings:
-                if (root.TryGetProperty("requestId", out var requestId)
-                    && (requestId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(requestId.GetString())
-                        || requestId.GetString()!.Length > 128))
-                    throw new ArgumentException("无效的保存请求标识。");
-                if (!root.TryGetProperty("settings", out var settings) || settings.ValueKind != JsonValueKind.Object)
-                    throw new ArgumentException("界面设置必须是 JSON 对象。");
-                var settingKeys = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var setting in settings.EnumerateObject())
-                {
-                    if (!setting.Name.StartsWith("config/", StringComparison.Ordinal)
-                        || setting.Value.ValueKind != JsonValueKind.String || !settingKeys.Add(setting.Name))
-                        throw new ArgumentException("界面设置只接受不重复的 config/ 字符串字段。");
-                }
-                break;
-            case HostBridgeCommand.Performance:
-                var name = HostBridgeJson.GetString(root, "name", "");
-                if (string.IsNullOrWhiteSpace(name) || name.Length > 200 || name.Any(char.IsControl))
-                    throw new ArgumentException("无效的诊断事件名称。");
-                if (root.TryGetProperty("durationMs", out var duration)
-                    && (duration.ValueKind != JsonValueKind.Number || !duration.TryGetDouble(out var ms)
-                        || !double.IsFinite(ms) || ms < 0))
-                    throw new ArgumentException("无效的诊断耗时。");
-                break;
-        }
-        return type;
-    }
-
-    private static readonly HashSet<string> KnownCommands = new(StringComparer.Ordinal)
-    {
-        "requestDashboardSettings",
-        HostBridgeCommand.WindowDrag, HostBridgeCommand.WindowResize, HostBridgeCommand.WindowToggleMaximize,
-        HostBridgeCommand.WindowMinimize, HostBridgeCommand.WindowClose, HostBridgeCommand.RequestWindowState,
-        HostBridgeCommand.RequestState, HostBridgeCommand.Performance, HostBridgeCommand.Save,
-        HostBridgeCommand.CompleteSetup, HostBridgeCommand.Start, HostBridgeCommand.Restart,
-        HostBridgeCommand.SwitchCore, HostBridgeCommand.Stop, HostBridgeCommand.UpgradeCore,
-        HostBridgeCommand.BrowseCore, HostBridgeCommand.BrowseConfig, HostBridgeCommand.OpenCoreLocation,
-        HostBridgeCommand.OpenConfigLocation, HostBridgeCommand.CheckAppUpdate, HostBridgeCommand.OpenAppRelease,
-        HostBridgeCommand.OpenCoreRepository, HostBridgeCommand.SaveDashboardSettings
-    };
-
-    private static readonly string[] StringFields =
-    [
-        "coreType", "mihomoCorePath", "mihomoConfigPath", "mihomoApiUrl", "mihomoSecret",
-        "singBoxCorePath", "singBoxConfigPath", "singBoxApiUrl", "singBoxSecret", "targetCoreType", "edge", "name"
-    ];
-
-    private static readonly string[] BooleanFields =
-    [
-        "setupCompleted", "startCoreOnLaunch", "minimizeToTray", "lightweightMode", "autostart",
-        "replaceMihomoSecret", "replaceSingBoxSecret"
-    ];
-}
-
-internal enum HostSettingsUiCommand
-{
-    BrowseCore,
-    BrowseConfig,
-    OpenCoreLocation,
-    OpenConfigLocation
 }
 
 internal sealed class HostMessageHandlers
 {
-    public required Action WindowDrag { get; init; }
-    public required Action<JsonElement> WindowResize { get; init; }
-    public required Action WindowToggleMaximize { get; init; }
-    public required Action WindowMinimize { get; init; }
-    public required Action WindowClose { get; init; }
-    public required Func<JsonElement, bool, Task> SaveSettingsAsync { get; init; }
-    public required Func<JsonElement, CoreConfigurationCommand, string, bool, Task<ConfigurationCommandResult>> ExecuteSettingsCommandAsync { get; init; }
-    public required Func<JsonElement, HostSettingsUiCommand, Task> ExecuteSettingsUiCommandAsync { get; init; }
-    public Action<string> RequestDashboardSettings { get; init; } = _ => { };
-    public Action<string, bool> DashboardSettingsSaved { get; init; } = (_, _) => { };
-    public required Action<JsonElement> SaveDashboardSettings { get; init; }
-    public required Action StopCore { get; init; }
+    public required Func<HostRequest, Task<CommandResult>> ExecuteAsync { get; init; }
+    public required Func<DashboardState> BuildState { get; init; }
+    public required Func<IReadOnlyDictionary<string, string>> Preferences { get; init; }
+    public required Func<CoreKind, bool, string?> ChooseFile { get; init; }
+    public required Action<CoreKind, bool> OpenLocation { get; init; }
+    public required Action<string, string?> WindowCommand { get; init; }
     public required Func<Task> CheckAppUpdateAsync { get; init; }
     public required Action OpenAppRelease { get; init; }
     public required Action OpenCoreRepository { get; init; }
-    public required Action<string> ShowNotice { get; init; }
-    public required Action SendState { get; init; }
-    public required Action SendWindowChromeState { get; init; }
+    public Action<string, bool> PreferencesFlushed { get; init; } = (_, _) => { };
+    public Action RequestElevation { get; init; } = () => { };
 }

@@ -1,215 +1,112 @@
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Dashboard;
 
+internal sealed class UnverifiedReleaseException() : Exception("发布文件未提供有效的 SHA256 摘要。请明确确认是否信任该来源，再执行候选程序或替换内核。");
+
 public static class SingBoxUpdater
 {
     private const string ReleasesApi = "https://api.github.com/repos/reF1nd/sing-box-releases/releases?per_page=50";
+    private const long MaxExtractedBytes = 512L * 1024 * 1024;
 
-    public static async Task<CoreUpgradeResult> UpgradeLatestAsync(
-        string corePath,
-        Action? beforeReplace = null,
-        CancellationToken cancellationToken = default)
+    public static Task<CoreUpgradeResult> UpgradeLatestAsync(string corePath, Action? beforeReplace = null,
+        CancellationToken cancellationToken = default, bool confirmUnverified = false) =>
+        UpgradeAsync(corePath, beforeReplace, cancellationToken, confirmUnverified, CoreUpgradeSupport.SharedClient, CoreVersionReader.ReadAsync);
+
+    internal static async Task<CoreUpgradeResult> UpgradeAsync(string corePath, Action? beforeReplace,
+        CancellationToken cancellationToken, bool confirmUnverified, HttpClient client,
+        Func<string, CoreKind, CancellationToken, Task<string>> readVersion)
     {
-        if (string.IsNullOrWhiteSpace(corePath))
-        {
-            throw new InvalidOperationException("请先设置 sing-box 内核路径。");
-        }
-
-        if (!File.Exists(corePath))
-        {
-            throw new FileNotFoundException("找不到 sing-box 内核，请检查路径。", corePath);
-        }
-
-        var installedVersion = await GetInstalledVersionAsync(corePath, cancellationToken);
-        var client = CoreUpgradeSupport.SharedClient;
-        using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(
-            client,
-            ReleasesApi,
-            cancellationToken);
-        var release = FindMatchingRelease(document.RootElement, installedVersion);
-        var version = release.GetProperty("tag_name").GetString() ?? "latest";
-        var asset = FindWindowsAmd64V3Asset(release.GetProperty("assets"));
-
-        if (IsSameVersion(installedVersion, version))
-        {
-            return new CoreUpgradeResult(version, asset.Name, "", IsAlreadyLatest: true);
-        }
-
-        var tempRoot = CoreUpgradeSupport.CreateTempRoot("sing-box-upgrade");
+        if (!File.Exists(corePath)) throw new FileNotFoundException("找不到 sing-box 内核。", corePath);
+        var installed = CoreUpdateChecker.ExtractVersion(await readVersion(corePath, CoreKind.SingBox, cancellationToken).ConfigureAwait(false));
+        if (installed.Length == 0) throw new InvalidOperationException("无法识别当前 sing-box 内核版本。");
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromMinutes(10));
+        var token = budget.Token;
+        using var document = await CoreUpgradeSupport.GetReleaseJsonAsync(client, ReleasesApi, token).ConfigureAwait(false);
+        var release = FindMatchingRelease(document.RootElement, installed);
+        var version = release.GetProperty("tag_name").GetString() ?? "";
+        var asset = FindAsset(release.GetProperty("assets"));
+        if (IsSameVersion(installed, version)) return new(version, asset.Name, "", IsAlreadyLatest: true);
+        if (asset.Digest.Length == 0 && !confirmUnverified) throw new UnverifiedReleaseException();
+        var temporary = CoreUpgradeSupport.CreateTempRoot("sing-box-upgrade");
         try
         {
-            var archivePath = Path.Combine(tempRoot, asset.Name);
-            await CoreUpgradeSupport.DownloadFileAsync(client, asset.DownloadUrl, archivePath, cancellationToken);
-
-            var extractedCore = ExtractCoreExecutable(archivePath, tempRoot);
-            if (await CoreUpgradeSupport.HasSameFileHashAsync(corePath, extractedCore, cancellationToken))
-            {
-                return new CoreUpgradeResult(version, asset.Name, "", IsAlreadyLatest: true);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
+            // The release name is never used as a filesystem path.
+            var archive = Path.Combine(temporary, "release.zip");
+            await CoreUpgradeSupport.DownloadFileAsync(client, asset.Url, archive, token).ConfigureAwait(false);
+            if (asset.Digest.Length > 0)
+                await CoreUpgradeSupport.VerifyArchiveSha256Async(archive, asset.Digest, token).ConfigureAwait(false);
+            var candidate = ExtractCoreExecutable(archive, temporary);
+            var candidateVersion = CoreUpdateChecker.ExtractVersion(
+                await readVersion(candidate, CoreKind.SingBox, token).ConfigureAwait(false));
+            if (!IsSameVersion(candidateVersion, version)) throw new InvalidOperationException("候选内核版本与所选发布不一致。");
+            if (await CoreUpgradeSupport.HasSameFileHashAsync(corePath, candidate, token).ConfigureAwait(false))
+                return new(version, asset.Name, "", IsAlreadyLatest: true);
+            token.ThrowIfCancellationRequested();
             beforeReplace?.Invoke();
-            var backupPath = CoreUpgradeSupport.BackupCore(corePath);
-            CoreUpgradeSupport.ReplaceCoreWithRollback(extractedCore, corePath, backupPath);
-
-            return new CoreUpgradeResult(
-                version,
-                asset.Name,
-                backupPath,
-                IsAlreadyLatest: false,
-                Warning: "sing-box 发布文件未提供 SHA256 digest，本次升级无法进行发布方校验。");
+            var backup = CoreUpgradeSupport.BackupCore(corePath);
+            CoreUpgradeSupport.ReplaceCoreWithRollback(candidate, corePath, backup);
+            return new(version, asset.Name, backup, IsAlreadyLatest: false);
         }
-        finally
-        {
-            CoreUpgradeSupport.DeleteDirectoryQuietly(tempRoot);
-        }
+        finally { CoreUpgradeSupport.DeleteDirectoryQuietly(temporary); }
     }
 
     internal static JsonElement FindMatchingRelease(JsonElement releases, string installedVersion)
     {
         var wantsPrerelease = IsPrereleaseVersion(installedVersion);
-        var candidates = releases
-            .EnumerateArray()
-            .Where(release =>
-            {
-                var prerelease = release.TryGetProperty("prerelease", out var prereleaseProperty)
-                    && prereleaseProperty.ValueKind == JsonValueKind.True;
-                return prerelease == wantsPrerelease;
-            })
-            .OrderByDescending(release =>
-                release.TryGetProperty("published_at", out var publishedAt)
-                    ? DateTimeOffset.TryParse(publishedAt.GetString(), out var value) ? value : DateTimeOffset.MinValue
-                    : DateTimeOffset.MinValue)
-            .ToList();
-
-        return candidates.FirstOrDefault().ValueKind == JsonValueKind.Undefined
-            ? throw new InvalidOperationException("没有找到匹配当前 sing-box 分支的 reF1nd 发布版本。")
-            : candidates[0];
+        return releases.EnumerateArray()
+            .Where(release => !(release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+                && (release.TryGetProperty("prerelease", out var value) && value.ValueKind == JsonValueKind.True) == wantsPrerelease)
+            .OrderByDescending(release => release.TryGetProperty("published_at", out var date)
+                && DateTimeOffset.TryParse(date.GetString(), out var parsed) ? parsed : DateTimeOffset.MinValue)
+            .Cast<JsonElement?>().FirstOrDefault()
+            ?? throw new InvalidOperationException("没有找到匹配当前 sing-box 分支的 reF1nd 发布版本。");
     }
 
-    private static bool IsPrereleaseVersion(string version)
-    {
-        return version.Contains("alpha", StringComparison.OrdinalIgnoreCase)
-            || version.Contains("beta", StringComparison.OrdinalIgnoreCase)
-            || Regex.IsMatch(version, @"(?:^|[-.])rc(?:[-.\d]|$)", RegexOptions.IgnoreCase);
-    }
+    private static bool IsPrereleaseVersion(string version) => version.Contains("alpha", StringComparison.OrdinalIgnoreCase)
+        || version.Contains("beta", StringComparison.OrdinalIgnoreCase)
+        || Regex.IsMatch(version, @"(?:^|[-.])rc(?:[-.\d]|$)", RegexOptions.IgnoreCase);
 
-    private static CoreAsset FindWindowsAmd64V3Asset(JsonElement assets)
+    internal static (string Name, string Url, string Digest) FindAsset(JsonElement assets)
     {
         foreach (var asset in assets.EnumerateArray())
         {
             var name = asset.GetProperty("name").GetString() ?? "";
-            var downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
-            var normalizedName = name.ToLowerInvariant();
-            if (normalizedName.Contains("sing-box")
-                && normalizedName.Contains("windows-amd64v3")
-                && normalizedName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(downloadUrl))
-            {
-                return new CoreAsset(name, downloadUrl);
-            }
+            var url = asset.GetProperty("browser_download_url").GetString() ?? "";
+            if (!name.Contains("sing-box", StringComparison.OrdinalIgnoreCase)
+                || !name.Contains("windows-amd64v3", StringComparison.OrdinalIgnoreCase)
+                || !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var address) || address.Scheme != "https" || address.UserInfo.Length > 0)
+                throw new InvalidOperationException("发布文件地址无效。");
+            var rawDigest = asset.TryGetProperty("digest", out var digest) && digest.ValueKind == JsonValueKind.String ? digest.GetString() : null;
+            var normalized = CoreUpgradeSupport.NormalizeSha256Digest(rawDigest);
+            if (!string.IsNullOrWhiteSpace(rawDigest) && normalized.Length == 0)
+                throw new InvalidOperationException("发布摘要格式无效。");
+            return (name, url, normalized);
         }
-
         throw new InvalidOperationException("没有找到 sing-box windows-amd64v3 发布文件。");
-    }
-
-    private static async Task<string> GetInstalledVersionAsync(string corePath, CancellationToken cancellationToken)
-    {
-        var startInfo = new ProcessStartInfo(corePath, "version")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        try
-        {
-            using var process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return "";
-            }
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(5));
-
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            try
-            {
-                await process.WaitForExitAsync(timeout.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                TryKill(process);
-                cancellationToken.ThrowIfCancellationRequested();
-                return "";
-            }
-
-            var output = $"{await outputTask} {await errorTask}";
-            return ExtractVersionToken(output);
-        }
-        catch (OperationCanceledException) { throw; }
-        catch
-        {
-            return "";
-        }
-    }
-
-    private static string ExtractVersionToken(string value)
-    {
-        var match = Regex.Match(value, @"v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?");
-        return match.Success ? NormalizeVersion(match.Value) : "";
     }
 
     internal static bool IsSameVersion(string installedVersion, string latestVersion)
     {
-        installedVersion = NormalizeVersion(installedVersion);
-        latestVersion = NormalizeVersion(latestVersion);
-        return !string.IsNullOrWhiteSpace(installedVersion)
-            && !string.IsNullOrWhiteSpace(latestVersion)
-            && string.Equals(installedVersion, latestVersion, StringComparison.OrdinalIgnoreCase);
+        static string Normalize(string value) => value.Trim().TrimStart('v', 'V').ToLowerInvariant();
+        return !string.IsNullOrWhiteSpace(installedVersion) && !string.IsNullOrWhiteSpace(latestVersion)
+            && Normalize(installedVersion) == Normalize(latestVersion);
     }
 
-    private static string NormalizeVersion(string value)
+    internal static string ExtractCoreExecutable(string archivePath, string temporary)
     {
-        value = value.Trim().TrimStart('v', 'V').ToLowerInvariant();
-        return value.StartsWith("sing-box ", StringComparison.OrdinalIgnoreCase)
-            ? value["sing-box ".Length..]
-            : value;
+        using var archive = ZipFile.OpenRead(archivePath);
+        if (archive.Entries.Count > 4096 || archive.Entries.Sum(entry => entry.Length) > MaxExtractedBytes)
+            throw new InvalidOperationException("内核归档超过解压限制。");
+        var entries = archive.Entries.Where(entry => entry.Name.Equals("sing-box.exe", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (entries.Length != 1) throw new InvalidOperationException("归档必须包含唯一的 sing-box.exe。");
+        // Extract exactly one validated entry to our own filename, never an archive-controlled path.
+        var destination = Path.Combine(temporary, "candidate-sing-box.exe");
+        entries[0].ExtractToFile(destination);
+        return destination;
     }
-
-    private static string ExtractCoreExecutable(string archivePath, string tempRoot)
-    {
-        var extractRoot = Path.Combine(tempRoot, "extract");
-        Directory.CreateDirectory(extractRoot);
-        ZipFile.ExtractToDirectory(archivePath, extractRoot);
-
-        var executable = Directory
-            .EnumerateFiles(extractRoot, "*.exe", SearchOption.AllDirectories)
-            .FirstOrDefault(path => Path.GetFileName(path).Contains("sing-box", StringComparison.OrdinalIgnoreCase));
-
-        return executable ?? throw new InvalidOperationException("压缩包中没有找到 sing-box.exe。");
-    }
-
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private sealed record CoreAsset(string Name, string DownloadUrl);
 }
