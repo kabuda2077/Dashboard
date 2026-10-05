@@ -57,6 +57,8 @@ Dashboard 会在启动后自动检查 GitHub Release，也可以在内核页手�
 
 不要先删除整个 Dashboard 目录。发布包不包含 `settings.json`、`mihomo\`、`sing-box\` 和运行日志，直接覆盖会保留设置、内核及配置。内置前端更新会保留 WebView2 profile 中的偏好、标签和连接历史，只使可重建的 HTTP 缓存、Cache Storage 和旧 Service Worker 注册失效；前端版本化资源使用带 hash 的文件名，无需手动删除 profile 或缓存。桌面界面固定使用 `http://127.0.0.1:33291/` 以保持同一数据 origin；若该端口被其他程序占用，Dashboard 会明确报错而不会随机换端口隐藏已有数据。
 
+上述覆盖更新适用于 1.x 版本之间。不要将 1.x 覆盖到正在使用 v2 设置格式的目录；测试 1.x 时请另用独立目录，保留原 v2 配置和数据。
+
 ## 内核配置
 
 `mihomo` 需要在 `config.yaml` 中开启 `external-controller`，例如：
@@ -108,6 +110,10 @@ secret: ""
 
 **Dashboard 显示缺少 WebView2 Runtime。**  
 根据提示链接安装 Microsoft Edge WebView2 Runtime，然后重新打开 Dashboard。
+
+**1.3.0 首次启动显示“无法加载桌面界面或恢复设置”，重试也无效。**
+
+这是 1.3.0 对空界面偏好快照的处理缺陷，1.3.1 已修复。更新到 1.3.1 即可，不需要删除设置文件或 WebView 数据；全新目录会创建默认设置并显示首次启动向导。
 
 **内核已启动，但 Dashboard 无法连接 API。**  
 检查内核页面里的 API 地址是否和内核配置一致。大多数情况下是 `http://127.0.0.1:9090`。如果配置里设置了非空 `secret`，内核页面也要填同样的值。

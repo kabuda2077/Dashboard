@@ -58,6 +58,8 @@ To update the portable build:
 
 Do not delete the existing Dashboard folder first. Release packages do not contain `settings.json`, `mihomo\`, `sing-box\`, or runtime logs, so replacing the packaged files preserves settings, cores, and configuration. Bundled frontend updates keep the WebView2 profile—including preferences, tags, and connection history—and invalidate only rebuildable HTTP caches, Cache Storage, and old service-worker registrations. Versioned frontend assets use hashed filenames, so no manual profile or cache deletion is required. The desktop UI keeps `http://127.0.0.1:33291/` as its fixed data origin; if another process occupies that port, Dashboard reports the conflict instead of switching to a random port and hiding existing origin-scoped data.
 
+These overwrite instructions apply to updates between 1.x versions. Do not overwrite a directory that uses the v2 settings format with 1.x. Test 1.x in a separate directory and keep the existing v2 configuration and data.
+
 ## Core Configuration
 
 For `mihomo`, enable `external-controller` in `config.yaml`:
@@ -109,6 +111,10 @@ Install the .NET 9 Desktop Runtime, then reopen Dashboard.
 
 **Dashboard opens a WebView2 Runtime prompt.**  
 Install Microsoft Edge WebView2 Runtime from the prompt link, then reopen Dashboard.
+
+**1.3.0 shows a startup/settings recovery error on first launch, and retry does not help.**
+
+This is a 1.3.0 bug in handling an absent dashboard-preferences snapshot, fixed in 1.3.1. Update to 1.3.1 without deleting settings or WebView data. A fresh directory creates default settings and opens the first-time setup guide.
 
 **The core starts but Dashboard cannot connect to the API.**  
 Check that the API address on the Core page matches your core config. For most users this is `http://127.0.0.1:9090`. If your config has a non-empty `secret`, enter the same value on the Core page.
