@@ -106,13 +106,18 @@ if (-not $SkipFrontendTypeCheck -or -not $SkipFrontendTests -or -not $SkipFronte
 if (-not $SkipFrontendTests) {
     Invoke-Step 'Frontend unit tests' {
         Push-Location $dashboardRoot
+        $previousNodeEnv = $env:NODE_ENV
         try {
+            # Do not inherit NODE_ENV=production from a developer's shell:
+            # CI and local tests must exercise the same Vue development paths.
+            $env:NODE_ENV = 'test'
             & .\node_modules\.bin\vitest.cmd run
             if ($LASTEXITCODE -ne 0) {
                 throw "frontend unit tests failed with exit code $LASTEXITCODE"
             }
         }
         finally {
+            $env:NODE_ENV = $previousNodeEnv
             Pop-Location
         }
     }

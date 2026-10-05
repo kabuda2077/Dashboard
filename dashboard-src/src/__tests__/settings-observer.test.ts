@@ -70,6 +70,11 @@ it('saves lazy and deferred defaults and reactive key changes without a periodic
   try {
     await nextTick(); await vi.advanceTimersByTimeAsync(301)
     expect(post.mock.lastCall?.[0].settings['config/deferred']).toBe('mounted')
+    const count = post.mock.calls.length
+    // Vue's development build schedules a one-shot 3s DevTools probe when an
+    // app is first mounted in Happy DOM. It is not preference polling.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(post).toHaveBeenCalledTimes(count)
     expect(vi.getTimerCount()).toBe(0)
   } finally { app.unmount() }
 })
