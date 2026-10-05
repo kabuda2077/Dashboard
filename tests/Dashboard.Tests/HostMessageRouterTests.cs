@@ -50,6 +50,7 @@ public sealed class HostMessageRouterTests
             if (failSave) throw new IOException("test write failure");
         },
         DashboardSettingsSaved = (id, success) => calls.Add($"ack:{id}:{success}"),
+        DashboardPreferencesFlushed = (id, success) => calls.Add($"flush:{id}:{success}"),
         StopCore = () => calls.Add("stop"),
         CheckAppUpdateAsync = () => { calls.Add("checkUpdate"); return Task.CompletedTask; },
         OpenAppRelease = () => calls.Add("release"),
@@ -73,6 +74,9 @@ public sealed class HostMessageRouterTests
     [Theory]
     [InlineData("{\"type\":\"requestDashboardSettings\"}")]
     [InlineData("{\"type\":\"requestDashboardSettings\",\"requestId\":42}")]
+    [InlineData("{\"type\":\"dashboardPreferencesFlushed\",\"success\":true}")]
+    [InlineData("{\"type\":\"dashboardPreferencesFlushed\",\"requestId\":\"flush-1\"}")]
+    [InlineData("{\"type\":\"dashboardPreferencesFlushed\",\"requestId\":\"flush-1\",\"success\":\"true\"}")]
     [InlineData("[]")]
     [InlineData("null")]
     [InlineData("{\"type\":\"start\",\"mihomoSecret\":false}")]
@@ -108,6 +112,8 @@ public sealed class HostMessageRouterTests
 
     [Theory]
     [InlineData("{\"type\":\"requestDashboardSettings\",\"requestId\":\"doc-1\"}", "snapshot:doc-1")]
+    [InlineData("{\"type\":\"dashboardPreferencesFlushed\",\"requestId\":\"flush-1\",\"success\":true}", "flush:flush-1:True")]
+    [InlineData("{\"type\":\"dashboardPreferencesFlushed\",\"requestId\":\"flush-1\",\"success\":false}", "flush:flush-1:False")]
     [InlineData("{\"type\":\"requestState\"}", "state")]
     [InlineData("{\"type\":\"requestWindowState\"}", "windowState")]
     [InlineData("{\"type\":\"windowDrag\"}", "drag")]

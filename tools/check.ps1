@@ -4,7 +4,8 @@ param(
     [switch]$SkipDotnetTests,
     [switch]$SkipFrontendTypeCheck,
     [switch]$SkipFrontendTests,
-    [switch]$SkipFrontendBuild
+    [switch]$SkipFrontendBuild,
+    [switch]$IncludeWebViewIntegration
 )
 
 $ErrorActionPreference = 'Stop'
@@ -173,7 +174,9 @@ if (-not $SkipDotnetBuild) {
 
 if (-not $SkipDotnetTests) {
     Invoke-Step ".NET tests ($Configuration)" {
-        dotnet test .\tests\Dashboard.Tests\Dashboard.Tests.csproj -c $Configuration --nologo
+        $testArgs = @('test', '.\tests\Dashboard.Tests\Dashboard.Tests.csproj', '-c', $Configuration, '--nologo')
+        if (-not $IncludeWebViewIntegration) { $testArgs += @('--filter', 'Category!=WebViewIntegration') }
+        dotnet @testArgs
         if ($LASTEXITCODE -ne 0) {
             throw ".NET tests failed with exit code $LASTEXITCODE"
         }

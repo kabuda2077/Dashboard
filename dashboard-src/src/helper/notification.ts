@@ -159,7 +159,9 @@ const setAlert = (
 
   const contentDiv = document.createElement('div')
   contentDiv.className = 'app-toast__content'
-  contentDiv.innerHTML = t(content, params)
+  // API/host messages share this path with translations. They must never become
+  // markup in the privileged desktop document.
+  contentDiv.textContent = t(content, params)
 
   const closeButton = document.createElement('button')
   closeButton.type = 'button'

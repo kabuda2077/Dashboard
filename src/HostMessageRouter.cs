@@ -20,6 +20,11 @@ internal sealed class HostMessageRouter
 
         switch (type)
         {
+            case "dashboardPreferencesFlushed":
+                _handlers.DashboardPreferencesFlushed(
+                    HostBridgeJson.GetString(root, "requestId", ""),
+                    root.GetProperty("success").GetBoolean());
+                return;
             case HostBridgeCommand.WindowDrag:
                 _handlers.WindowDrag();
                 return;
@@ -155,6 +160,13 @@ internal sealed class HostMessageRouter
 
         switch (type)
         {
+            case "dashboardPreferencesFlushed":
+                var flushRequestId = HostBridgeJson.GetString(root, "requestId", "");
+                if (string.IsNullOrWhiteSpace(flushRequestId) || flushRequestId.Length > 128
+                    || !root.TryGetProperty("success", out var success)
+                    || success.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    throw new ArgumentException("无效的设置刷新确认。");
+                break;
             case "requestDashboardSettings":
                 var snapshotRequestId = HostBridgeJson.GetString(root, "requestId", "");
                 if (string.IsNullOrWhiteSpace(snapshotRequestId) || snapshotRequestId.Length > 128)
@@ -200,7 +212,7 @@ internal sealed class HostMessageRouter
 
     private static readonly HashSet<string> KnownCommands = new(StringComparer.Ordinal)
     {
-        "requestDashboardSettings",
+        "requestDashboardSettings", "dashboardPreferencesFlushed",
         HostBridgeCommand.WindowDrag, HostBridgeCommand.WindowResize, HostBridgeCommand.WindowToggleMaximize,
         HostBridgeCommand.WindowMinimize, HostBridgeCommand.WindowClose, HostBridgeCommand.RequestWindowState,
         HostBridgeCommand.RequestState, HostBridgeCommand.Performance, HostBridgeCommand.Save,
@@ -244,6 +256,7 @@ internal sealed class HostMessageHandlers
     public required Func<JsonElement, HostSettingsUiCommand, Task> ExecuteSettingsUiCommandAsync { get; init; }
     public Action<string> RequestDashboardSettings { get; init; } = _ => { };
     public Action<string, bool> DashboardSettingsSaved { get; init; } = (_, _) => { };
+    public Action<string, bool> DashboardPreferencesFlushed { get; init; } = (_, _) => { };
     public required Action<JsonElement> SaveDashboardSettings { get; init; }
     public required Action StopCore { get; init; }
     public required Func<Task> CheckAppUpdateAsync { get; init; }

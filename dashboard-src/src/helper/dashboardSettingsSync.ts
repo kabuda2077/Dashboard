@@ -100,9 +100,27 @@ export const installDashboardSettingsSync = () => {
   window.addEventListener('storage', onStorage)
   window.addEventListener('beforeunload', onUnload)
   let stopped = false
+  const removeFlushListener = addHostMessageListener(({ data }) => {
+    if (data.type !== 'flushDashboardPreferences' || !data.requestId) return
+    const requestId = data.requestId
+    const flush = async () => {
+      try {
+        // Changes made during an earlier in-flight save must also reach disk
+        // before the host suspends JavaScript or releases this WebView.
+        do {
+          await saveDashboardSettingsToHost()
+        } while (!stopped && normalizeSnapshot(getDashboardSettingsFromStorage()) !== acknowledgedSnapshot)
+        if (!stopped) postHostMessage({ type: 'dashboardPreferencesFlushed', requestId, success: true })
+      } catch {
+        if (!stopped) postHostMessage({ type: 'dashboardPreferencesFlushed', requestId, success: false })
+      }
+    }
+    void flush()
+  })
   disposeSync = () => {
     if (stopped) return
     stopped = true
+    removeFlushListener()
     window.clearTimeout(saveTimer)
     saveTimer = undefined
     window.removeEventListener(DASHBOARD_SETTINGS_CHANGED, scheduleDashboardSettingsSave)

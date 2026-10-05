@@ -22,6 +22,8 @@ public sealed class MainForm : Form
     private FormWindowState _trayRestoreWindowState = FormWindowState.Normal;
     private bool _hiddenToTray;
     private bool _trayTransitionInProgress;
+    private bool _showAfterTrayTransition;
+    internal bool IsTrayTransitionInProgress => _trayTransitionInProgress;
     private bool _allowClose;
     private bool _initialized;
     private bool _dashboardInitialized;
@@ -31,6 +33,9 @@ public sealed class MainForm : Form
     private long _activeWebViewInitializationStartedAt;
     private bool _webViewSuspended;
     private int _dashboardSuspendVersion;
+    private Task<bool>? _preferenceFlushTask;
+    private TaskCompletionSource<bool>? _preferenceFlush;
+    private string? _preferenceFlushId;
     private readonly System.Windows.Forms.Timer _dashboardDisposeTimer = new() { Interval = DelayedDashboardDisposeMs };
     private const int ResizeBorderThickness = 8;
     private const int MaximizedContentPadding = 8;
@@ -138,6 +143,10 @@ public sealed class MainForm : Form
                 requestId,
                 success
             }),
+            DashboardPreferencesFlushed = (requestId, success) =>
+            {
+                if (requestId == _preferenceFlushId) _preferenceFlush?.TrySetResult(success);
+            },
             StopCore = () => RunCoreOperation(() => _host.StopCore()),
 
             CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
@@ -288,10 +297,15 @@ public sealed class MainForm : Form
         _host.IconCacheChanged += OnHostIconCacheChanged;
         _host.NoticeRequested += OnHostNoticeRequested;
         _host.AppUpdateResultRequested += OnAppUpdateResultRequested;
-        _dashboardDisposeTimer.Tick += (_, _) =>
+        _dashboardDisposeTimer.Tick += async (_, _) =>
         {
             _dashboardDisposeTimer.Stop();
-            if (_settings.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress)
+            var version = _dashboardSuspendVersion;
+            var view = _webView;
+            if (_settings.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress
+                && await FlushPreferencesAsync()
+                && version == _dashboardSuspendVersion && ReferenceEquals(view, _webView)
+                && _settings.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress)
             {
                 DisposeDashboardView();
             }
@@ -594,7 +608,13 @@ public sealed class MainForm : Form
         }
 
         var target = _webViewTrust.ClassifyNavigation(e.Uri);
-        if (target == DashboardNavigationTarget.Dashboard) return;
+        if (target == DashboardNavigationTarget.Dashboard)
+        {
+            // A previous document's save acknowledgement cannot authorize this one.
+            _dashboardSuspendVersion++;
+            _preferenceFlush?.TrySetResult(false);
+            return;
+        }
 
         e.Cancel = true;
         // Redirects and programmatic navigation cannot launch arbitrary applications.
@@ -721,6 +741,40 @@ public sealed class MainForm : Form
             || WindowState == FormWindowState.Minimized;
     }
 
+    internal Task<bool> FlushPreferencesAsync()
+    {
+        if (_webView?.CoreWebView2 is null || _webViewSuspended) return Task.FromResult(true);
+        if (_preferenceFlushTask is { IsCompleted: false }) return _preferenceFlushTask;
+        return _preferenceFlushTask = FlushPreferencesOwnedAsync();
+    }
+
+    private async Task<bool> FlushPreferencesOwnedAsync()
+    {
+        var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _preferenceFlush = pending;
+        _preferenceFlushId = "flush-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            PostDashboardMessage(new { type = "flushDashboardPreferences", requestId = _preferenceFlushId });
+            // Frontend persistence already has a 10s timeout. On failure, keep
+            // the view alive rather than silently dropping an uncommitted edit.
+            return await pending.Task.WaitAsync(TimeSpan.FromSeconds(12));
+        }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("settings", "Preferences did not flush before view suspension.", error);
+            return false;
+        }
+        finally
+        {
+            if (ReferenceEquals(_preferenceFlush, pending))
+            {
+                _preferenceFlush = null;
+                _preferenceFlushId = null;
+            }
+        }
+    }
+
     private async void SuspendDashboard()
     {
         var coreWebView = _webView?.CoreWebView2;
@@ -734,6 +788,8 @@ public sealed class MainForm : Form
 
         try
         {
+            if (!await FlushPreferencesAsync() || suspendVersion != _dashboardSuspendVersion
+                || !ReferenceEquals(coreWebView, _webView?.CoreWebView2) || !ShouldHoldDashboardUpdates()) return;
             var suspended = await coreWebView.TrySuspendAsync();
             if (suspendVersion != _dashboardSuspendVersion || !ShouldHoldDashboardUpdates())
             {
@@ -783,6 +839,7 @@ public sealed class MainForm : Form
     {
         CancelDelayedDashboardDispose();
         _dashboardSuspendVersion++;
+        _preferenceFlush?.TrySetResult(false);
         _statePublisher.MarkDirty();
         _webViewSuspended = false;
         _dashboardInitialized = false;
@@ -984,7 +1041,7 @@ public sealed class MainForm : Form
                 WindowState = FormWindowState.Minimized;
             }
 
-            if (IsDisposed)
+            if (IsDisposed || _showAfterTrayTransition)
             {
                 return;
             }
@@ -997,8 +1054,16 @@ public sealed class MainForm : Form
         }
         finally
         {
-            _trayTransitionInProgress = false;
+            CompleteTrayTransition();
         }
+    }
+
+    private void CompleteTrayTransition()
+    {
+        _trayTransitionInProgress = false;
+        var show = _showAfterTrayTransition;
+        _showAfterTrayTransition = false;
+        if (show && !IsDisposed && !Disposing && !_allowClose) ShowFromTray();
     }
 
     public void ShowFromTray()
@@ -1011,9 +1076,11 @@ public sealed class MainForm : Form
         CancelDelayedDashboardDispose();
         if (_trayTransitionInProgress)
         {
+            _showAfterTrayTransition = true;
             return;
         }
 
+        _hiddenToTray = false;
         if (Visible && WindowState != FormWindowState.Minimized)
         {
             ResumeDashboard();
@@ -1060,7 +1127,7 @@ public sealed class MainForm : Form
         }
         finally
         {
-            _trayTransitionInProgress = false;
+            CompleteTrayTransition();
         }
     }
 

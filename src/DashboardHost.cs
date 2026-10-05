@@ -33,13 +33,16 @@ internal sealed class DashboardHost : IDisposable
     private bool _resourcesDisposed;
     private bool _disposed;
 
-    public DashboardHost()
+    public DashboardHost() : this(
+        AppSettings.Load(), Path.Combine(AppSettings.AppDirectory, "resources", "dashboard")) { }
+
+    // Tests supply isolated settings/assets and an ephemeral origin; production
+    // keeps the fixed origin and the existing portable-data layout.
+    internal DashboardHost(AppSettings settings, string dashboardDirectory, bool useEphemeralPort = false)
     {
-        Settings = AppSettings.Load();
-        _dashboardServer = new DashboardServer(
-            Path.Combine(AppSettings.AppDirectory, "resources", "dashboard"),
-            _iconCache.CacheDirectory);
-        DashboardUri = _dashboardServer.Start();
+        Settings = settings;
+        _dashboardServer = new DashboardServer(dashboardDirectory, _iconCache.CacheDirectory);
+        DashboardUri = useEphemeralPort ? _dashboardServer.StartForTests() : _dashboardServer.Start();
         _coreLifecycle = new CoreLifecycleController(
             Settings,
             _core,
