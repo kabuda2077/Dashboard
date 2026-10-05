@@ -6,6 +6,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace Dashboard.Tests;
 
+[Collection("Release WebView")]
 public sealed class ReleaseWebViewTests
 {
     [Fact]

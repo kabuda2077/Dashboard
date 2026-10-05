@@ -130,11 +130,10 @@ public sealed class MainForm : Form
                     case HostSettingsUiCommand.OpenConfigLocation: OpenPathLocation(_settings.ActiveConfigPath, "配置文件"); break;
                 }
             }),
-            RequestDashboardSettings = requestId => PostDashboardMessage(new
+            RequestDashboardSettings = requestId => PostDashboardMessage(new DashboardSettingsSnapshotMessage
             {
-                type = "dashboardSettingsSnapshot",
-                requestId,
-                settings = _settings.DashboardSettings
+                RequestId = requestId,
+                Settings = _settings.DashboardSettings
             }),
             SaveDashboardSettings = _host.SaveDashboardSettings,
             DashboardSettingsSaved = (requestId, success) => PostDashboardMessage(new

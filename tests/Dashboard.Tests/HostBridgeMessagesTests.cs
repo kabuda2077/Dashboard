@@ -6,6 +6,40 @@ namespace Dashboard.Tests;
 public sealed class HostBridgeMessagesTests
 {
     [Fact]
+    public void StartupSnapshotDoesNotOmitNullPreferences()
+    {
+        var json = HostBridgeJson.Serialize(new DashboardSettingsSnapshotMessage
+        {
+            RequestId = "fresh-startup",
+            Settings = new AppSettings().DashboardSettings
+        });
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert.Equal("dashboardSettingsSnapshot", root.GetProperty("type").GetString());
+        Assert.Equal("fresh-startup", root.GetProperty("requestId").GetString());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("settings").ValueKind);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StartupSnapshotKeepsEmptyAndPopulatedObjectsDistinctFromNull(bool populated)
+    {
+        var preferences = new Dictionary<string, string>();
+        if (populated) preferences["config/default-theme"] = "dark";
+        var json = HostBridgeJson.Serialize(new DashboardSettingsSnapshotMessage
+        {
+            RequestId = "existing-startup",
+            Settings = preferences
+        });
+        using var document = JsonDocument.Parse(json);
+        var settings = document.RootElement.GetProperty("settings");
+        Assert.Equal(JsonValueKind.Object, settings.ValueKind);
+        Assert.Equal(populated ? 1 : 0, settings.EnumerateObject().Count());
+        if (populated) Assert.Equal("dark", settings.GetProperty("config/default-theme").GetString());
+    }
+
+    [Fact]
     public void RuntimeStateMessageKeepsCamelCaseWireShape()
     {
         var json = HostBridgeJson.Serialize(HostOutboundMessage.Runtime(new DashboardRuntimeState

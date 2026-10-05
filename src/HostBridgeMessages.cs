@@ -87,6 +87,17 @@ internal static class HostBridgeJson
     }
 }
 
+internal sealed record DashboardSettingsSnapshotMessage
+{
+    public string Type => "dashboardSettingsSnapshot";
+    public required string RequestId { get; init; }
+
+    // null preserves existing browser preferences; {} explicitly clears them.
+    // Keep the null on the wire despite the shared WhenWritingNull policy.
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required IReadOnlyDictionary<string, string>? Settings { get; init; }
+}
+
 internal sealed record HostOutboundMessage
 {
     public required string Type { get; init; }

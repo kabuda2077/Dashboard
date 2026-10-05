@@ -26,7 +26,9 @@ export const restoreDashboardSettings = async () => {
     const receive = (event: MessageEvent) => {
       const data = event.data
       if (data?.type !== 'dashboardSettingsSnapshot' || data.requestId !== requestId) return
-      const snapshot: unknown = data.settings
+      // The 1.3.0 host omitted null fields. Both missing and null mean there
+      // is no host snapshot; do not substitute {}, which clears old preferences.
+      const snapshot: unknown = data.settings ?? null
       if (snapshot !== null && (typeof snapshot !== 'object' || Array.isArray(snapshot)
         || !Object.entries(snapshot).every(([key, value]) => key.startsWith('config/') && typeof value === 'string'))) {
         finish(new Error('宿主返回了无效的界面设置。'))

@@ -37,14 +37,28 @@ it('restores before loading stores and requests a fresh snapshot on each documen
   expect(remove).toHaveBeenCalledTimes(2)
 })
 
-it.each([null, {}])('distinguishes legacy null from explicit empty snapshot: %j', async (snapshot) => {
+it.each([null, undefined, {}])('distinguishes absent legacy preferences from explicit empty snapshot: %j', async (snapshot) => {
   localStorage.setItem('config/theme', 'legacy')
   localStorage.setItem('setup/api-list', 'preserved')
   const result = restoreDashboardSettings()
   reply(snapshot)
   await result
-  expect(localStorage.getItem('config/theme')).toBe(snapshot === null ? 'legacy' : null)
+  expect(localStorage.getItem('config/theme')).toBe(snapshot == null ? 'legacy' : null)
   expect(localStorage.getItem('setup/api-list')).toBe('preserved')
+})
+
+it('boots a fresh desktop when the 1.3.0 host omits the null settings field', async () => {
+  document.body.innerHTML = '<div id="app"></div>'
+  const load = vi.fn(async () => {})
+  const result = startDashboard(load)
+  // Use the actual 1.3.0 wire shape, not a mock that inserts settings:null.
+  receive(new MessageEvent('message', {
+    data: { type: 'dashboardSettingsSnapshot', requestId: post.mock.lastCall?.[0].requestId },
+  }))
+  await result
+  expect(load).toHaveBeenCalledOnce()
+  expect(document.querySelector('button')).toBeNull()
+  expect(localStorage.length).toBe(0)
 })
 
 it('fails visibly without loading stores, and retry can recover', async () => {
@@ -68,10 +82,14 @@ it('starts normally without a desktop host', async () => {
   expect(load).toHaveBeenCalledOnce()
 })
 
-it('rejects invalid snapshots before mutating storage', async () => {
+it.each([
+  { 'config/theme': 'new', 'setup/api-list': 'bad' },
+  { 'config/theme': false },
+  [], false, 0, 'invalid',
+])('rejects malformed snapshots before mutating storage: %j', async (snapshot) => {
   localStorage.setItem('config/theme', 'kept')
   const result = restoreDashboardSettings().catch((error: Error) => error)
-  reply({ 'config/theme': 'new', 'setup/api-list': 'bad' })
+  reply(snapshot)
   expect(await result).toBeInstanceOf(Error)
   expect(localStorage.getItem('config/theme')).toBe('kept')
 })
