@@ -120,6 +120,10 @@ DPAPI credentials are bound to the Windows user. Re-enter the Secret in Core, ex
 **TUN mode fails or asks for administrator permission.**  
 TUN usually needs administrator permission on Windows. Start Dashboard as administrator or allow the UAC relaunch prompt.
 
+**mihomo TUN does not recover after Windows wakes from sleep.**
+
+1.3.0 removes the automatic adapter-probing/restart workaround because it did not reliably resolve this problem. Dashboard no longer restarts the core automatically on wake. If connectivity is lost, try restarting the core manually from Core or the tray menu. Automatic recovery is deferred to v2 for a new implementation and validation; this release does not claim to fix it.
+
 **Why does enabling autostart show UAC once?**
 Dashboard creates and verifies a highest-privilege scheduled task. Later logons do not prompt again: after about 5 seconds only the tray host, core manager, and local server start; WebView2 is created only when the window is opened.
 
@@ -147,7 +151,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Configuration Releas
 powershell -ExecutionPolicy Bypass -File .\tools\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
 ```
 
-Before publishing a new version, update `Version` and `InformationalVersion` in `Dashboard.csproj` and keep them aligned with the GitHub Release tag.
+Before publishing a new version, update `Version` and `InformationalVersion` in `Dashboard.csproj` and keep them aligned with the GitHub Release tag. Run `tools/check.ps1 -Configuration Release` for the regular gate. Add `-IncludeWebViewIntegration` to exercise preference commits, quick tray restores, and the real 60-second lightweight disposal timer using isolated test settings and an ephemeral local port. This test does not start a proxy core or modify system TUN/autostart settings, and does not replace physical DPI, UAC, or actual application-overwrite acceptance.
 
 Main directories:
 

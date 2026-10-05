@@ -119,6 +119,10 @@ DPAPI 凭证绑定当前 Windows 用户。到 Core 页面重新填写 Secret，�
 **TUN 启动失败或要求管理员权限。**  
 Windows 上 TUN 通常需要管理员权限。请以管理员身份启动 Dashboard，或允许应用弹出的 UAC 重启提示。
 
+**Windows 睡眠唤醒后 mihomo TUN 没有恢复。**
+
+1.3.0 已移除尚未可靠解决此问题的自动探测／重启逻辑，不会因睡眠唤醒自动重启内核。遇到断网可尝试从内核页或托盘手动重启内核；自动恢复留待 v2 重新实现和验证，本版不宣称已修复。
+
 **开启开机自启时为什么会弹一次 UAC？**
 Dashboard 需要创建最高权限计划任务。任务创建并验证成功后，后续登录不会再弹 UAC；登录约 5 秒后只启动托盘、内核管理和本地服务，打开窗口时才创建 WebView2。
 
@@ -146,7 +150,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\build.ps1 -Configuration Releas
 powershell -ExecutionPolicy Bypass -File .\tools\create-release.ps1 -OutputZip Dashboard-vX.Y.Z-win-x64.zip
 ```
 
-发布新版本前需要同步更新 `Dashboard.csproj` 中的 `Version` 和 `InformationalVersion`，并与 GitHub Release tag 保持一致。
+发布新版本前需要同步更新 `Dashboard.csproj` 中的 `Version` 和 `InformationalVersion`，并与 GitHub Release tag 保持一致。完整常规检查运行 `tools/check.ps1 -Configuration Release`；附加 `-IncludeWebViewIntegration` 可在独立测试配置和临时本地端口上验证真实 WebView 的设置提交、托盘快速恢复与 60 秒轻量释放。此测试不启动代理内核、不操作系统 TUN 或自启任务，也不替代 DPI、UAC 和真实覆盖更新验收。
 
 主要目录：
 
