@@ -13,7 +13,7 @@
 - 只使用合成名称、合成 Secret（例如 `p10-secret-not-real`）和专用回环端口；不得使用真实订阅、节点、令牌或个人浏览数据。
 - 需要预置/升级数据的用例，从该用例自己的 `seed` 目录复制到新的用例目录；不同用例不得共用 `settings.json` 或 `resources/EBWebView/`。
 - API 401 用例使用一次性回环 fixture，并记录端口与响应；不得连接日常核心。真实 mihomo/sing-box 用例必须使用可丢弃二进制、最小测试配置和独立端口，并由已获授权的专用环境执行。
-- 正常版本替换不得整目录删除 `resources/EBWebView`。内容更新应由宿主定向清理 HTTP cache/service worker 并保留 IndexedDB/profile 数据。若要验证“全新 profile”，只能移动或复制隔离用例自己的 profile，并记录该动作。
+- 应用版本与已保存标记不同或无有效旧标记时，宿主会在 WebView 启动前删除整个 `resources/EBWebView`；IndexedDB 等浏览器数据按产品策略清空。旧指纹格式会一次性转换为纯版本号标记，同版本替换前端资源不触发清理。只在明确的隔离用例目录验证，不额外手工清理日常安装。检查 settings.json、核心、icon-cache、日志及其他资源未被删除，并确认新目录为单层 `resources/EBWebView/Default`。
 - UAC、自启、系统休眠/恢复和真实核心用例只能在明确授权的专用 Windows 环境执行；当前均未执行。
 
 每次执行前重新检查固定端口`127.0.0.1:33291`是否被占用；不要沿用历史PID。已有日常Dashboard实例时，不得擅自停止、重启、读取其配置/profile或覆盖安装。涉及现有实例、真实核心、UAC、自启、休眠的操作，需明确目标和动作范围；未获授权时保持NOT RUN。
@@ -37,7 +37,7 @@
 | M07 | NOT RUN | 使用一次性回环 HTTP fixture 对 `/version`/业务请求返回 401；Secret 只用合成值 | 手动请求只产生一次归属正确的错误提示；旧会话 401 不清除新会话 endpoint；不会把 Secret 写入 `setup/api-list` 或其他 localStorage。保存 fixture 日志与 UI 截图。 |
 | M08 | NOT RUN | 正常关闭到托盘，60 秒内重新打开；不启动核心 | WebView 未被释放或待释放被取消；窗口及时恢复；当前路由、未提交 UI 状态和宿主状态不被旧 suspend 结果覆盖。 |
 | M09 | NOT RUN | 开启轻量模式，关闭到托盘并等待超过 60 秒，再打开；不启动核心 | WebView 被释放后可重建；重新请求最新 Dashboard snapshot 与 host state；设置一致，无白屏、重复 listener 或旧通知重放。记录隐藏时长和恢复耗时。 |
-| M10 | NOT RUN | 用“旧内容”隔离副本先写入 Dashboard 偏好及 IndexedDB 哨兵，再以待验收内容正常覆盖程序文件后启动 | 宿主定向失效 HTTP cache/service worker，新页面资源生效；Dashboard 偏好和 IndexedDB 哨兵保留；不以删除整个 `EBWebView` 作为通过手段。 |
+| M10 | NOT RUN | 在旧版本隔离副本写入宿主 DashboardSettings、浏览器偏好及 IndexedDB 哨兵，再覆盖新版本；另测无标记、旧指纹标记、同版本替换前端资源和目录被占用的情况 | 版本变化或无有效旧标记时删除整个 EBWebView，IndexedDB 哨兵消失，宿主保存的偏好恢复；settings.json、核心、icon-cache 和日志不变，目录为单层 resources/EBWebView/Default，标记只保存版本号。同版本重启或资源替换不清空；删除失败不提交新标记，也不继续启动 WebView。 |
 | M11 | NOT RUN | 在环境当前配置的 DPI 下，分别检查正常、最小允许尺寸和最大化；不修改系统 DPI | 窗口控制、拖动/缩放、侧栏、Core/Overview/Proxies/Rules/Connections/Logs 无遮挡；记录实际 DPI。其他 DPI 未有专用机器时标 `BLOCKED`。 |
 | M12 | NOT RUN | 同一隔离产物各重复 5 次：冷启动、60 秒内托盘热恢复、轻量释放后恢复；先确认现有诊断输出中确实捕获到 `frontendMounted` 及其单位/起点 | 只有先观察并保存一条真实 `frontendMounted` 记录，才可用它分别记录三类前端挂载时间；未捕获则记 `BLOCKED`，不得推算。报告中位数和离散值；不得用 Vite build 时间或 `showDispatched` 冒充首帧。正确性失败时性能结果无效。 |
 

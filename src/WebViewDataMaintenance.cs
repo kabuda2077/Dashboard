@@ -1,117 +1,91 @@
-using System.Security.Cryptography;
 using System.Text;
 
 namespace Dashboard;
 
 internal static class WebViewDataMaintenance
 {
-    private const string MarkerFileName = ".webview-content-version";
-    private const string IdentityFormatVersion = "2";
-    private static readonly string[] EntryPointFiles =
-    [
-        "index.html",
-        "sw.js",
-        "registerSW.js",
-        "manifest.webmanifest"
-    ];
-
-    public static WebViewContentUpdate PlanForCurrentContent(string appDirectory)
+    public static WebViewContentUpdate PlanForCurrentContent(string appDirectory, string? appVersion = null)
     {
-        var resourceDirectory = Path.Combine(appDirectory, "resources");
-        var dashboardDirectory = Path.Combine(resourceDirectory, "dashboard");
-        var markerPath = Path.Combine(resourceDirectory, MarkerFileName);
-        var contentIdentity = CreateContentIdentity(dashboardDirectory);
+        var resourceDirectory = Path.Combine(Path.GetFullPath(appDirectory), "resources");
+        if (!File.Exists(Path.Combine(resourceDirectory, "dashboard", "index.html")))
+            throw new IOException("桌面界面文件不完整，请完整解压 Dashboard 后重试。WebView 数据未清理。");
 
+        var markerPath = Path.Combine(resourceDirectory, WebViewContentUpdate.MarkerFileName);
+        var version = appVersion ?? DashboardVersion.Current;
+        string previousVersion;
         try
         {
-            var previousIdentity = File.Exists(markerPath)
-                ? File.ReadAllText(markerPath).Trim()
-                : "";
-            return new WebViewContentUpdate(
-                markerPath,
-                contentIdentity,
-                !string.Equals(previousIdentity, contentIdentity, StringComparison.Ordinal));
+            previousVersion = File.Exists(markerPath) ? File.ReadAllText(markerPath).Trim() : "";
         }
         catch (Exception ex)
         {
-            HostOperationLogger.Error(
-                "webview",
-                "Failed to read the Dashboard content marker; cache invalidation will be retried.",
-                ex);
-            return new WebViewContentUpdate(markerPath, contentIdentity, requiresCacheInvalidation: true);
+            // An unreadable marker is not permission to repeatedly erase a profile.
+            throw new IOException("无法读取 WebView 更新标记，请检查目录权限后重试。", ex);
         }
-    }
-
-    internal static string CreateContentIdentity(string dashboardDirectory)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (var fileName in EntryPointFiles)
-        {
-            var path = Path.Combine(dashboardDirectory, fileName);
-            var nameBytes = Encoding.UTF8.GetBytes(fileName);
-            hash.AppendData(nameBytes);
-            hash.AppendData([0]);
-
-            if (File.Exists(path))
-            {
-                using var stream = File.OpenRead(path);
-                var buffer = new byte[81920];
-                int bytesRead;
-                while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    hash.AppendData(buffer, 0, bytesRead);
-                }
-            }
-
-            hash.AppendData([0]);
-        }
-
-        var digest = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
-        return $"{IdentityFormatVersion}|{digest}";
+        // Only the application version decides whether to reset. Old fingerprint
+        // markers differ once and are replaced with the plain version on success.
+        // Same-version rebuilds must not erase browser data just because assets differ.
+        return new WebViewContentUpdate(resourceDirectory, version,
+            !string.Equals(previousVersion, version, StringComparison.Ordinal));
     }
 }
 
 internal sealed class WebViewContentUpdate
 {
+    internal const string MarkerFileName = ".webview-content-version";
     private readonly string _markerPath;
-    private readonly string _contentIdentity;
+    private readonly string _appVersion;
 
-    internal WebViewContentUpdate(
-        string markerPath,
-        string contentIdentity,
-        bool requiresCacheInvalidation)
+    internal WebViewContentUpdate(string userDataFolder, string appVersion, bool requiresDataReset)
     {
-        _markerPath = markerPath;
-        _contentIdentity = contentIdentity;
-        RequiresCacheInvalidation = requiresCacheInvalidation;
+        UserDataFolder = Path.GetFullPath(userDataFolder);
+        _markerPath = Path.Combine(UserDataFolder, MarkerFileName);
+        _appVersion = appVersion;
+        RequiresDataReset = requiresDataReset;
     }
 
-    public bool RequiresCacheInvalidation { get; private set; }
+    // WebView2 appends its own EBWebView directory to this SDK root. The SDK
+    // root is resources, which also contains the UI and icons: NEVER delete it.
+    public string UserDataFolder { get; }
+    public string BrowserDataDirectory => Path.Combine(UserDataFolder, "EBWebView");
+    public bool RequiresDataReset { get; private set; }
 
-    public bool CompleteCacheInvalidation()
+    public void PrepareUserDataDirectory()
     {
-        if (!RequiresCacheInvalidation)
-        {
-            return true;
-        }
+        Directory.CreateDirectory(UserDataFolder);
+        if (!RequiresDataReset) return;
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_markerPath)!);
-            File.WriteAllText(_markerPath, _contentIdentity);
-            RequiresCacheInvalidation = false;
-            HostOperationLogger.Info(
-                "webview",
-                $"WebView HTTP cache and service workers invalidated for Dashboard content {_contentIdentity}.");
-            return true;
+            if ((File.GetAttributes(UserDataFolder) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("WebView 数据根目录是链接，拒绝自动清理。");
+            if (Directory.Exists(BrowserDataDirectory))
+            {
+                if ((File.GetAttributes(BrowserDataDirectory) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("EBWebView 目录是链接，拒绝自动清理。");
+                Directory.Delete(BrowserDataDirectory, recursive: true);
+            }
+            else if (File.Exists(BrowserDataDirectory))
+            {
+                throw new IOException("EBWebView 路径不是目录。");
+            }
+
+            // Publish the marker only after the complete directory was removed.
+            // If deletion or marker persistence fails, do not create a WebView.
+            var temporary = _markerPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, _appVersion, new UTF8Encoding(false));
+                File.Move(temporary, _markerPath, overwrite: true);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            RequiresDataReset = false;
+            HostOperationLogger.Info("webview", $"WebView data directory reset for Dashboard version {_appVersion}.");
         }
         catch (Exception ex)
         {
-            HostOperationLogger.Error(
-                "webview",
-                "Dashboard caches were invalidated, but the content marker could not be saved; invalidation will be retried.",
-                ex);
-            return false;
+            HostOperationLogger.Error("webview", "WebView data reset failed; update marker was not advanced.", ex);
+            throw new IOException("无法清理旧 EBWebView 数据，请完全退出旧 Dashboard 及其 WebView 进程，检查目录权限后重试。", ex);
         }
     }
 }

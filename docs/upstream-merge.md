@@ -93,7 +93,7 @@ Preserve these decisions unless the product direction is explicitly changed.
 - The app manages one active core at a time: `mihomo` or `sing-box`.
 - Core paths, config paths, API URLs, secrets, and core type are separate local settings.
 - Local publish layout keeps `Dashboard.exe`, `settings.json`, `resources/`, and separate core folders.
-- Normal replacement must preserve `resources/EBWebView`. The host's content marker must invalidate HTTP cache and service workers when entry content changes while retaining profile data such as IndexedDB. Full profile removal is a destructive troubleshooting/reset action, never a routine merge or release step, and requires explicit user scope for the isolated target.
+- Current product policy resets the entire `resources/EBWebView` directory before WebView starts only when the application version differs from the saved marker or no valid old marker exists. Successful reset stores the plain version; legacy fingerprint markers are converted once. Same-version frontend changes must not reset browser data. Browser-local data such as IndexedDB is intentionally removed on reset; host settings, cores, icon-cache and logs must remain intact. Test only in an explicitly isolated target. The SDK root is `resources`, but the deletion target is only its `EBWebView` child; the new layout must not contain a second nested EBWebView.
 - In lightweight mode, hiding to tray keeps the WebView alive briefly before disposal; reopening from tray during that delay cancels disposal.
 
 ### Core And Backend
@@ -325,7 +325,7 @@ Run full build:
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
-For a normal local replacement, preserve `resources/EBWebView`. Start the replacement build and verify that the host content marker applies targeted HTTP-cache/service-worker invalidation and that profile-backed data remains available. If a full profile reset is genuinely required for diagnosis, stop and obtain explicit user approval for the exact isolated directory; do not put a broad `Remove-Item` command in this workflow.
+For a normal replacement in an authorized isolated directory, verify the automatic full `resources/EBWebView` reset on application-version changes or missing/legacy version markers. Old browser storage must disappear, the new single-level directory must be usable, and settings.json, core configuration, icon-cache and logs must remain intact. Host-saved dashboard preferences can be restored. Same-version restarts and frontend resource replacements must retain newly created browser data. Let the production host perform the reset; do not put a broad `Remove-Item` command in this workflow.
 
 Manual inspection checklist:
 
@@ -395,7 +395,7 @@ Build and review:
 - [ ] `tools/build-zashboard.ps1 -SkipBuild` passed.
 - [ ] Full `tools/build.ps1` passed.
 - [ ] Manual inspection checklist completed.
-- [ ] Local replacement, if performed, preserved `resources/EBWebView`, invalidated stale HTTP cache/service workers through the host content marker, and retained profile data.
+- [ ] Isolated local replacement, if performed, reset only `resources/EBWebView` on version change or missing/legacy markers, created a single-level directory, preserved external settings/core/icon/log data, and did not reset for same-version restarts or frontend resource replacements.
 
 ## Commit Discipline
 
@@ -420,4 +420,4 @@ Before merging the branch back to `main`, answer:
 4. Did any `docs/style.md` rule need to change?
 5. Was `resources/dashboard/` rebuilt and verified? (Generated and untracked, so it never appears in the diff.)
 6. Did type-check, contract check, and full build pass?
-7. Was normal local replacement tested with targeted cache/service-worker invalidation while `resources/EBWebView` and profile-backed data were preserved?
+7. Was isolated local replacement tested for version-only browser-directory reset, single-level recreation, retention of external user data, failure handling, and no reset for same-version resource replacements?

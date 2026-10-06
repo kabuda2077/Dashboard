@@ -39,7 +39,8 @@ public sealed class StartupWebViewTests
         settings.SingBoxConfigPath = Path.Combine(root, "absent.json");
         settings.DashboardApiUrl = settings.SingBoxApiUrl = "http://127.0.0.1:1";
         settings.Save();
-        Directory.CreateDirectory(AppSettings.WebViewUserDataDirectory); // isolated testhost output; no legacy profile migration
+        var contentUpdate = new WebViewContentUpdate(Path.Combine(root, "resources"), "startup-test", requiresDataReset: true);
+        contentUpdate.PrepareUserDataDirectory(); // this test reopens the same version, not an upgrade
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
@@ -61,7 +62,7 @@ public sealed class StartupWebViewTests
                             // for its handshake and cannot overwrite the seeded preferences.
                             using var seed = new WebView2 { Dock = DockStyle.Fill };
                             pump.Controls.Add(seed);
-                            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: AppSettings.WebViewUserDataDirectory);
+                            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: contentUpdate.UserDataFolder);
                             await seed.EnsureCoreWebView2Async(environment);
                             var navigated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                             seed.CoreWebView2.NavigationCompleted += (_, e) =>
@@ -74,8 +75,7 @@ public sealed class StartupWebViewTests
                             await seed.CoreWebView2.ExecuteScriptAsync("localStorage.setItem('config/startup-sentinel','legacy-value'); localStorage.setItem('config/language','en-US'); localStorage.setItem('config/auto-ip-check','false'); true");
                             Assert.Null(settings.DashboardSettings);
                         }
-                        dashboard = new MainForm(host, new WebViewContentUpdate(
-                            Path.Combine(root, "content-marker"), "startup-test", requiresCacheInvalidation: true))
+                        dashboard = new MainForm(host, contentUpdate)
                         {
                             ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = new(-15000, -15000)
                         };

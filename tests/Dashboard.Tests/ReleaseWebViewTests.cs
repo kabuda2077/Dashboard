@@ -21,9 +21,6 @@ public sealed class ReleaseWebViewTests
         Assert.True(File.Exists(Path.Combine(assets, "index.html")), "Build the production frontend first.");
         var root = Path.Combine(Path.GetTempPath(), "Dashboard.ReleaseWebView", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        // MainForm's normal profile is under this isolated testhost's output,
-        // not the running Dashboard. Pre-create it to disable legacy migration.
-        Directory.CreateDirectory(AppSettings.WebViewUserDataDirectory);
         var settings = AppSettings.Load(Path.Combine(root, "settings.json"), DpapiSecretProtector.Instance);
         settings.SetupCompleted = true;
         settings.StartCoreOnLaunch = false;
@@ -45,8 +42,8 @@ public sealed class ReleaseWebViewTests
         var thread = new Thread(() =>
         {
             using var host = new DashboardHost(settings, assets, useEphemeralPort: true);
-            using var form = new MainForm(host, new WebViewContentUpdate(
-                Path.Combine(root, "content-marker"), "release-test", requiresCacheInvalidation: true));
+            var contentUpdate = new WebViewContentUpdate(Path.Combine(root, "resources"), "release-test", requiresDataReset: true);
+            using var form = new MainForm(host, contentUpdate);
             form.ShowInTaskbar = false;
             form.StartPosition = FormStartPosition.Manual;
             form.Location = new(-15000, -15000);
@@ -68,6 +65,8 @@ public sealed class ReleaseWebViewTests
                     await Until(async () => View()?.CoreWebView2 is not null
                         && await Script("!!document.querySelector('.core-status-box')") == "true");
                     Assert.NotEqual(DashboardServer.DashboardOrigin.Port, host.DashboardUri.Port);
+                    Assert.True(Directory.Exists(Path.Combine(contentUpdate.BrowserDataDirectory, "Default")));
+                    Assert.False(Directory.Exists(Path.Combine(contentUpdate.BrowserDataDirectory, "EBWebView")));
                     await Script("localStorage.setItem('config/release-smoke', 'first'); true");
                     var first = form.FlushPreferencesAsync();
                     var duplicate = form.FlushPreferencesAsync();

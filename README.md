@@ -55,7 +55,11 @@ Dashboard 会在启动后自动检查 GitHub Release，也可以在内核页手�
 2. 解压新版 ZIP，将其中全部文件复制到原 Dashboard 目录并选择覆盖。
 3. 重新启动 `Dashboard.exe`。
 
-不要先删除整个 Dashboard 目录。发布包不包含 `settings.json`、`mihomo\`、`sing-box\` 和运行日志，直接覆盖会保留设置、内核及配置。内置前端更新会保留 WebView2 profile 中的偏好、标签和连接历史，只使可重建的 HTTP 缓存、Cache Storage 和旧 Service Worker 注册失效；前端版本化资源使用带 hash 的文件名，无需手动删除 profile 或缓存。桌面界面固定使用 `http://127.0.0.1:33291/` 以保持同一数据 origin；若该端口被其他程序占用，Dashboard 会明确报错而不会随机换端口隐藏已有数据。
+不要先删除整个 Dashboard 目录。发布包不包含 `settings.json`、`mihomo\`、`sing-box\` 和运行日志，直接覆盖会保留设置、内核及配置。
+
+只按应用版本号判断是否重建 WebView 数据。版本与已保存标记不同，或没有有效旧标记时，宿主会在启动 WebView 前删除整个 `resources\EBWebView`，再由 WebView2 重建为 `resources\EBWebView\Default`，不再嵌套两个同名目录。清理成功后，`resources\.webview-content-version` 只记录当前版本号；旧指纹格式首次转换时会清理一次。**浏览器中的连接历史、上传的本地背景图片等数据会被清除**；`settings.json`、内核配置、`icon-cache` 和日志不删除。已保存到 `settings.json` 的界面偏好（包括自定义 CSS）仍会恢复，本地背景图片需要重新选择。同版本启动、托盘恢复或重新编译／替换前端资源不会重复清空。若旧进程占用目录或清理失败，会提示错误且不标记完成，请完全退出旧程序后重试。
+
+桌面界面固定使用 `http://127.0.0.1:33291/`；若该端口被其他程序占用，Dashboard 会明确报错而不会随机换端口。
 
 上述覆盖更新适用于 1.x 版本之间。不要将 1.x 覆盖到正在使用 v2 设置格式的目录；测试 1.x 时请另用独立目录，保留原 v2 配置和数据。
 

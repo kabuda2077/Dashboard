@@ -64,8 +64,18 @@ internal static class Program
 
             using (singleInstance!)
             {
-                var webViewContentUpdate = WebViewDataMaintenance.PlanForCurrentContent(
-                    AppSettings.AppDirectory);
+                WebViewContentUpdate webViewContentUpdate;
+                try
+                {
+                    webViewContentUpdate = WebViewDataMaintenance.PlanForCurrentContent(AppSettings.AppDirectory);
+                    webViewContentUpdate.PrepareUserDataDirectory();
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    HostOperationLogger.Critical("webview", "WebView update preparation failed; startup cancelled.", exception);
+                    MessageBox.Show(exception.Message, "Dashboard 更新准备失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
                 using var applicationContext = new DashboardApplicationContext(
                     startMinimized,
                     startCore,

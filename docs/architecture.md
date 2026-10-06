@@ -9,7 +9,7 @@
 | 层 | 主要入口 | 拥有的职责 |
 | --- | --- | --- |
 | Windows应用生命周期 | `Program`、`DashboardApplicationContext` | 启动与恢复失败反馈、托盘、窗口存在性、退出和系统事件协调 |
-| 桌面窗口与资源 | `MainForm`、`DashboardServer`、`WebViewDataMaintenance`、`WebViewTrustPolicy` | WebView创建/释放/导航、固定本地origin、内容更新缓存失效、可信消息和外部导航 |
+| 桌面窗口与资源 | `MainForm`、`DashboardServer`、`WebViewDataMaintenance`、`WebViewTrustPolicy` | WebView创建/释放/导航、固定本地origin、更新前重建浏览器数据目录、可信消息和外部导航 |
 | 宿主配置与核心 | `DashboardHost`、`CoreLifecycleController`、`AppSettings` | 单活动核心、双核心配置、配置事务、凭证、系统自启、更新与状态快照 |
 | 消息协议 | `HostMessageRouter`、`HostBridgeMessages`、`DashboardStatePublisher`、`composables/hostBridge.ts` | 命令校验和分派、全量/增量消息、单一前端接收器、响应式宿主状态 |
 | 前端启动与适配 | `dashboardStartup.ts`、`appEntry.ts`、`hostBootstrap.ts` | 导入store前恢复偏好、启动Vue、将宿主连接翻译为Clash后端、窗口操作接线 |
@@ -65,7 +65,7 @@ Home协调数据任务和重建，`backendRuntime`只重置运行数据，保留
 
 旧明文凭证迁移必须验证保护结果后再原子提交；损坏配置或迁移失败不覆盖原件。不可解密密文在普通保存中保留，只有显式替换可以改变。用户迁移到不同Windows账户需要重新填写凭证。
 
-内容更新定向失效HTTP缓存、Cache Storage和Service Worker，保留整个WebView profile及其用户数据。不能用删除profile作为常规升级修复。
+只比较应用版本号与已保存标记，不扫描或散列前端资源内容。版本不同或无有效旧标记时，在创建 WebView 环境前删除整个 `resources/EBWebView`。SDK 的 userDataFolder 是父目录 `resources`，实际浏览器目录为 `resources/EBWebView`；只允许删除后者，绝不能删除整个 resources。清理成功后原子保存纯版本号，再继续初始化；旧指纹格式标记只在首次转换时触发一次清理。失败不标记完成，也不继续打开浏览器。同版本启动、窗口重建或前端资源替换不重复删除，不再迁回旧 profile。连接历史、本地背景图片等浏览器数据会清空；宿主 settings.json、核心配置、icon-cache 和日志保留，已提交的 DashboardSettings 仍按启动协议恢复。
 
 ## UI兼容与样式
 

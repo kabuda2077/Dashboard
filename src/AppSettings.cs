@@ -180,8 +180,6 @@ public sealed class AppSettings
 
     public static string LogDirectory => Path.Combine(ResourceDirectory, "logs");
 
-    public static string WebViewUserDataDirectory => Path.Combine(ResourceDirectory, "EBWebView");
-
     private static string LegacyDashboardSettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDirectoryName);
 

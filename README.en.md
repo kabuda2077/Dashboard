@@ -56,7 +56,11 @@ To update the portable build:
 2. Extract the new ZIP, copy all files into the existing Dashboard folder, and confirm replacement.
 3. Start `Dashboard.exe` again.
 
-Do not delete the existing Dashboard folder first. Release packages do not contain `settings.json`, `mihomo\`, `sing-box\`, or runtime logs, so replacing the packaged files preserves settings, cores, and configuration. Bundled frontend updates keep the WebView2 profile—including preferences, tags, and connection history—and invalidate only rebuildable HTTP caches, Cache Storage, and old service-worker registrations. Versioned frontend assets use hashed filenames, so no manual profile or cache deletion is required. The desktop UI keeps `http://127.0.0.1:33291/` as its fixed data origin; if another process occupies that port, Dashboard reports the conflict instead of switching to a random port and hiding existing origin-scoped data.
+Do not delete the existing Dashboard folder first. Release packages do not contain `settings.json`, `mihomo\`, `sing-box\`, or runtime logs, so replacing the packaged files preserves settings, cores, and configuration.
+
+Only the application version determines whether to reset WebView data. When it differs from the saved marker, or no valid old marker exists, the host deletes the entire `resources\EBWebView` directory before starting WebView. WebView2 then recreates `resources\EBWebView\Default`, without two nested directories of the same name. After a successful reset, `resources\.webview-content-version` stores only the current version; an old fingerprint-format marker causes a one-time reset when converted. **Browser-local connection history, uploaded background images, and other profile data are cleared.** `settings.json`, core configuration, `icon-cache`, and logs are not deleted. Dashboard preferences already saved in `settings.json`, including custom CSS, are restored; local background images must be selected again. Same-version startups, tray restores, and frontend rebuilds/replacements do not repeat the reset. A locked directory or failed reset is reported without marking the update complete; fully exit the old application before retrying.
+
+The desktop UI keeps `http://127.0.0.1:33291/` as its fixed origin. If another process occupies the port, Dashboard reports the conflict instead of switching ports.
 
 These overwrite instructions apply to updates between 1.x versions. Do not overwrite a directory that uses the v2 settings format with 1.x. Test 1.x in a separate directory and keep the existing v2 configuration and data.
 

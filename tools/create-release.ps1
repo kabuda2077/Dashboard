@@ -65,7 +65,7 @@ Install:
 4. Run Dashboard.exe.
 
 The package does not contain settings.json, mihomo, sing-box, or runtime logs.
-Packaged content updates invalidate HTTP/cache storage and service workers while preserving WebView settings, labels, and connection history. The local origin remains http://127.0.0.1:33291/; a port conflict is reported instead of changing origins.
+Only the application version controls the full resources\EBWebView reset. A version mismatch or missing/legacy marker triggers a reset before the browser starts; success saves the plain version number. Browser-local history and uploaded background images are removed. settings.json, core configuration, icon-cache, and logs are kept; host-saved dashboard preferences are restored. WebView2 recreates a single resources\EBWebView\Default layout. Same-version restarts and frontend resource replacements do not repeat the reset. Fully exit the old Dashboard before replacing files. The local origin remains http://127.0.0.1:33291/; a port conflict is reported instead of changing origins.
 "@ | Out-File -FilePath $releaseNotesPath -Encoding UTF8
 
 Write-Host "Release package created: $zipPath" -ForegroundColor Green
