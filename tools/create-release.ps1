@@ -43,6 +43,8 @@ try {
         slowIntegration = [bool]$IncludeSlowIntegration
         manualSystemAcceptance = 'not implied by this command'
         schemaVersion = 2; oldSettingsMigration = $false
+        webViewResetPolicy = 'application-version'
+        webViewBrowserDataDirectory = 'resources/webview-data-v2/EBWebView'
     }
     $record | ConvertTo-Json | Out-File (Join-Path $evidenceDirectory 'verification.json') -Encoding utf8
     Write-Host "Verified release candidate: $archive" -ForegroundColor Green

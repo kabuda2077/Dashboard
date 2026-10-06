@@ -100,31 +100,17 @@ public sealed class DashboardApplicationContextTests
             DashboardApplicationContext.WillRelaunchElevated(shouldStartCore, isAdministrator));
     }
 
-    [Theory]
-    [InlineData(true, false, false, true, true, false, true)]
-    [InlineData(true, false, false, true, true, true, false)]
-    [InlineData(true, false, false, true, false, false, false)]
-    [InlineData(true, false, false, false, true, false, false)]
-    [InlineData(true, true, false, true, true, false, false)]
-    [InlineData(true, false, true, true, true, false, false)]
-    [InlineData(false, false, false, true, true, false, false)]
-    public void ResumeRecoveryOnlyRestartsAStaleMihomoTun(
-        bool coreRunning,
-        bool isSingBox,
-        bool coreOperationInProgress,
-        bool tunWasUpBeforeSuspend,
-        bool physicalNetworkUp,
-        bool tunUp,
-        bool expected)
+    [Fact]
+    public void ReleaseHasNoPowerEventOrNetworkAdapterCallbacks()
     {
-        Assert.Equal(
-            expected,
-            DashboardApplicationContext.ShouldRestartCoreAfterResume(
-                coreRunning,
-                isSingBox,
-                coreOperationInProgress,
-                tunWasUpBeforeSuspend,
-                physicalNetworkUp,
-                tunUp));
+        // The unreliable power-driven restart workaround stays withdrawn until
+        // a separately validated replacement exists; this is not a TUN recovery test.
+        var methods = typeof(DashboardApplicationContext).GetMethods(
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static
+            | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.DeclaredOnly);
+        Assert.DoesNotContain(methods, method => method.GetParameters().Any(parameter =>
+            parameter.ParameterType.FullName is "Microsoft.Win32.PowerModeChangedEventArgs"
+                or "System.Net.NetworkInformation.NetworkInterface"));
     }
 }

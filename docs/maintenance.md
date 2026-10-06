@@ -4,11 +4,13 @@
 
 ## 配置与数据
 
-- 当前使用 `schemaVersion=2` 和独立的 `resources/webview-data-v2/`。不迁移旧 Dashboard 设置、凭证、历史、图片或启动项，不自动删除旧数据。
+- 当前使用 `schemaVersion=2` 和独立的 `resources/webview-data-v2/`。不迁移或删除 1.x 的设置、凭证、历史、图片或启动项。v2 的浏览器更新重建规则见下文。
 - 无设置文件时创建完整默认文档；已有文件不符合当前格式时明确报错，保留原件，不静默覆盖。字段定义和校验以 [AppSettings.cs](../src/AppSettings.cs)、[SettingsStore.cs](../src/SettingsStore.cs) 为准，不在文档中复制字段清单。
 - 磁盘 profile 键为 `singBox`，桥接键为 `sing-box`，不可混用。宿主与前端应整包更新。
 - Secret 使用当前用户 DPAPI；无法解密时，使用该凭证前要求显式替换，普通设置保存不得覆盖原密文。实现见 [SecretProtector.cs](../src/SecretProtector.cs) 和 SettingsStore。
-- 当前格式的数据应在窗口重建、应用重启和覆盖更新后保留；升级应用不得删除用户设置、核心、配置或 WebView 数据目录。
+- 窗口重建、同版本重启或同版本前端资源替换保留浏览器数据。应用版本变化或缺少有效版本标记时，在创建 WebView 前删除 `resources/webview-data-v2/EBWebView`；不扫描资源指纹。版本标记存于独立的 `resources/webview-data-v2/.webview-content-version`，清理成功后原子保存纯版本号；失败不标记完成、不继续启动。首次切换旧策略重置一次，不迁回旧浏览器数据。
+- 浏览器重建会清空连接历史、本地背景等数据；宿主 settings.json、核心、配置、icon-cache、日志及 1.x 的 `resources/EBWebView` 不得删除。已提交的宿主界面偏好仍按 v2 启动协议恢复。
+- 未解决的旧 TUN 睡眠唤醒自动重启逻辑已撤下；新的恢复方案需单独实现和验证。
 - 无摘要升级的确认请求（`ConfirmUnverified`）必须携带 `expectedRevision` 和 `expectedRuntimeEpoch`。普通升级请求允许省略，携带时也必须匹配当前状态。校验见 [CoreLifecycleController.cs](../src/CoreLifecycleController.cs)。
 
 ## 验证与产物
@@ -27,7 +29,7 @@
 | --- | --- |
 | 启动、提权、自启、凭证 | 实际 UAC 同意/取消、登录任务生命周期、跨账户 DPAPI、缺 Runtime/损坏包、生产程序单实例与提权接力 |
 | 窗口、布局、输入 | 不同 DPI、跨物理显示器、触摸与原生焦点；自动布局检查不替代设备验收 |
-| 持久化、发布、资源更新 | 完全退出生产 EXE、覆盖应用文件再启动，验证当前格式数据保留；宿主/UI 资源替换测试不等于完整 EXE 更新体验 |
+| 持久化、发布、资源更新 | 完全退出生产 EXE、覆盖应用文件再启动；验证宿主数据保留、浏览器只按版本重建、同版本资源替换不重置，且不触碰 1.x 数据；宿主/UI 资源替换测试不等于完整 EXE 更新体验 |
 | 核心升级、网络、剪贴板 | 实际新版本下载与失败恢复、目标网络联通性、系统剪贴板成功路径；受控接口与候选测试不替代现场条件 |
 | 睡眠与网络恢复 | 专用 TUN/物理网络上的睡眠唤醒，以及期间切核、重启 |
 

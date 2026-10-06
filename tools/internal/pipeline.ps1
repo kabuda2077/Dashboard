@@ -104,8 +104,12 @@ function Test-Host {
 function Test-Frontend {
     if (-not (Test-Path (Join-Path $script:RepositoryRoot '.tmp\bridge-fixtures-v2\bootstrap.json'))) { throw 'Production bridge fixture is missing; run host tests first.' }
     Push-Location (Join-Path $script:RepositoryRoot 'dashboard-src')
-    try { Invoke-Checked 'Frontend behavior and wire tests' { node.exe node_modules/vitest/vitest.mjs run } }
-    finally { Pop-Location }
+    $previousNodeEnv = $env:NODE_ENV
+    try {
+        $env:NODE_ENV = 'test'
+        Invoke-Checked 'Frontend behavior and wire tests' { node.exe node_modules/vitest/vitest.mjs run }
+    }
+    finally { $env:NODE_ENV = $previousNodeEnv; Pop-Location }
 }
 
 function Invoke-Verification {

@@ -24,7 +24,7 @@ public sealed class CoreSetupLayoutTests
         var thread = new Thread(() =>
         {
             using var host = new DashboardHost(root, Path.Combine(repository.FullName, "resources", "dashboard"), ephemeralPort: true, () => false);
-            using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(root));
+            using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(root, dashboardDirectory: Path.Combine(repository.FullName, "resources", "dashboard")));
             form.ShowInTaskbar = false;
             form.StartPosition = FormStartPosition.Manual;
             form.Location = new System.Drawing.Point(-15000, -15000);

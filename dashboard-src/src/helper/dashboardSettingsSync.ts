@@ -94,25 +94,35 @@ export const installDashboardSettingsSync = () => {
   const unload = () => {
     void saveDashboardSettingsToHost().catch(() => {})
   }
+  let stopped = false
   const removeFlush = addHostMessageListener(({ data }) => {
     if (data.type !== 'flushPreferences' || !data.requestId) return
     const requestId = data.requestId
-    void flushLocalPersistence().then(saveDashboardSettingsToHost).then(
-      () => {
-        // Inspect drafts after the disk ACK, not when the flush request arrived:
-        // edits made while a preference write is in flight must also keep the view alive.
+    const flush = async () => {
+      try {
+        // Preserve v2's local-persistence barrier and draft protection, while
+        // also including edits made during an in-flight host save.
+        do {
+          await flushLocalPersistence()
+          if (stopped) return
+          await saveDashboardSettingsToHost()
+        } while (!stopped && normalize(getDashboardSettingsFromStorage()) !== acknowledged)
+        if (stopped) return
         const hasUnsavedDraft = Object.values(coreDrafts).some(
           (draft) => draft && isDraftDirty(draft),
         )
         postHostMessage({ type: 'preferencesFlushed', requestId, value: !hasUnsavedDraft })
-      },
-      () => postHostMessage({ type: 'preferencesFlushed', requestId, value: false }),
-    )
+      } catch {
+        if (!stopped) postHostMessage({ type: 'preferencesFlushed', requestId, value: false })
+      }
+    }
+    void flush()
   })
   window.addEventListener(DASHBOARD_SETTINGS_CHANGED, scheduleDashboardSettingsSave)
   window.addEventListener('storage', storage)
   window.addEventListener('beforeunload', unload)
   dispose = () => {
+    stopped = true
     removeFlush()
     clearTimeout(timer)
     window.removeEventListener(DASHBOARD_SETTINGS_CHANGED, scheduleDashboardSettingsSave)

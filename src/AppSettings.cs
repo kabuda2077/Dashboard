@@ -73,7 +73,6 @@ public sealed record AppSettings
     public static string AppDirectory => Path.GetFullPath(AppContext.BaseDirectory);
     public static string ResourceDirectory => Path.Combine(AppDirectory, "resources");
     public static string LogDirectory => Path.Combine(ResourceDirectory, "logs");
-    public static string WebViewUserDataDirectory => Path.Combine(ResourceDirectory, "webview-data-v2");
     public static string SettingsPath => Path.Combine(AppDirectory, "settings.json");
 
     public static AppSettings CreateDefault(string appDirectory) => new()

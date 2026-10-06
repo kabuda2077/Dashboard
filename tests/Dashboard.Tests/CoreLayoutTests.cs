@@ -28,7 +28,7 @@ public sealed class CoreLayoutTests
         var thread = new Thread(() =>
         {
             using var host = new DashboardHost(root, Path.Combine(repository.FullName, "resources", "dashboard"), ephemeralPort: true, () => false);
-            using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(root));
+            using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(root, dashboardDirectory: Path.Combine(repository.FullName, "resources", "dashboard")));
             form.ShowInTaskbar = false;
             // Below the production desktop minimum, exercise the same UI's narrow
             // layout in this isolated window; do not change the product minimum.

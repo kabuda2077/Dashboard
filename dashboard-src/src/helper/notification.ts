@@ -160,6 +160,8 @@ const setAlert = (
   const contentDiv = document.createElement('div')
   contentDiv.className = 'app-toast__content'
   // API/host error strings are untrusted text in a page with native privileges.
+  // API/host errors share this path with translations: never insert their
+  // content as markup into the privileged desktop document.
   contentDiv.textContent = t(content, params)
   contentDiv.style.whiteSpace = 'pre-line'
 

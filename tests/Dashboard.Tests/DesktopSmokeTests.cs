@@ -27,7 +27,8 @@ public sealed class DesktopSmokeTests
         var thread = new Thread(() =>
         {
             using var host = new DashboardHost(root, Path.Combine(repository.FullName, "resources", "dashboard"), ephemeralPort: true, () => false);
-            using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(root));
+            var contentUpdate = WebViewDataMaintenance.PlanForCurrentContent(root, dashboardDirectory: Path.Combine(repository.FullName, "resources", "dashboard"));
+            using var form = new MainForm(host, contentUpdate);
             form.Size = new System.Drawing.Size(width, height);
             form.ShowInTaskbar = false;
             form.StartPosition = FormStartPosition.Manual;
@@ -53,6 +54,8 @@ public sealed class DesktopSmokeTests
                         }
                     }
                     await Until(async () => await Script("!!document.querySelector('#core-exe')") == "true");
+                    Assert.True(Directory.Exists(Path.Combine(contentUpdate.BrowserDataDirectory, "Default")));
+                    Assert.False(Directory.Exists(Path.Combine(contentUpdate.BrowserDataDirectory, "EBWebView")));
                     Assert.True(host.Settings.SetupCompleted);
                     Assert.Equal(2, host.Settings.SchemaVersion);
                     Assert.Equal("false", await Script("!!document.querySelector('[data-testid=\"setup-guide\"]')"));

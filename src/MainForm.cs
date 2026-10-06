@@ -283,8 +283,12 @@ public sealed class MainForm : Form
         _dashboardDisposeTimer.Tick += async (_, _) =>
         {
             _dashboardDisposeTimer.Stop();
+            var version = _dashboardSuspendVersion;
+            var view = _webView;
             if (_settings.DesktopOptions.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress
-                && await FlushPreferencesAsync() && _hiddenToTray && !Visible)
+                && await FlushPreferencesAsync()
+                && version == _dashboardSuspendVersion && ReferenceEquals(view, _webView)
+                && _settings.DesktopOptions.LightweightMode && _hiddenToTray && !Visible && !_trayTransitionInProgress)
                 DisposeDashboardView();
         };
     }
@@ -380,8 +384,6 @@ public sealed class MainForm : Form
         return _webView?.CoreWebView2 is not null;
     }
 
-    private string WebViewUserDataDirectory => Path.Combine(_host.DataDirectory, "resources", "webview-data-v2");
-
     private async Task<bool> InitializeWebViewAsync(string trigger)
     {
         var initializationId = Interlocked.Increment(ref _webViewInitializationSequence);
@@ -407,14 +409,14 @@ public sealed class MainForm : Form
             {
                 stage = "profile";
                 stageStartedAt = Stopwatch.GetTimestamp();
-                Directory.CreateDirectory(WebViewUserDataDirectory);
+                _webViewContentUpdate.PrepareUserDataDirectory();
                 var profileMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
                 stage = "environment";
                 stageStartedAt = Stopwatch.GetTimestamp();
                 var environment = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null,
-                    userDataFolder: WebViewUserDataDirectory);
+                    userDataFolder: _webViewContentUpdate.UserDataFolder);
                 var environmentMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
                 stage = "controller";
@@ -433,11 +435,6 @@ public sealed class MainForm : Form
                 webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
                 var settingsMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
-                stage = "content-cache";
-                stageStartedAt = Stopwatch.GetTimestamp();
-                await InvalidateStaleContentCachesAsync(webView.CoreWebView2);
-                var contentCacheMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
-
                 webView.CoreWebView2.NavigationStarting += OnDashboardNavigationStarting;
                 webView.CoreWebView2.NewWindowRequested += OnDashboardNewWindowRequested;
                 webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
@@ -446,7 +443,7 @@ public sealed class MainForm : Form
                     $"webview:initialized id={initializationId} trigger={trigger} attempt={attempt} "
                         + $"controlMs={controlMs:0.0} profileMs={profileMs:0.0} "
                         + $"environmentMs={environmentMs:0.0} controllerMs={controllerMs:0.0} "
-                        + $"settingsMs={settingsMs:0.0} contentCacheMs={contentCacheMs:0.0} "
+                        + $"settingsMs={settingsMs:0.0} "
                         + $"totalMs={Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0.0} "
                         + $"runtime={environment.BrowserVersionString}");
                 return true;
@@ -493,21 +490,6 @@ public sealed class MainForm : Form
         }
 
         return false;
-    }
-
-    private async Task InvalidateStaleContentCachesAsync(CoreWebView2 coreWebView)
-    {
-        if (!_webViewContentUpdate.RequiresCacheInvalidation)
-        {
-            return;
-        }
-
-        const CoreWebView2BrowsingDataKinds staleContentData =
-            CoreWebView2BrowsingDataKinds.DiskCache
-            | CoreWebView2BrowsingDataKinds.CacheStorage
-            | CoreWebView2BrowsingDataKinds.ServiceWorkers;
-        await coreWebView.Profile.ClearBrowsingDataAsync(staleContentData);
-        _webViewContentUpdate.CompleteCacheInvalidation();
     }
 
     internal static bool IsWebViewInitializationAborted(Exception exception)
@@ -581,6 +563,7 @@ public sealed class MainForm : Form
         if (target == DashboardNavigationTarget.Dashboard)
         {
             Interlocked.Increment(ref _navigationGeneration);
+            _dashboardSuspendVersion++;
             _preferenceFlush?.TrySetResult(false);
             return;
         }
@@ -804,6 +787,7 @@ public sealed class MainForm : Form
     {
         CancelDelayedDashboardDispose();
         _dashboardSuspendVersion++;
+        _preferenceFlush?.TrySetResult(false);
         _statePublisher.MarkDirty();
         _webViewSuspended = false;
         _dashboardInitialized = false;

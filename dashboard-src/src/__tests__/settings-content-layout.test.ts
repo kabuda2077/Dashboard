@@ -10,12 +10,14 @@ vi.mock('@vueuse/core', async (importOriginal) => ({
   useElementSize: () => size,
 }))
 
-vi.mock('@/components/settings/backend/BackendSettings.vue', () => ({ default: () => null }))
-vi.mock('@/components/settings/connections/ConnectionsSettings.vue', () => ({ default: () => null }))
-vi.mock('@/components/settings/general/AboutDashboardSettings.vue', () => ({ default: () => null }))
-vi.mock('@/components/settings/general/ZashboardSettings.vue', () => ({ default: () => null }))
-vi.mock('@/components/settings/overview/OverviewSettings.vue', () => ({ default: () => null }))
-vi.mock('@/components/settings/proxies/ProxiesSettings.vue', () => ({ default: () => null }))
+// Async Vue loaders need an ES-module-shaped result to unwrap the default
+// component in test/development mode, not a module object rendered as a VNode.
+vi.mock('@/components/settings/backend/BackendSettings.vue', () => ({ __esModule: true, default: () => null }))
+vi.mock('@/components/settings/connections/ConnectionsSettings.vue', () => ({ __esModule: true, default: () => null }))
+vi.mock('@/components/settings/general/AboutDashboardSettings.vue', () => ({ __esModule: true, default: () => null }))
+vi.mock('@/components/settings/general/ZashboardSettings.vue', () => ({ __esModule: true, default: () => null }))
+vi.mock('@/components/settings/overview/OverviewSettings.vue', () => ({ __esModule: true, default: () => null }))
+vi.mock('@/components/settings/proxies/ProxiesSettings.vue', () => ({ __esModule: true, default: () => null }))
 
 let app: App | undefined
 let host: HTMLElement | undefined

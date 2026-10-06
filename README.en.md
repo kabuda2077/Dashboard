@@ -10,7 +10,9 @@ A Windows desktop proxy dashboard based on [zashboard](https://github.com/Zephyr
 
 Extract into a new directory and configure the core paths and API again. Old or corrupt settings produce an explicit error, not an automatic overwrite. Existing v2 documents must retain all serialized root/profile/desktop-option fields; missing fields are not silently filled with defaults. Preserve the old directory and do not delete your only copy.
 
-Data created by 2.0 survives same-format view recreation, application restarts and normal replacement updates. Secrets are protected with current-user Windows DPAPI. If a different user cannot decrypt a credential, explicitly replace it in Core, including when the intended replacement is empty. Ordinary saves retain unreadable ciphertext.
+Same-version view recreation, application restarts and frontend resource replacements preserve browser data. A changed application version or missing valid version marker resets only v2's `resources/webview-data-v2/EBWebView` before browser startup, then records the plain version. The separate 1.x `resources/EBWebView` is untouched. Browser-local history and uploaded backgrounds are cleared; settings.json, cores, configuration, icon-cache and logs are retained, and host-saved preferences are restored. Failure blocks browser startup without advancing the marker. Transitioning from the old cache policy also resets once.
+
+Secrets are protected with current-user Windows DPAPI. If a different user cannot decrypt a credential, explicitly replace it in Core, including when the intended replacement is empty. Ordinary saves retain unreadable ciphertext.
 
 ## Requirements and setup
 
@@ -41,6 +43,7 @@ Enable mihomo `external-controller`, or sing-box `experimental.clash_api.externa
 - mihomo upgrades use the running core's `/upgrade`. Built-in sing-box upgrades select only reF1nd Windows amd64v3 builds. Users who want to keep official/other builds should update them manually.
 - Published SHA256 digests are verified. Missing digests require explicit confirmation before candidate execution/replacement. Download, extraction, validation and atomic replacement have defined limits and recovery.
 - Dashboard updates check Releases and open the download page; they do not replace Dashboard.exe automatically.
+- The unreliable TUN sleep-resume auto-restart workaround is withdrawn. Automatic recovery needs a separately implemented and validated replacement; this version does not claim to solve it.
 - No desktop native sing-box API, Tools or Terminal. Browser Clash preview remains available without native privileges.
 - The UI uses `http://127.0.0.1:33291/`; port conflicts are explicit. Secure virtual-host mapping blocks supported remote plaintext APIs, so this version does not disable browser security to work around it.
 

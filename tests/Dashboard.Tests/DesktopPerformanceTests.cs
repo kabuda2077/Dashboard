@@ -51,7 +51,7 @@ public sealed class DesktopPerformanceTests
             {
                 var cold = Stopwatch.StartNew();
                 using var host = new DashboardHost(fixture.Root, Path.Combine(repository.FullName, "resources", "dashboard"), ephemeralPort: true, () => true);
-                using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(fixture.Root));
+                using var form = new MainForm(host, WebViewDataMaintenance.PlanForCurrentContent(fixture.Root, dashboardDirectory: Path.Combine(repository.FullName, "resources", "dashboard")));
                 form.Size = new System.Drawing.Size(1360, 840);
                 form.ShowInTaskbar = false;
                 form.StartPosition = FormStartPosition.Manual;
