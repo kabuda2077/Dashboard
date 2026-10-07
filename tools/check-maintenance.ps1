@@ -3,6 +3,7 @@
 $ErrorActionPreference = 'Stop'
 try {
     & (Join-Path $PSScriptRoot '..\tests\scripts\BuildScripts.Tests.ps1')
+    & (Join-Path $PSScriptRoot '..\tests\scripts\DevelopmentPaths.Tests.ps1')
     & (Join-Path $PSScriptRoot '..\tests\scripts\Documentation.Tests.ps1')
 }
 catch {

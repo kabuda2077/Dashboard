@@ -1,40 +1,28 @@
 namespace Dashboard.Tests;
 
-public sealed class AtomicSettingsWriteTests
+public sealed class AtomicSettingsWriteTests : TemporaryDirectoryTest
 {
     [Fact]
     public void ReplacesCompleteFileAndLeavesNoTemporaryFiles()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        try
-        {
-            var path = Path.Combine(directory, "settings.json");
-            SettingsStore.WriteAtomically(path, "{\"old\":true}");
-            SettingsStore.WriteAtomically(path, "{\"new\":true}");
-            Assert.Equal("{\"new\":true}", File.ReadAllText(path));
-            Assert.Single(Directory.GetFiles(directory));
-        }
-        finally { Directory.Delete(directory, true); }
+        var path = Path.Combine(TestRoot, "settings.json");
+        SettingsStore.WriteAtomically(path, "{\"old\":true}");
+        SettingsStore.WriteAtomically(path, "{\"new\":true}");
+        Assert.Equal("{\"new\":true}", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(TestRoot));
     }
 
     [Fact]
     public void FailedReplacementPreservesPreviousFile()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        try
+        var path = Path.Combine(TestRoot, "settings.json");
+        File.WriteAllText(path, "original");
+        using (var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            var path = Path.Combine(directory, "settings.json");
-            File.WriteAllText(path, "original");
-            using (var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                var error = Record.Exception(() => SettingsStore.WriteAtomically(path, "replacement"));
-                Assert.True(error is IOException or UnauthorizedAccessException, $"Unexpected error: {error}");
-            }
-            Assert.Equal("original", File.ReadAllText(path));
-            Assert.Single(Directory.GetFiles(directory));
+            var error = Record.Exception(() => SettingsStore.WriteAtomically(path, "replacement"));
+            Assert.True(error is IOException or UnauthorizedAccessException, $"Unexpected error: {error}");
         }
-        finally { Directory.Delete(directory, true); }
+        Assert.Equal("original", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(TestRoot));
     }
 }

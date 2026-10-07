@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Dashboard.Tests;
 
-public sealed class HostLogPressureTests
+public sealed class HostLogPressureTests : TemporaryDirectoryTest
 {
     [Fact]
     public async Task BlockedDiskDoesNotBlockProducersAndQueueAndErrorFallbackStayBounded()
@@ -60,7 +60,7 @@ public sealed class HostLogPressureTests
     [Fact]
     public async Task UnwritableDirectoryCountsFailuresAndCanRecoverWithoutRecursiveLogging()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.LogPressure", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var blocked = Path.Combine(root, "logs");
         File.WriteAllText(blocked, "not a directory");
@@ -76,6 +76,6 @@ public sealed class HostLogPressureTests
             writer.Write("test", "recovered");
             Assert.Equal("recovered", File.ReadAllText(Path.Combine(blocked, "test.log")));
         }
-        finally { await queue.StopAsync(); Directory.Delete(root, true); }
+        finally { await queue.StopAsync(); CleanupTestDirectory(); }
     }
 }

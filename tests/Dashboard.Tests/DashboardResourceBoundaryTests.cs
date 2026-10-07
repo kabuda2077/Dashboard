@@ -3,14 +3,14 @@ using System.Net;
 
 namespace Dashboard.Tests;
 
-public sealed class DashboardResourceBoundaryTests
+public sealed class DashboardResourceBoundaryTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task JunctionBelowAResourceRootCannotExposeSiblingFiles(bool icon)
     {
-        var temp = Path.Combine(Path.GetTempPath(), "Dashboard.ResourceTests", Guid.NewGuid().ToString("N"));
+        var temp = TestRoot;
         var root = Path.Combine(temp, "ui");
         var icons = Path.Combine(temp, "icons");
         var outside = Path.Combine(temp, "outside");
@@ -39,7 +39,7 @@ public sealed class DashboardResourceBoundaryTests
         {
             await server.StopAsync();
             if (Directory.Exists(junction)) Directory.Delete(junction);
-            Directory.Delete(temp, true);
+            CleanupTestDirectory();
         }
     }
 }

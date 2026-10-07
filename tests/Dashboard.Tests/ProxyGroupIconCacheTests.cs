@@ -3,12 +3,12 @@ using Dashboard;
 
 namespace Dashboard.Tests;
 
-public sealed class ProxyGroupIconCacheTests
+public sealed class ProxyGroupIconCacheTests : TemporaryDirectoryTest
 {
     [Fact]
     public async Task ExtractsProxyGroupIconsFromYamlOnlyInsideProxyGroups()
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        var tempRoot = TestRoot;
         Directory.CreateDirectory(tempRoot);
         var configPath = Path.Combine(tempRoot, "config.yaml");
         await File.WriteAllTextAsync(configPath, """
@@ -38,7 +38,7 @@ public sealed class ProxyGroupIconCacheTests
     [Fact]
     public async Task StaleExistingCacheScanDoesNotPublishOrMutateMap()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var configPath = Path.Combine(root, "config.yaml");
         const string iconUrl = "https://example.test/a.png";
@@ -58,7 +58,7 @@ public sealed class ProxyGroupIconCacheTests
     [Fact]
     public async Task ExistingCacheScanHonorsCancellationWithoutPublishing()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var configPath = Path.Combine(root, "config.yaml");
         await File.WriteAllTextAsync(configPath, "proxy-groups:\n  - name: A\n    icon: https://example.test/a.png\n");
@@ -76,7 +76,7 @@ public sealed class ProxyGroupIconCacheTests
     [Fact]
     public void MissingConfigProducesNoIconUrls()
     {
-        var icons = ExtractIconUrls(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.yaml"));
+        var icons = ExtractIconUrls(Path.Combine(TestRoot, "missing.yaml"));
 
         Assert.Empty(icons);
     }
@@ -135,7 +135,6 @@ public sealed class ProxyGroupIconCacheTests
         cache.PruneCache();
         Assert.False(File.Exists(expired));
         Assert.Equal(ProxyGroupIconCache.MaxCacheFiles, Directory.GetFiles(cache.CacheDirectory).Length);
-        Directory.Delete(cache.CacheDirectory, true);
     }
 
     [Fact]
@@ -149,11 +148,7 @@ public sealed class ProxyGroupIconCacheTests
         Assert.True(InvokeTryRecordCacheFile(cache, iconUrl, "different.png"));
     }
 
-    private static ProxyGroupIconCache CreateCache()
-    {
-        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"), "icon-cache");
-        return new ProxyGroupIconCache(directory);
-    }
+    private ProxyGroupIconCache CreateCache() => new(Path.Combine(TestRoot, "icon-cache"));
 
     private static string InvokeGetCacheFileName(Uri uri)
     {

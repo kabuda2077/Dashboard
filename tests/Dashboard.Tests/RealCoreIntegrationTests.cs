@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace Dashboard.Tests;
 
-public sealed class RealCoreIntegrationTests
+public sealed class RealCoreIntegrationTests : TemporaryDirectoryTest
 {
     [Fact]
     [Trait("Category", "RealCoreIntegration")]
@@ -11,7 +11,7 @@ public sealed class RealCoreIntegrationTests
     {
         var sources = Environment.GetEnvironmentVariable("DASHBOARD_TEST_CORES_DIR")
             ?? throw new InvalidOperationException("Run PrepareValidationCores.ps1 and set DASHBOARD_TEST_CORES_DIR before explicitly selecting this suite.");
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.RealCores", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var portListener = new TcpListener(IPAddress.Loopback, 0);
         portListener.Start();
@@ -136,7 +136,7 @@ public sealed class RealCoreIntegrationTests
         finally
         {
             await controller.ShutdownAsync(TimeSpan.FromSeconds(10));
-            try { Directory.Delete(root, true); } catch (IOException) { }
+            CleanupTestDirectory();
         }
     }
 }

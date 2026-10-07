@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Dashboard.Tests;
 
-public sealed class SettingsSchemaTests
+public sealed class SettingsSchemaTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData("schemaVersion")]
@@ -19,7 +19,7 @@ public sealed class SettingsSchemaTests
     [InlineData("desktopOptions.minimizeToTray")]
     public void MissingCurrentFormatFieldsAreRejectedWithoutRewritingTheFile(string path)
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.Schema", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        var root = TestRoot;
         var file = Path.Combine(root, "settings.json");
         try
         {
@@ -31,6 +31,6 @@ public sealed class SettingsSchemaTests
             Assert.Throws<AppSettingsLoadException>(() => new SettingsStore(root));
             Assert.Equal(original, File.ReadAllText(file));
         }
-        finally { Directory.Delete(root, true); }
+        finally { CleanupTestDirectory(); }
     }
 }

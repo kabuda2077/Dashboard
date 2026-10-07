@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $script:RepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $script:PipelineDirectory = $PSScriptRoot
+. (Join-Path $PSScriptRoot 'frontend-tools.ps1')
 
 function Invoke-Checked {
     param([string]$Name, [scriptblock]$Action)
@@ -16,17 +17,15 @@ function Invoke-Checked {
 }
 
 function Prepare-Frontend {
-    $nodeVersion = [string](& node.exe --version)
-    if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v24\.') { throw 'Node.js 24 is required. No global toolchain is changed by this script.' }
-    $pnpmVersion = [string](& pnpm.cmd --version)
-    if ($LASTEXITCODE -ne 0 -or $pnpmVersion -ne '11.20.0') { throw 'pnpm 11.20.0 is required.' }
-    $ci = $env:CI
+    Initialize-FrontendTools
+    $ci = $env:CI; $previousPath = $env:PATH
     Push-Location (Join-Path $script:RepositoryRoot 'dashboard-src')
     try {
         $env:CI = 'true'
-        Invoke-Checked 'Frontend dependencies' { pnpm.cmd install --frozen-lockfile --store-dir (Join-Path $script:RepositoryRoot '.tmp\pnpm-store') }
+        $env:PATH = (Split-Path $script:FrontendNode -Parent) + [IO.Path]::PathSeparator + $previousPath
+        Invoke-Checked 'Frontend dependencies' { & $script:FrontendPnpm install --frozen-lockfile }
     }
-    finally { $env:CI = $ci; Pop-Location }
+    finally { $env:CI = $ci; $env:PATH = $previousPath; Pop-Location }
 }
 
 function Test-DesktopSources {
@@ -35,7 +34,7 @@ function Test-DesktopSources {
 
 function Test-FrontendTypes {
     Push-Location (Join-Path $script:RepositoryRoot 'dashboard-src')
-    try { Invoke-Checked 'Frontend types' { node.exe node_modules/vue-tsc/bin/vue-tsc.js --build --force } }
+    try { Invoke-Checked 'Frontend types' { Invoke-FrontendNode node_modules/vue-tsc/bin/vue-tsc.js --build --force } }
     finally { Pop-Location }
 }
 
@@ -44,7 +43,7 @@ function Build-Frontend {
     Push-Location (Join-Path $script:RepositoryRoot 'dashboard-src')
     try {
         $env:FONT = 'misans'; $env:DESKTOP_BUILD = '1'
-        Invoke-Checked 'Desktop UI build' { node.exe node_modules/vite/bin/vite.js build }
+        Invoke-Checked 'Desktop UI build' { Invoke-FrontendNode node_modules/vite/bin/vite.js build }
     }
     finally { $env:FONT = $font; $env:DESKTOP_BUILD = $desktop; Pop-Location }
     $target = Join-Path $script:RepositoryRoot 'resources\dashboard'
@@ -80,7 +79,8 @@ function Test-Host {
     Push-Location $script:RepositoryRoot
     try {
         Invoke-Checked '.NET restore' { dotnet restore tests/Dashboard.Tests/Dashboard.Tests.csproj --nologo }
-        $testArgs = @('test', 'tests/Dashboard.Tests/Dashboard.Tests.csproj', '-c', $Configuration, '--no-restore', '--nologo')
+        $reports = Join-Path $script:RepositoryRoot '.tmp\reports\dotnet'
+        $testArgs = @('test', 'tests/Dashboard.Tests/Dashboard.Tests.csproj', '-c', $Configuration, '--no-restore', '--nologo', '--logger', 'trx;LogFileName=tests.trx', '--results-directory', $reports)
         $filters = @()
         if (-not $IncludeWebViewIntegration) { $filters += 'Category!=WebViewIntegration' }
         if (-not $IncludeSlowIntegration) { $filters += 'Category!=SlowIntegration' }
@@ -102,12 +102,14 @@ function Test-Host {
 }
 
 function Test-Frontend {
-    if (-not (Test-Path (Join-Path $script:RepositoryRoot '.tmp\bridge-fixtures-v2\bootstrap.json'))) { throw 'Production bridge fixture is missing; run host tests first.' }
+    if (-not (Test-Path (Join-Path $script:RepositoryRoot '.tmp\reports\bridge-fixtures-v2\bootstrap.json'))) { throw 'Production bridge fixture is missing; run host tests first.' }
     Push-Location (Join-Path $script:RepositoryRoot 'dashboard-src')
     $previousNodeEnv = $env:NODE_ENV
     try {
         $env:NODE_ENV = 'test'
-        Invoke-Checked 'Frontend behavior and wire tests' { node.exe node_modules/vitest/vitest.mjs run }
+        $reports = Join-Path $script:RepositoryRoot '.tmp\reports\frontend'
+        New-Item -ItemType Directory -Force $reports | Out-Null
+        Invoke-Checked 'Frontend behavior and wire tests' { Invoke-FrontendNode node_modules/vitest/vitest.mjs run --reporter=default --reporter=json --outputFile (Join-Path $reports 'tests.json') }
     }
     finally { $env:NODE_ENV = $previousNodeEnv; Pop-Location }
 }

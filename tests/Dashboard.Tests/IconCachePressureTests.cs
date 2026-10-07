@@ -2,9 +2,9 @@ using System.Net;
 
 namespace Dashboard.Tests;
 
-public sealed class IconCachePressureTests : IDisposable
+public sealed class IconCachePressureTests : TemporaryDirectoryTest
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "Dashboard.IconPressure", Guid.NewGuid().ToString("N"));
+    private string _root => TestRoot;
     private sealed class Handler(Func<HttpRequestMessage, HttpContent> content) : HttpMessageHandler
     {
         public int Calls;
@@ -126,5 +126,4 @@ public sealed class IconCachePressureTests : IDisposable
         Assert.Equal(32, retained.Length);
         Assert.True(retained.Sum(file => file.Length) <= ProxyGroupIconCache.MaxCacheBytes);
     }
-    public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

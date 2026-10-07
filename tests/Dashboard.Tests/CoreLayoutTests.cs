@@ -4,7 +4,7 @@ using System.Windows.Forms;
 
 namespace Dashboard.Tests;
 
-public sealed class CoreLayoutTests
+public sealed class CoreLayoutTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData("zh-CN", "light")]
@@ -15,7 +15,7 @@ public sealed class CoreLayoutTests
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Dashboard.csproj"))) repository = repository.Parent;
         Assert.NotNull(repository);
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.CoreLayout", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var initial = new SettingsStore(root);
         await initial.SavePreferencesAsync(new Dictionary<string, string>
@@ -51,7 +51,7 @@ public sealed class CoreLayoutTests
                         }
                     }
                     await Until(async () => await Script("!!document.querySelector('#core-exe')") == "true");
-                    var evidence = Path.Combine(repository.FullName, ".tmp", "core-layout");
+                    var evidence = TestDirectory.ReportDirectory("core-layout");
                     Directory.CreateDirectory(evidence);
                     // Chinese covers sidebar geometry and desktop minimum; English covers long labels
                     // at wide/narrow widths and the intermediate expanded-sidebar boundary.
@@ -146,10 +146,16 @@ public sealed class CoreLayoutTests
                     await Task.Delay(500); // Finish the user-visible smooth scroll.
                     Assert.Equal("true", await Script("(() => { const r=document.querySelector('#core-settings-connectionSettings').getBoundingClientRect(); return r.top>=document.querySelector('.core-toolbar').getBoundingClientRect().bottom && r.top<innerHeight })()"));
                     await host.ShutdownAsync();
+                    await TestBrowser.DisposeAsync(form);
                     completion.TrySetResult();
                 }
                 catch (Exception error) { completion.TrySetException(error); }
-                finally { form.CloseForApplicationExit(); }
+                finally
+                {
+                    try { await host.ShutdownAsync(); await TestBrowser.DisposeAsync(form); }
+                    catch (Exception error) { completion.TrySetException(error); }
+                    finally { form.CloseForApplicationExit(); }
+                }
             };
             using var timer = new System.Windows.Forms.Timer { Interval = 90000 };
             timer.Tick += (_, _) => { completion.TrySetException(new TimeoutException("Core layout test deadline expired.")); form.CloseForApplicationExit(); };
@@ -158,9 +164,8 @@ public sealed class CoreLayoutTests
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(100));
-        Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
-        try { Directory.Delete(root, true); } catch (IOException) { }
+        try { await completion.Task.WaitAsync(TimeSpan.FromSeconds(100)); }
+        finally { Assert.True(thread.Join(TimeSpan.FromSeconds(30))); }
     }
 
     private const string Measure = """

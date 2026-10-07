@@ -1,11 +1,11 @@
 namespace Dashboard.Tests;
 
-public sealed class MetadataRefreshTests
+public sealed class MetadataRefreshTests : TemporaryDirectoryTest
 {
     [Fact]
     public async Task ExplicitRefreshRetriesFailedUnchangedFilesAndSuccessfulCacheIsReusable()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.MetadataTests", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var exe = Path.Combine(root, "fixture.exe"); var config = Path.Combine(root, "config.yaml");
         await File.WriteAllTextAsync(exe, "test dependency, never executed");
@@ -34,6 +34,6 @@ public sealed class MetadataRefreshTests
             await host.RefreshMetadataAsync(force: true);
             Assert.Equal(3, reads);
         }
-        finally { release.TrySetResult(); await host.ShutdownAsync(); Directory.Delete(root, true); }
+        finally { release.TrySetResult(); await host.ShutdownAsync(); CleanupTestDirectory(); }
     }
 }

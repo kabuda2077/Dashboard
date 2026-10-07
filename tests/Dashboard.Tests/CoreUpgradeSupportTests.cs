@@ -94,7 +94,8 @@ public sealed class CoreUpgradeSupportTests
 
     private sealed class UpgradeFiles : IDisposable
     {
-        public string Root { get; } = Path.Combine(Path.GetTempPath(), "Dashboard.UpgradeTests", Guid.NewGuid().ToString("N"));
+        private readonly TestDirectory _directory = new(nameof(UpgradeFiles));
+        public string Root => _directory.Path;
         public string Core => Path.Combine(Root, "core.exe");
         public string Candidate => Path.Combine(Root, "candidate.exe");
         public string Backup => Path.Combine(Root, "core.bak");
@@ -107,7 +108,7 @@ public sealed class CoreUpgradeSupportTests
             File.WriteAllText(Backup, "retained backup");
         }
 
-        public void Dispose() => Directory.Delete(Root, recursive: true);
+        public void Dispose() => _directory.Dispose();
     }
 
     private sealed class RetryHandler : HttpMessageHandler

@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Dashboard.Tests;
 
-public sealed class HostMessageRouterTests
+public sealed class HostMessageRouterTests : TemporaryDirectoryTest
 {
     private static HostMessageRouter Router(List<string> calls, Func<HostRequest, Task<CommandResult>>? execute = null) => new(new()
     {
@@ -42,7 +42,7 @@ public sealed class HostMessageRouterTests
     [Fact]
     public async Task FileSelectionIsNotAnImplicitSaveOrCoreOperation()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        var directory = TestRoot;
         try
         {
             var store = new SettingsStore(directory);
@@ -65,7 +65,7 @@ public sealed class HostMessageRouterTests
             Assert.Equal("completed", result.Status);
             await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
         }
-        finally { Directory.Delete(directory, true); }
+        finally { CleanupTestDirectory(); }
     }
 
     [Fact]

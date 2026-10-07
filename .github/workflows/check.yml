@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .node-version
 
       - name: Setup pnpm
         # Version comes from the packageManager field in dashboard-src/package.json.

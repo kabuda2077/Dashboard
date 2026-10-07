@@ -144,20 +144,26 @@ public sealed class DesktopPerformanceTests
                         Assert.Empty(api.Errors);
                         samples.Add(new { sample = index, runtime, coldWindowMs = coldMs, firstHeavyPageMs = heavyMs, warmRestoreMs = warm, coldRestoreMs, preferenceWrites, phases, requests = api.Requests.ToDictionary(pair => pair.Key, pair => pair.Value) });
                         await host.ShutdownAsync();
+                        await TestBrowser.DisposeAsync(form);
                         done.TrySetResult();
                     }
                     catch (Exception error) { done.TrySetException(error); await host.ShutdownAsync(); }
-                    finally { form.CloseForApplicationExit(); }
+                    finally
+                    {
+                        try { await host.ShutdownAsync(); await TestBrowser.DisposeAsync(form); }
+                        catch (Exception error) { done.TrySetException(error); }
+                        finally { form.CloseForApplicationExit(); }
+                    }
                 };
                 using var timer = new System.Windows.Forms.Timer { Interval = 150000 };
                 timer.Tick += (_, _) => { done.TrySetException(new TimeoutException("Measurement watchdog.")); form.CloseForApplicationExit(); };
                 timer.Start(); Application.Run(form);
             }) { IsBackground = true };
             thread.SetApartmentState(ApartmentState.STA); thread.Start();
-            await done.Task.WaitAsync(TimeSpan.FromSeconds(160));
-            Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
+            try { await done.Task.WaitAsync(TimeSpan.FromSeconds(160)); }
+            finally { Assert.True(thread.Join(TimeSpan.FromSeconds(30))); }
         }
-        var output = Environment.GetEnvironmentVariable("DASHBOARD_PERFORMANCE_REPORT") ?? Path.Combine(repository.FullName, ".tmp", "performance-v2", "desktop.json");
+        var output = Environment.GetEnvironmentVariable("DASHBOARD_PERFORMANCE_REPORT") ?? Path.Combine(TestDirectory.ReportDirectory("performance-v2"), "desktop.json");
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(new {
             measuredAt = DateTimeOffset.UtcNow, configuration = typeof(MainForm).Assembly.GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "unknown", framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,

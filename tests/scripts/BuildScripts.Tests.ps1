@@ -1,6 +1,8 @@
 #requires -Version 7.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'TestPaths.ps1')
 . (Join-Path $PSScriptRoot '..\..\tools\internal\pipeline.ps1')
+Initialize-FrontendTools
 $script:calls = [Collections.Generic.List[string]]::new()
 function Test-DesktopSources { $script:calls.Add('sources') }
 function Prepare-Frontend { $script:calls.Add('install') }
@@ -26,7 +28,7 @@ $failed = $false
 try { Invoke-Checked 'expected missing executable' { & 'dashboard-no-such-command-for-test' } 2>$null } catch { $failed = $true }
 Assert-True $failed 'A missing executable must not be treated as a successful step.'
 
-$temp = Join-Path ([IO.Path]::GetTempPath()) ('Dashboard.BuildTests.' + [Guid]::NewGuid().ToString('N'))
+$temp = New-TemporaryTestDirectory 'build-scripts'
 $script:RepositoryRoot = $temp
 $publish = Join-Path $temp 'publish'
 New-Item -ItemType Directory -Force (Join-Path $publish 'resources\dashboard\assets') | Out-Null
@@ -76,19 +78,18 @@ try {
     try { Write-ReleaseArchive $publish '../escape.zip' | Out-Null } catch { $failed = $true }
     Assert-True $failed 'An archive path escaped the release directory.'
 }
-finally { if (Test-Path $temp) { Remove-Item -LiteralPath $temp -Recurse -Force } }
+finally { Remove-TemporaryTestDirectory $temp }
 # Verify PowerShell 7's native output handling with actual process redirection.
 # Warnings must remain visible; a failing exit must still stop the pipeline.
 $stderrFixture = Join-Path $PSScriptRoot 'native-stderr.cjs'
 $engine = (Get-Process -Id $PID).Path
-$probe = Join-Path ([IO.Path]::GetTempPath()) ('Dashboard.NativeStderr.' + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Force $probe | Out-Null
+$probe = New-TemporaryTestDirectory 'native-stderr'
 try {
     $wrapper = Join-Path $probe 'probe.ps1'
     $pipelinePath = Join-Path $PSScriptRoot '..\..\tools\internal\pipeline.ps1'
     $code = ". '" + $pipelinePath.Replace("'", "''") + "'`n" +
         "`$PSNativeCommandUseErrorActionPreference = `$true`n" +
-        "Invoke-Checked 'native stderr regression' { node.exe '" + $stderrFixture.Replace("'", "''") + "' }`n"
+        "Invoke-Checked 'native stderr regression' { & '" + $script:FrontendNode.Replace("'", "''") + "' '" + $stderrFixture.Replace("'", "''") + "' }`n"
     [IO.File]::WriteAllText($wrapper, $code)
     $child = Start-Process -FilePath $engine -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapper) -NoNewWindow -RedirectStandardOutput (Join-Path $probe 'stdout.log') -RedirectStandardError (Join-Path $probe 'stderr.log') -PassThru
     $null = $child.Handle
@@ -104,5 +105,11 @@ try {
     Assert-True ($child.ExitCode -ne 0) 'A native failure with multi-line stderr was ignored.'
     Assert-True ([IO.File]::ReadAllText((Join-Path $probe 'failed.stderr.log')) -match 'exit 19') 'Native exit code was not propagated.'
 }
-finally { Remove-Item -LiteralPath $probe -Recurse -Force }
+finally {
+    try {
+        $reports = Get-TestReportDirectory 'build-scripts'
+        Get-ChildItem -LiteralPath $probe -Filter '*.log' -File | Copy-Item -Destination $reports -Force
+    }
+    finally { Remove-TemporaryTestDirectory $probe }
+}
 Write-Host 'Build/release pipeline regression tests passed.' -ForegroundColor Green

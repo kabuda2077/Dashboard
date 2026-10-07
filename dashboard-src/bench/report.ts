@@ -7,7 +7,7 @@ const { resolve } = process.getBuiltinModule('path')
 
 // Evidence only: opt-in microbenchmarks never set wall-clock correctness thresholds.
 export const writeReport = (name: string, inputs: string[], result: unknown) => {
-  const directory = resolve('../.tmp/performance-v2')
+  const directory = resolve('../.tmp/reports/performance-v2')
   mkdirSync(directory, { recursive: true })
   const report = {
     measuredAt: new Date().toISOString(),

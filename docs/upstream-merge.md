@@ -98,7 +98,7 @@ Optional isolated verified-core validation (never user profiles):
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\PrepareValidationCores.ps1
-$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/validation-cores).Path
+$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/tests/fixtures/validation-cores).Path
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
 ```
 
@@ -124,4 +124,4 @@ Validation: current commands, environment, results, unrun/blocked items
 Deferred: condition that would trigger another review
 ```
 
-Keep current baseline and product decisions accurate. Store generated inventories, diffs and run output under `.tmp/` or release verification artifacts, not `docs/`. Revisit old rejections when their premises change, but do not silently approve new product scope.
+Keep current baseline and product decisions accurate. Store generated inventories, diffs and run output under `.tmp/reports/` or release verification artifacts, not `docs/`; disposable upstream checkouts belong under `.tmp/experiments/`. Revisit old rejections when their premises change, but do not silently approve new product scope.

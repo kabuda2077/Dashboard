@@ -7,13 +7,13 @@ using Microsoft.Web.WebView2.WinForms;
 namespace Dashboard.Tests;
 
 [Collection("Release WebView")]
-public sealed class WebViewResetIntegrationTests
+public sealed class WebViewResetIntegrationTests : TemporaryDirectoryTest
 {
     [Fact]
     [Trait("Category", "WebViewIntegration")]
     public async Task VersionUpgradeResetsV2BrowserStorageWithoutTouchingTheStableProfile()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.WebViewReset", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         var resources = Path.Combine(root, "resources");
         var assets = Path.Combine(resources, "dashboard");
         var userDataFolder = Path.Combine(resources, "webview-data-v2");
@@ -121,7 +121,7 @@ public sealed class WebViewResetIntegrationTests
                         var repository = new DirectoryInfo(AppContext.BaseDirectory);
                         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Dashboard.csproj"))) repository = repository.Parent;
                         Assert.NotNull(repository);
-                        var evidence = Path.Combine(repository.FullName, ".tmp", "webview-reset");
+                        var evidence = TestDirectory.ReportDirectory("webview-reset");
                         Directory.CreateDirectory(evidence);
                         File.WriteAllText(Path.Combine(evidence, "result.json"), JsonSerializer.Serialize(new
                         {
@@ -155,7 +155,7 @@ public sealed class WebViewResetIntegrationTests
         finally
         {
             Assert.True(thread.Join(TimeSpan.FromSeconds(15)), "WebView test thread did not exit.");
-            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+            CleanupTestDirectory();
         }
     }
 }

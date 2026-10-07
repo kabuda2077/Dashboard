@@ -1,8 +1,8 @@
 namespace Dashboard.Tests;
 
-public sealed class CoreLifecycleBoundaryTests : IDisposable
+public sealed class CoreLifecycleBoundaryTests : TemporaryDirectoryTest
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+    private string _directory => TestRoot;
     private static HostRequest Save(CoreProfile profile, long revision = 0) => new()
     {
         Type = "saveProfile", CoreType = CoreKind.Mihomo, ExpectedRevision = revision,
@@ -113,5 +113,4 @@ public sealed class CoreLifecycleBoundaryTests : IDisposable
         await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
     }
 
-    public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 }

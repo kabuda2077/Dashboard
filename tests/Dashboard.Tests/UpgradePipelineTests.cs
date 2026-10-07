@@ -5,9 +5,9 @@ using System.Text.Json;
 
 namespace Dashboard.Tests;
 
-public sealed class UpgradePipelineTests : IDisposable
+public sealed class UpgradePipelineTests : TemporaryDirectoryTest
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "Dashboard.UpgradePipeline", Guid.NewGuid().ToString("N"));
+    private string _root => TestRoot;
     private sealed class Handler(string release, byte[] archive) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
@@ -76,5 +76,4 @@ public sealed class UpgradePipelineTests : IDisposable
             Assert.Equal(0, stops); Assert.Equal("old-core", File.ReadAllText(core));
         }
     }
-    public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

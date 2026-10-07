@@ -3,12 +3,12 @@ using System.Reflection;
 
 namespace Dashboard.Tests;
 
-public sealed class CoreRuntimeIdentityTests
+public sealed class CoreRuntimeIdentityTests : TemporaryDirectoryTest
 {
     [Fact]
     public async Task RuntimeEpochSeparatesStopAndPidReuseAtTheSameEndpoint()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+        var directory = TestRoot;
         var store = new SettingsStore(directory);
         using var observed = Process.GetCurrentProcess();
         // This test never terminates the observed process, including on assertion failure.
@@ -31,7 +31,7 @@ public sealed class CoreRuntimeIdentityTests
         {
             current.SetValue(process, null); Publish();
             await lifecycle.ShutdownAsync(TimeSpan.FromSeconds(2));
-            Directory.Delete(directory, true);
+            CleanupTestDirectory();
         }
     }
 }

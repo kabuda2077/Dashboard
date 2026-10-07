@@ -5,13 +5,13 @@ using System.Windows.Forms;
 
 namespace Dashboard.Tests;
 
-public sealed class WebViewResourceIntegrationTests
+public sealed class WebViewResourceIntegrationTests : TemporaryDirectoryTest
 {
     [Fact]
     [Trait("Category", "WebViewIntegration")]
     public async Task SecureVirtualHostBlocksCurrentlySupportedPlainHttpRemoteApis()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.WebView.Tests", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         var content = Path.Combine(root, "ui");
         Directory.CreateDirectory(content);
         await File.WriteAllTextAsync(Path.Combine(content, "index.html"), """
@@ -50,13 +50,24 @@ public sealed class WebViewResourceIntegrationTests
                     view.CoreWebView2.WebMessageReceived += async (_, args) =>
                     {
                         if (args.TryGetWebMessageAsString() == "loaded") { stage = "script loaded"; return; }
-                        await Task.Delay(150);
-                        completion.TrySetResult(blockedReason);
-                        form.Close();
+                        try
+                        {
+                            await Task.Delay(150);
+                            await TestBrowser.DisposeAsync(form);
+                            completion.TrySetResult(blockedReason);
+                        }
+                        catch (Exception error) { completion.TrySetException(error); }
+                        finally { form.Close(); }
                     };
                     view.CoreWebView2.Navigate("https://appassets.example/index.html");
                 }
-                catch (Exception error) { completion.TrySetException(error); form.Close(); }
+                catch (Exception error)
+                {
+                    completion.TrySetException(error);
+                    try { await TestBrowser.DisposeAsync(form); }
+                    catch (Exception cleanupError) { completion.TrySetException(cleanupError); }
+                    finally { form.Close(); }
+                }
             };
             using var timer = new System.Windows.Forms.Timer { Interval = 25000 };
             timer.Tick += (_, _) => { completion.TrySetException(new TimeoutException($"WebView resource probe did not complete: {stage}.")); form.Close(); };
@@ -72,9 +83,8 @@ public sealed class WebViewResourceIntegrationTests
         }
         finally
         {
-            thread.Join(TimeSpan.FromSeconds(5));
-            // WebView subprocesses may release profile files asynchronously. Never delete an unrelated profile.
-            try { Directory.Delete(root, true); } catch (IOException) { }
+            Assert.True(thread.Join(TimeSpan.FromSeconds(30)));
+            CleanupTestDirectory();
         }
     }
 }

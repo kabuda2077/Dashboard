@@ -4,7 +4,7 @@ using System.Windows.Forms;
 
 namespace Dashboard.Tests;
 
-public sealed class DesktopSmokeTests
+public sealed class DesktopSmokeTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData("en-US", "light", 1360, 840)]
@@ -15,7 +15,7 @@ public sealed class DesktopSmokeTests
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Dashboard.csproj"))) repository = repository.Parent;
         Assert.NotNull(repository);
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.DesktopSmoke", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var initial = new SettingsStore(root);
         await initial.SavePreferencesAsync(new Dictionary<string, string>
@@ -98,15 +98,21 @@ public sealed class DesktopSmokeTests
                         && !form.IsTrayTransitionInProgress && await Script("!!document.querySelector('#core-exe')") == "true");
                     Assert.Equal("http://127.0.0.1:19191", JsonSerializer.Deserialize<string>(await Script("document.querySelector('#core-api').value")));
                     await Task.Delay(300);
-                    var screenshots = Path.Combine(repository.FullName, ".tmp", "desktop-screenshots");
+                    var screenshots = TestDirectory.ReportDirectory("desktop-screenshots");
                     Directory.CreateDirectory(screenshots);
                     await using (var image = File.Create(Path.Combine(screenshots, $"{language}-{theme}-{width}.png")))
                         await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
                     await host.ShutdownAsync();
+                    await TestBrowser.DisposeAsync(form);
                     completion.TrySetResult();
                 }
                 catch (Exception error) { completion.TrySetException(error); }
-                finally { form.CloseForApplicationExit(); }
+                finally
+                {
+                    try { await host.ShutdownAsync(); await TestBrowser.DisposeAsync(form); }
+                    catch (Exception error) { completion.TrySetException(error); }
+                    finally { form.CloseForApplicationExit(); }
+                }
             };
             using var timer = new System.Windows.Forms.Timer { Interval = 120000 };
             timer.Tick += (_, _) => { completion.TrySetException(new TimeoutException("Production window smoke deadline expired.")); form.CloseForApplicationExit(); };
@@ -115,8 +121,7 @@ public sealed class DesktopSmokeTests
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(130));
-        Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
-        try { Directory.Delete(root, true); } catch (IOException) { }
+        try { await completion.Task.WaitAsync(TimeSpan.FromSeconds(130)); }
+        finally { Assert.True(thread.Join(TimeSpan.FromSeconds(30))); }
     }
 }

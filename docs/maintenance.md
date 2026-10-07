@@ -16,7 +16,8 @@
 ## 验证与产物
 
 - 日常修改先跑相关测试；文档/工具修改运行 `pwsh -NoProfile -File .\tools\check-maintenance.ps1`。最终交付直接运行 Release 入口，由它验证本次输入，不先重复完整 Check。
-- `.tmp/` 放临时复现、日志、截图和性能报告；`artifacts/releases/` 只放 ZIP，`artifacts/verification/<包名>/` 放对应输入清单和验证摘要。不把运行产物复制进 `docs/`。
+- `.tmp/tests/` 放带独立运行/用例标识的测试数据（下载的测试核心夹具在 `tests/fixtures/` 子目录）；`.tmp/experiments/` 放临时调查和验证副本；`.tmp/reports/` 放日志、截图、wire fixture 和性能报告。共享测试目录辅助类负责清理，WebView 测试先等待自己创建的浏览器退出；失败有限重试并记录路径，不静默遗留。`artifacts/releases/` 只放 ZIP，`artifacts/verification/<包名>/` 放对应输入清单和验证摘要，历史候选放 `artifacts/archive/`。不把运行产物复制进 `docs/`。应用只编译 `src/**/*.cs`，临时目录、归档和依赖缓存必须排除在默认项目项之外，不能仅依赖 .gitignore。
+- pnpm store/cache 使用正常用户配置，脚本不注入 store 覆盖或固定机器路径。工具版本分别由 `.node-version` 与前端 `packageManager` 声明；Node runtime 由 pnpm 共享缓存管理，不维护 `.tmp/toolchain`。生产程序的系统临时目录、核心同盘暂存和备份不随测试目录调整。
 - 测试代码存在不代表本次已经执行；成功结果只覆盖实际输入、环境和执行范围，不代表当前分支没有其他回归。
 - 集成测试按需显式启用，参数见 README；实际筛选规则见 [pipeline.ps1](../tools/internal/pipeline.ps1)。在线升级测试 `OnlineUpgradeIntegration` 被常规 Check/Release 排除，需要单独选择并准备隔离核心；`alreadyLatest` 不证明实际下载并替换了新版。
 - 性能比较使用同环境、同负载，并验证窗口真正恢复可用。测试宿主内存、离屏渲染和短时压力测试不能替代应用内存、物理显示器帧率或长期泄漏验证。

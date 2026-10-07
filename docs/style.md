@@ -57,6 +57,6 @@ Current shared CSS is in `assets/styles/components/`; `dashboard-desktop.css` is
 
 Use real component interaction tests and a small real WebView visual matrix. At minimum inspect Core/Settings, a proxy list, connection/log/rule tables, overview charts, expanded/collapsed sidebar, light/dark and high DPI for changes affecting those areas.
 
-CoreLayoutTests uses the production WebView to check actual toolbar/card edges, column widths, field placement, output surfaces, internal scroll and window-control separation. It exercises Chinese/light and English/dark at several widths and sidebar states, including a test-only window below the production desktop minimum. Screenshots in `.tmp/core-layout/` support visual inspection; they do not prove physical DPI, touch or multiple-monitor acceptance.
+CoreLayoutTests uses the production WebView to check actual toolbar/card edges, column widths, field placement, output surfaces, internal scroll and window-control separation. It exercises Chinese/light and English/dark at several widths and sidebar states, including a test-only window below the production desktop minimum. Screenshots in `.tmp/reports/core-layout/` support visual inspection; they do not prove physical DPI, touch or multiple-monitor acceptance.
 
 A selector existing in CSS is not a visual pass. A renamed renderer is not a failure if behavior and appearance are preserved. Record intentional default/product changes with a reason and the relevant owner approval rather than freezing implementation details indefinitely.

@@ -132,18 +132,25 @@ public sealed class DesktopDataIntegrationTests
                         await Until(async () => await Script("document.documentElement.outerHTML.includes(" + JsonSerializer.Serialize(image) + ")") == "true");
                         Assert.True(await form.FlushPreferencesAsync());
                         Assert.Empty(api.Errors);
-                        await host.ShutdownAsync(); done.TrySetResult();
+                        await host.ShutdownAsync();
+                        await TestBrowser.DisposeAsync(form);
+                        done.TrySetResult();
                     }
                     catch (Exception error) { done.TrySetException(error); await host.ShutdownAsync(); }
-                    finally { form.CloseForApplicationExit(); }
+                    finally
+                    {
+                        try { await host.ShutdownAsync(); await TestBrowser.DisposeAsync(form); }
+                        catch (Exception error) { done.TrySetException(error); }
+                        finally { form.CloseForApplicationExit(); }
+                    }
                 };
                 using var watchdog = new System.Windows.Forms.Timer { Interval = 120000 };
                 watchdog.Tick += (_, _) => { done.TrySetException(new TimeoutException("Persistent-data watchdog.")); form.CloseForApplicationExit(); };
                 watchdog.Start(); Application.Run(form);
             }) { IsBackground = true };
             thread.SetApartmentState(ApartmentState.STA); thread.Start();
-            await done.Task.WaitAsync(TimeSpan.FromSeconds(130));
-            Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
+            try { await done.Task.WaitAsync(TimeSpan.FromSeconds(130)); }
+            finally { Assert.True(thread.Join(TimeSpan.FromSeconds(30))); }
         }
     }
 }

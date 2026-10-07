@@ -2,13 +2,13 @@ using System.Windows.Forms;
 
 namespace Dashboard.Tests;
 
-public sealed class SettingsResponsivenessTests
+public sealed class SettingsResponsivenessTests : TemporaryDirectoryTest
 {
     [Fact]
     [Trait("Category", "WebViewIntegration")]
     public async Task SlowPersistenceKeepsTheWindowsMessageLoopResponsiveAndDoesNotPublishBeforeCommit()
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.SlowSettings", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         using var release = new ManualResetEventSlim();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,6 +47,6 @@ public sealed class SettingsResponsivenessTests
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA); thread.Start();
         try { await complete.Task.WaitAsync(TimeSpan.FromSeconds(15)); Assert.True(thread.Join(TimeSpan.FromSeconds(5))); }
-        finally { release.Set(); if (Directory.Exists(root)) Directory.Delete(root, true); }
+        finally { release.Set(); Assert.True(thread.Join(TimeSpan.FromSeconds(5))); CleanupTestDirectory(); }
     }
 }

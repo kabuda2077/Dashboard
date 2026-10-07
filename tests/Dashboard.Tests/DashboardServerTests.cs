@@ -3,7 +3,7 @@ using Dashboard;
 
 namespace Dashboard.Tests;
 
-public sealed class DashboardServerTests
+public sealed class DashboardServerTests : TemporaryDirectoryTest
 {
     [Fact]
     public async Task StaticRequestsCannotTraverseOutsideDashboardRoot()
@@ -108,10 +108,5 @@ public sealed class DashboardServerTests
         Assert.Equal(HttpStatusCode.NotModified, second.StatusCode);
     }
 
-    private static string CreateTempDirectory()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private string CreateTempDirectory() => TestRoot;
 }

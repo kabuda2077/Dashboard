@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$dest = Join-Path $root '.tmp\validation-cores'
+$dest = Join-Path $root '.tmp\tests\fixtures\validation-cores'
 New-Item -ItemType Directory -Force $dest | Out-Null
 $headers = @{ 'User-Agent' = 'Dashboard-Integration-Validation' }
 $sources = @(

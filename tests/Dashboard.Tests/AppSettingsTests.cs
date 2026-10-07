@@ -2,9 +2,9 @@ using System.Text.Json;
 
 namespace Dashboard.Tests;
 
-public sealed class AppSettingsTests : IDisposable
+public sealed class AppSettingsTests : TemporaryDirectoryTest
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), "Dashboard.Tests", Guid.NewGuid().ToString("N"));
+    private string _directory => TestRoot;
     private sealed class Protector : ISecretProtector
     {
         public int Writes;
@@ -120,5 +120,4 @@ public sealed class AppSettingsTests : IDisposable
     public void ApiUrlsCannotContainCredentialsOrNonWebProtocols(string url) =>
         Assert.Throws<ArgumentException>(() => SettingsStore.NormalizeApiUrl(url));
 
-    public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 }

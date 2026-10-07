@@ -1,6 +1,6 @@
 namespace Dashboard.Tests;
 
-public sealed class UpgradeConfirmationTests
+public sealed class UpgradeConfirmationTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData(null, null, "confirmationExpired")]
@@ -8,7 +8,7 @@ public sealed class UpgradeConfirmationTests
     [InlineData(0L, 1L, "staleRuntime")]
     public async Task StaleOrUnboundConfirmationCannotReachAnUpgrade(long? revision, long? epoch, string code)
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.Confirmation", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         var store = new SettingsStore(root);
         using var process = new CoreProcessManager();
         using var controller = new CoreLifecycleController(store, process, () => true);
@@ -21,6 +21,6 @@ public sealed class UpgradeConfirmationTests
             Assert.False(process.IsRunning);
             Assert.Equal(0, store.Current.Profiles.SingBox.Revision);
         }
-        finally { await controller.ShutdownAsync(TimeSpan.FromSeconds(2)); Directory.Delete(root, true); }
+        finally { await controller.ShutdownAsync(TimeSpan.FromSeconds(2)); CleanupTestDirectory(); }
     }
 }

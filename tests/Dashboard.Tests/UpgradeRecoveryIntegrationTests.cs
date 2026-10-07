@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace Dashboard.Tests;
 
-public sealed class UpgradeRecoveryIntegrationTests
+public sealed class UpgradeRecoveryIntegrationTests : TemporaryDirectoryTest
 {
     private sealed class ReleaseHandler(byte[] archive) : HttpMessageHandler
     {
@@ -32,7 +32,7 @@ public sealed class UpgradeRecoveryIntegrationTests
     [Trait("Category", "RealCoreIntegration")]
     public async Task VersionValidCandidateCommitsOrRestoresExactOriginalAndRunningApi(int exitCode)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), "Dashboard.CandidateFixture", Guid.NewGuid().ToString("N"));
+        var temporary = TestRoot;
         Directory.CreateDirectory(temporary);
         try
         {
@@ -93,6 +93,6 @@ public sealed class UpgradeRecoveryIntegrationTests
             if (exitCode >= 0) Assert.Contains("intentional candidate failure", fixture.Process.GetLogTail(16000));
             Assert.All(Directory.GetFiles(Path.Combine(fixture.Root, "backups")), backup => Assert.Equal(original, SHA256.HashData(File.ReadAllBytes(backup))));
         }
-        finally { Directory.Delete(temporary, true); }
+        finally { CleanupTestDirectory(); }
     }
 }

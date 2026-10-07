@@ -3,7 +3,7 @@ using System.Windows.Forms;
 
 namespace Dashboard.Tests;
 
-public sealed class CoreSetupLayoutTests
+public sealed class CoreSetupLayoutTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData("zh-CN", "light")]
@@ -14,7 +14,7 @@ public sealed class CoreSetupLayoutTests
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Dashboard.csproj"))) repository = repository.Parent;
         Assert.NotNull(repository);
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.SetupLayout", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         var initial = new SettingsStore(root);
         await initial.SavePreferencesAsync(new Dictionary<string, string>
         {
@@ -43,7 +43,7 @@ public sealed class CoreSetupLayoutTests
                     Assert.False(host.Settings.SetupCompleted);
                     Assert.False(host.IsRunning);
                     Assert.Equal("true", await Script("(() => { const d=document.querySelector('[data-testid=setup-guide]'); return d.getAttribute('role')==='dialog' && d.open && d.matches(':modal') && d.querySelectorAll('[aria-pressed]').length===2 && !document.querySelector('.core-toolbar select') && d.querySelectorAll('#core-exe,#core-config,#core-api,#core-secret').length===4 })()"));
-                    var evidence = Path.Combine(repository.FullName, ".tmp", "core-chrome");
+                    var evidence = TestDirectory.ReportDirectory("core-chrome");
                     Directory.CreateDirectory(evidence);
                     foreach (var kind in new[] { "mihomo", "sing-box" })
                     {
@@ -57,17 +57,22 @@ public sealed class CoreSetupLayoutTests
                     Assert.False(host.IsRunning);
                     Assert.False(host.Settings.SetupCompleted);
                     await host.ShutdownAsync();
+                    await TestBrowser.DisposeAsync(form);
                     completion.TrySetResult();
                 }
                 catch (Exception error) { completion.TrySetException(error); }
-                finally { form.CloseForApplicationExit(); }
+                finally
+                {
+                    try { await host.ShutdownAsync(); await TestBrowser.DisposeAsync(form); }
+                    catch (Exception error) { completion.TrySetException(error); }
+                    finally { form.CloseForApplicationExit(); }
+                }
             };
             Application.Run(form);
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(40));
-        Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
-        try { Directory.Delete(root, true); } catch (IOException) { }
+        try { await completion.Task.WaitAsync(TimeSpan.FromSeconds(40)); }
+        finally { Assert.True(thread.Join(TimeSpan.FromSeconds(30))); }
     }
 }

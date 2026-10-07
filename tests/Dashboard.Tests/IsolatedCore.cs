@@ -6,7 +6,8 @@ namespace Dashboard.Tests;
 
 internal sealed class IsolatedCore : IAsyncDisposable
 {
-    public string Root { get; } = Path.Combine(Path.GetTempPath(), "Dashboard.IsolatedCore", Guid.NewGuid().ToString("N"));
+    private readonly TestDirectory _directory = new(nameof(IsolatedCore));
+    public string Root => _directory.Path;
     public SettingsStore Store { get; }
     public CoreProcessManager Process { get; } = new();
     public CoreLifecycleController Controller { get; }
@@ -68,6 +69,6 @@ internal sealed class IsolatedCore : IAsyncDisposable
     {
         await Controller.ShutdownAsync(TimeSpan.FromSeconds(10));
         Controller.Dispose(); Process.Dispose();
-        try { Directory.Delete(Root, true); } catch (IOException) { }
+        await _directory.DisposeAsync();
     }
 }

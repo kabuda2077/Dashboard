@@ -2,7 +2,7 @@ using System.Net;
 
 namespace Dashboard.Tests;
 
-public sealed class UpgradeDownloadTests
+public sealed class UpgradeDownloadTests : TemporaryDirectoryTest
 {
     private sealed class SlowStream(int delayMs) : Stream
     {
@@ -39,7 +39,7 @@ public sealed class UpgradeDownloadTests
     [InlineData("caller")]
     public async Task SlowBodiesCannotOutliveOverallIdleOrCallerBudgets(string limit)
     {
-        var root = Path.Combine(Path.GetTempPath(), "Dashboard.DownloadTests", Guid.NewGuid().ToString("N"));
+        var root = TestRoot;
         Directory.CreateDirectory(root);
         var archive = Path.Combine(root, "release.zip");
         using var stream = new SlowStream(limit == "idle" ? 30000 : 10);
@@ -57,6 +57,6 @@ public sealed class UpgradeDownloadTests
             File.Delete(archive);
             Assert.False(File.Exists(archive));
         }
-        finally { Directory.Delete(root, true); }
+        finally { CleanupTestDirectory(); }
     }
 }

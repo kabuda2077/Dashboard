@@ -1,11 +1,8 @@
 namespace Dashboard.Tests;
 
-public sealed class HostLogFileWriterTests : IDisposable
+public sealed class HostLogFileWriterTests : TemporaryDirectoryTest
 {
-    private readonly string _directory = Path.Combine(
-        Path.GetTempPath(),
-        "Dashboard.Tests",
-        Guid.NewGuid().ToString("N"));
+    private string _directory => TestRoot;
 
     [Fact]
     public void RotatesLogAndRetainsConfiguredArchives()
@@ -34,11 +31,4 @@ public sealed class HostLogFileWriterTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_directory, "host-bridge.log")));
     }
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_directory))
-        {
-            Directory.Delete(_directory, recursive: true);
-        }
-    }
 }

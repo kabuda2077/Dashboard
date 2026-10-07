@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Dashboard.Tests;
 
-public sealed class TunMetadataTests
+public sealed class TunMetadataTests : TemporaryDirectoryTest
 {
     [Theory]
     [InlineData("{}", false)]
@@ -25,7 +25,7 @@ public sealed class TunMetadataTests
     [InlineData("not-json", null)]
     public void LocalConfigDistinguishesDisabledFromUnknown(string document, bool? expected)
     {
-        var path = Path.Combine(Path.GetTempPath(), "Dashboard.Tun." + Guid.NewGuid().ToString("N") + ".json");
+        var path = Path.Combine(TestRoot, "tun.json");
         try
         {
             File.WriteAllText(path, document);

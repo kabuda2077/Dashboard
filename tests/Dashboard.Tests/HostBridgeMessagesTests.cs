@@ -26,7 +26,7 @@ public sealed class HostBridgeMessagesTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Dashboard.csproj"))) directory = directory.Parent;
         Assert.NotNull(directory);
-        var output = Path.Combine(directory.FullName, ".tmp", "bridge-fixtures-v2");
+        var output = TestDirectory.ReportDirectory("bridge-fixtures-v2");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "bootstrap.json"), json);
         File.WriteAllText(Path.Combine(output, "stopped.json"), HostBridgeJson.Serialize(HostOutboundMessage.Runtime(new() { CoreType = CoreKind.Mihomo, ProcessId = null, RuntimeEpoch = 2 })));

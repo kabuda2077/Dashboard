@@ -5,6 +5,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefaultItemExcludes>$(DefaultItemExcludes);.tmp\**;artifacts\**;dashboard-src\node_modules\**;dashboard-src\dist\**</DefaultItemExcludes>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>resources\app.ico</ApplicationIcon>
     <AssemblyName>Dashboard</AssemblyName>
@@ -28,7 +30,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="tests\**\*.cs" />
+    <Compile Include="src\**\*.cs" />
     <None Remove="tests\**\*" />
   </ItemGroup>
 

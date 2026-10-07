@@ -53,7 +53,9 @@ mihomo 必须配置 `external-controller`；sing-box 使用 `experimental.clash_
 
 ## 开发与验证
 
-需要 **PowerShell 7**（`pwsh`）、.NET 9 SDK、Node.js **24**、pnpm **11.20.0**。构建和测试脚本只支持 PowerShell 7；运行打包后的 Dashboard 不需要 PowerShell。两个应用入口按目的二选一，不要先完整 Check 再重复 Release：
+需要 **PowerShell 7**（`pwsh`）、.NET 9 SDK 和可用的 pnpm 启动器。Node **24** 的确切版本由根目录 `.node-version` 声明，pnpm **11.20.0** 由 `dashboard-src/package.json` 的 `packageManager` 声明。脚本在前端目录检查并使用这些版本；当前 Node 不匹配时，通过 pnpm 的共享 runtime 缓存解析对应版本，不改全局 Node 或额外创建项目工具链副本。安装保留 `--frozen-lockfile`，store/cache 遵循 pnpm 的正常配置，不覆盖为项目路径。脚本会显示实际工具路径、版本和 store。
+
+构建和测试脚本只支持 PowerShell 7；运行打包后的 Dashboard 不需要 PowerShell。两个应用入口按目的二选一，不要先完整 Check 再重复 Release：
 
 ```powershell
 # 安装依赖、类型检查、构建、宿主测试及真实 JSON fixture、前端测试
@@ -65,13 +67,15 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\create-release.ps1
 
 发布目录 `artifacts/releases/` 只放 ZIP；每个包的输入清单与验证摘要放在 `artifacts/verification/<包名>/`，不需要复制到安装目录。相同包名可直接重新生成，不再为每次试编译创建新名称。历史候选可归档到 `artifacts/archive/`。
 
-日常修改先运行相关测试；前端全套很短，可直接运行。需要前端 wire fixture 时先运行宿主测试。UI 修改加跑相关 WebView 测试即可；定稿后再执行一次 Release。构建工具和文档修改运行 `pwsh -NoProfile -File .\tools\check-maintenance.ps1`；CI 同时运行此入口和普通 Check，应用构建不重复执行这些维护检查。
+项目自己创建的测试目录统一在 `.tmp/tests/<运行标识>/<用例标识>/`，临时调查和验证副本放 `.tmp/experiments/`，日志、截图、wire fixture 等放 `.tmp/reports/`。测试目录由共享辅助类管理，先释放自建浏览器/进程，再有限重试清理；清理失败会记录路径并报告错误。生产程序的系统 TEMP、核心同盘替换暂存和备份策略不在此规则内，也不修改全局 TEMP/TMP。
+
+日常修改先运行相关测试；手动运行前端命令时先选择 `.node-version` 对应的 Node。需要前端 wire fixture 时先运行宿主测试。UI 修改加跑相关 WebView 测试即可；定稿后再执行一次 Release。构建工具和文档修改运行 `pwsh -NoProfile -File .\tools\check-maintenance.ps1`；CI 同时运行此入口和普通 Check，应用构建不重复执行这些维护检查。
 
 `check.ps1 -IncludeWebViewIntegration` 增加真实 WebView/生产窗口测试，不包含真实等待60秒的空闲回收测试。增加 `-IncludeSlowIntegration` 才运行该慢测试（必须同时启用 WebView）。真实核心验证需显式准备只用于测试的核心：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\PrepareValidationCores.ps1
-$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/validation-cores).Path
+$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/tests/fixtures/validation-cores).Path
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
 ```
 
@@ -79,9 +83,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewI
 
 准备脚本仅下载并校验 GitHub 发布摘要，不更改系统配置。真实核心测试使用临时目录、无 TUN/代理监听的最小配置，不接管用户核心。
 
-在上面的完整检查命令中增加 `-IncludePerformanceIntegration`，可运行独立测试宿主中的真实 WebView 固定负载测量（3 轮，100/1000/10000 条合成连接）。报告写入 `.tmp/performance-v2/desktop.json`；它包含测试宿主开销，不是物理显示器帧率或纯 Dashboard.exe 内存。局部计算基准可在 `dashboard-src/` 下运行 `node.exe node_modules/vitest/vitest.mjs run --config bench/vitest.config.ts`。
+在上面的完整检查命令中增加 `-IncludePerformanceIntegration`，可运行独立测试宿主中的真实 WebView 固定负载测量（3 轮，100/1000/10000 条合成连接）。报告写入 `.tmp/reports/performance-v2/desktop.json`；它包含测试宿主开销，不是物理显示器帧率或纯 Dashboard.exe 内存。局部计算基准可在 `dashboard-src/` 下运行 `node.exe node_modules/vitest/vitest.mjs run --config bench/vitest.config.ts`。
 
-内部构建/图标/资源工具在 `tools/internal/`，无需手工拼接执行。前端资源从 `dashboard-src/dist/` 生成到 `resources/dashboard/`，不入 Git；没有 UI 资源时 .NET 构建会明确失败。前端 wire 测试读取本次 .NET 测试生成的 `.tmp/bridge-fixtures-v2/`，不要用旧 fixture 冒充当前协议验证。
+内部构建/图标/资源工具在 `tools/internal/`，无需手工拼接执行。前端资源从 `dashboard-src/dist/` 生成到 `resources/dashboard/`，不入 Git；没有 UI 资源时 .NET 构建会明确失败。前端 wire 测试读取本次 .NET 测试生成的 `.tmp/reports/bridge-fixtures-v2/`，不要用旧 fixture 冒充当前协议验证。
 
 自动检查和 ZIP 成功不等于手工系统场景全部通过；仍需补齐的验收边界见[维护说明](docs/maintenance.md)。项目版本、InformationalVersion 和正式 Release tag 必须一致。
 

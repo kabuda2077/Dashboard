@@ -37,7 +37,7 @@ public sealed class LiveUpgradeIntegrationTests
         {
             var repository = new DirectoryInfo(AppContext.BaseDirectory);
             while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Dashboard.csproj"))) repository = repository.Parent;
-            var directory = Path.Combine(repository!.FullName, ".tmp", "online-upgrade"); Directory.CreateDirectory(directory);
+            var directory = TestDirectory.ReportDirectory("online-upgrade"); Directory.CreateDirectory(directory);
             await File.WriteAllTextAsync(Path.Combine(directory, AppSettings.WireKind(kind) + ".json"), JsonSerializer.Serialize(new {
                 checkedAt = DateTimeOffset.UtcNow, kind = AppSettings.WireKind(kind), before, after, beforeHash, afterHash,
                 result, error, isolated = true, noTunOrProxyListeners = true,

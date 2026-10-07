@@ -7,9 +7,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-if (-not $UpstreamRoot) { $UpstreamRoot = Join-Path $root '.tmp\upstream-audit-v3.26.0' }
+if (-not $UpstreamRoot) { $UpstreamRoot = Join-Path $root '.tmp\experiments\upstream-audit-v3.26.0' }
 $UpstreamRoot = [IO.Path]::GetFullPath($UpstreamRoot)
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root '.tmp\upstream-current' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root '.tmp\reports\upstream-current' }
 $revision = [string](git -C $UpstreamRoot rev-parse HEAD)
 if ($LASTEXITCODE -or $revision -ne 'b31d05f42702b121e0b17eab1e3697d5f1d6db8d') { throw 'The audit requires the exact reviewed upstream SHA.' }
 if (@(git -C $UpstreamRoot status --porcelain).Count) { throw 'The upstream worktree must be clean.' }
