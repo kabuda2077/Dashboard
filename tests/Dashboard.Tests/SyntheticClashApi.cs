@@ -20,6 +20,8 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
     public int Messages => Volatile.Read(ref _messages);
     public int Rows { get => Volatile.Read(ref _rows); set => Volatile.Write(ref _rows, value); }
     public string Origin { get; }
+    public int ConfigStatusCode { get; set; } = 200;
+    public object? ConfigResponse { get; set; }
     public readonly ConcurrentDictionary<string, int> Requests = new();
     public readonly ConcurrentQueue<string> Errors = new();
 
@@ -78,7 +80,8 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
             {
                 var body = JsonSerializer.SerializeToUtf8Bytes(Response(path, 1));
                 var cors = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Authorization, Content-Type\r\nAccess-Control-Allow-Methods: GET, PATCH, POST, PUT, DELETE, OPTIONS\r\n";
-                await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\n{cors}Content-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
+                var status = path == "/configs" && parts[0] != "OPTIONS" ? ConfigStatusCode : 200;
+                await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {(status == 200 ? "OK" : "Error")}\r\n{cors}Content-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
                 await stream.WriteAsync(body, _stop.Token);
             }
         }
@@ -88,7 +91,7 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
     private object Response(string path, int tick) => path switch
     {
         "/version" => new { version = "1.19.31", meta = true },
-        "/configs" => new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false } },
+        "/configs" => ConfigResponse ?? new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false } },
         "/providers/proxies" or "/providers/rules" => new { providers = new { } },
         "/proxies" => new { proxies = Proxies() },
         "/rules" => new { rules = Array.Empty<object>() },

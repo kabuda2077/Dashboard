@@ -39,7 +39,9 @@ const mount = async (patch = {}) => {
   return host
 }
 const edit = async (id: string, value: string) => {
-  const input = root.querySelector<HTMLInputElement>(id)!
+  const selector = root.querySelector('[data-testid=switch-core-dialog]')
+    ? id.replace('#core-', '#core-switch-') : id
+  const input = root.querySelector<HTMLInputElement>(selector)!
   input.value = value
   input.dispatchEvent(new Event('input', { bubbles: true }))
   await nextTick()
@@ -106,6 +108,9 @@ it('first-time setup is a full dialog, preserves two drafts and waits for succes
   host.ack(request.requestId, true, checking)
   await nextTick(); await Promise.resolve()
   expect(host.post.mock.calls.some(([request]) => request.type === 'completeSetup')).toBe(false)
+  const { i18n } = await import('@/i18n')
+  expect(root.querySelector('[data-testid=setup-guide] [role=status]')!.textContent).toContain(i18n.global.t('desktop.connection.checking'))
+  expect(root.textContent).not.toContain('desktop.api.')
   host.runtime({ apiStatus: 'ready' })
   await vi.waitFor(() => expect(host.post.mock.calls.some(([request]) => request.type === 'completeSetup')).toBe(true))
   const finish = host.post.mock.calls.find(([request]) => request.type === 'completeSetup')![0]
@@ -191,14 +196,21 @@ it('runtime toolbar has switch/start/stop and only the switch dialog edits the o
   expect(root.querySelector('.core-toolbar select')).toBeNull()
   expect(root.querySelector<HTMLButtonElement>('.btn-success')!.disabled).toBe(true)
   const status = root.querySelector('.core-status-box')!.textContent
-  await edit('#core-exe', 'C:/mihomo-draft.exe')
+  const backgroundInput = await edit('#core-exe', 'C:/mihomo-draft.exe')
+  const backgroundPanel = root.querySelector('.core-layout')
   await openSwitch()
   await edit('#core-exe', 'C:/sing-box-draft.exe')
+  expect(root.querySelector('.core-layout')).toBe(backgroundPanel)
+  expect(root.querySelector('#core-exe')).toBe(backgroundInput)
+  expect(backgroundInput.value).toBe('C:/mihomo-draft.exe')
+  const ids = [...root.querySelectorAll('[id]')].map(node => node.id)
+  expect(new Set(ids).size).toBe(ids.length)
   expect(root.querySelector('.core-status-box')!.textContent).toBe(status)
   expect(host.post.mock.calls.some(([request]) => ['switchCore', 'saveProfile'].includes(request.type))).toBe(false)
   root.querySelector<HTMLButtonElement>('[data-testid=switch-core-dialog] .modal-action .dashboard-action-btn')!.click()
   await nextTick()
   expect(root.querySelector<HTMLInputElement>('#core-exe')!.value).toBe('C:/mihomo-draft.exe')
+  expect(document.activeElement).toBe(root.querySelector('.core-top-button.btn-primary'))
   const { coreDrafts } = await import('@/helper/hostDraft')
   expect(coreDrafts['sing-box']!.values.exePath).toBe('C:/sing-box-draft.exe')
 })
@@ -263,7 +275,7 @@ it.each([false, true])('reload confirmation stays inside the native switch dialo
   expect(showConfirmDialog).not.toHaveBeenCalled()
   prompt.querySelectorAll<HTMLButtonElement>('button')[confirmed ? 1 : 0]!.click()
   await nextTick()
-  expect(root.querySelector<HTMLInputElement>('#core-exe')!.value).toBe(confirmed ? 'C:/remote.exe' : 'C:/keep-unless-confirmed.exe')
+  expect(root.querySelector<HTMLInputElement>('#core-switch-exe')!.value).toBe(confirmed ? 'C:/remote.exe' : 'C:/keep-unless-confirmed.exe')
   expect(host.post.mock.calls.some(([request]) => request.type === 'saveProfile' || request.type === 'switchCore')).toBe(false)
 })
 
@@ -280,7 +292,7 @@ it('a newer remote revision cannot be discarded by an older inline confirmation'
   await nextTick()
   root.querySelector<HTMLButtonElement>('[data-testid=reload-draft-confirmation] .btn-warning')!.click()
   await nextTick()
-  expect(root.querySelector<HTMLInputElement>('#core-exe')!.value).toBe('C:/draft.exe')
+  expect(root.querySelector<HTMLInputElement>('#core-switch-exe')!.value).toBe('C:/draft.exe')
 })
 
 it.each(['epoch', 'revision', 'cancel'])('switch dialog rejects expired or cancelled context (%s)', async change => {

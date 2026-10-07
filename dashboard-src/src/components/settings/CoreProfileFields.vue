@@ -83,14 +83,34 @@
       >Secret</label
     >
     <div class="flex min-w-0 gap-2">
-      <input
-        :id="`${idPrefix}-secret`"
-        v-model="draft.values.secret"
-        type="password"
-        autocomplete="off"
-        class="input input-sm dashboard-input w-full"
-        :disabled="draft.base.secretDecryptionFailed && !draft.replaceSecret"
-      />
+      <div
+        class="relative flex min-w-0 flex-1"
+        @focusout="concealOnLeave"
+      >
+        <input
+          :id="`${idPrefix}-secret`"
+          v-model="draft.values.secret"
+          :type="secretVisible ? 'text' : 'password'"
+          autocomplete="off"
+          class="input input-sm dashboard-input w-full pr-9"
+          :disabled="draft.base.secretDecryptionFailed && !draft.replaceSecret"
+        />
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs absolute top-1/2 right-1 h-6 min-h-6 w-6 -translate-y-1/2 p-0"
+          :aria-label="t(secretVisible ? 'desktop.hideSecret' : 'desktop.showSecret')"
+          :title="t(secretVisible ? 'desktop.hideSecret' : 'desktop.showSecret')"
+          :aria-pressed="secretVisible"
+          :aria-controls="`${idPrefix}-secret`"
+          :disabled="draft.base.secretDecryptionFailed && !draft.replaceSecret"
+          @click="secretVisible = !secretVisible"
+        >
+          <component
+            :is="secretVisible ? EyeSlashIcon : EyeIcon"
+            class="h-4 w-4"
+          />
+        </button>
+      </div>
       <slot name="secret-action" />
     </div>
     <label
@@ -109,8 +129,36 @@
 <script setup lang="ts">
 import type { CoreDraft } from '@/helper/hostDraft'
 import { i18n } from '@/i18n'
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
+import { ref, watch } from 'vue'
 const t = i18n.global.t
 
-defineProps<{ draft: CoreDraft; idPrefix: string; busy: boolean; compact?: boolean }>()
+const props = defineProps<{
+  draft: CoreDraft
+  idPrefix: string
+  busy: boolean
+  compact?: boolean
+}>()
+const secretVisible = ref(false)
+watch(
+  () => props.draft,
+  () => {
+    secretVisible.value = false
+  },
+)
+const concealOnLeave = (event: FocusEvent) => {
+  if (
+    !(event.relatedTarget instanceof Node) ||
+    !(event.currentTarget as HTMLElement).contains(event.relatedTarget)
+  )
+    secretVisible.value = false
+}
 defineEmits<{ choose: [config: boolean]; location: [config: boolean]; retry: [] }>()
 </script>
+
+<style scoped>
+/* Use one reveal control in Edge/WebView, not a second native eye underneath it. */
+input::-ms-reveal {
+  display: none;
+}
+</style>

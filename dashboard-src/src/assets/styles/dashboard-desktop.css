@@ -46,10 +46,18 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Share the intrinsic label width across fields instead of reserving 120px
+ * for short translations. Long labels wrap before squeezing the inputs. */
+.core-profile-fields {
+  display: grid;
+  grid-template-columns: fit-content(7.5rem) minmax(0, 1fr);
+}
+
 .core-profile-row {
   padding-block: 0.375rem;
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   gap: 0.75rem;
 }
@@ -71,6 +79,7 @@
 }
 
 .core-profile-actions {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -162,6 +171,9 @@
 }
 
 @container core-page (max-width: 639px) {
+  .core-profile-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .core-profile-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.5rem;
@@ -213,7 +225,7 @@
 }
 
 .ctrls-bar .btn.btn-sm,
-.ctrls-bar .select.select-sm,
+.ctrls-bar .select,
 .ctrls-bar .input.input-sm,
 .ctrls-bar .tabs.tabs-xs,
 .ctrls-bar .tabs.tabs-xs .tab {
@@ -235,7 +247,7 @@
   padding: 0.125rem;
 }
 
-.ctrls-bar :is(.input.input-sm, .select.select-sm) {
+.ctrls-bar :is(.input.input-sm, .select) {
   @apply border-base-content/20 bg-base-100 rounded-lg border shadow-none;
 }
 
@@ -278,8 +290,8 @@
   box-shadow: none !important;
 }
 
-.ctrls-bar :is(.input.input-sm, .select.select-sm):focus,
-.ctrls-bar :is(.input.input-sm, .select.select-sm):focus-visible,
+.ctrls-bar :is(.input.input-sm, .select):focus,
+.ctrls-bar :is(.input.input-sm, .select):focus-visible,
 .dashboard-input:focus,
 .dashboard-input:focus-visible {
   border-color: color-mix(in srgb, var(--color-primary) 35%, transparent) !important;

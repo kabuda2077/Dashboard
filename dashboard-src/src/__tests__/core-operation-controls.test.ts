@@ -22,11 +22,15 @@ vi.mock('@/components/settings/backend/TopDownloadConnections.vue', () => ({
 }))
 vi.mock('@/helper/backendSession', () => ({
   captureBackendSession: () => ({ isCurrent: () => true }),
+  backendConnectionStatus: ref('ready'),
+  backendSessionReady: ref(true),
 }))
 vi.mock('@/composables/useBackendRuntimeConfig', () => ({
   useBackendRuntimeConfig: () => ({
-    configs: ref({}),
-    isActiveConfigLoaded: ref(true),
+    configStatus: ref('ready'),
+    configError: ref(null),
+    allowLanEnabled: ref(false),
+    ensureConfigLoaded: vi.fn(),
     tunState: ref({ visible: false }),
     updateAllowLan: vi.fn(),
     updateTunEnabled: vi.fn(),

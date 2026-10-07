@@ -38,15 +38,17 @@ jobs:
 
       # Use the already-built production UI with an isolated host/port/profile.
       # These checks need WebView2, but do not start a core or alter TUN/autostart.
-      - name: Check retained Core visual contract
+      - name: Check retained desktop UI contract
         shell: pwsh
-        run: dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~CoreLayoutTests --logger "trx;LogFileName=core-layout.trx" --results-directory .tmp/reports/core-layout
+        run: dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj -c Release --no-build --no-restore --filter "FullyQualifiedName~CoreLayoutTests|FullyQualifiedName~CoreSetupLayoutTests" --logger "trx;LogFileName=core-layout.trx" --results-directory .tmp/reports/core-layout
 
       - name: Upload Core layout evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: core-layout
-          path: .tmp/reports/core-layout/
+          path: |
+            .tmp/reports/core-layout/
+            .tmp/reports/core-chrome/
           if-no-files-found: warn
           retention-days: 7

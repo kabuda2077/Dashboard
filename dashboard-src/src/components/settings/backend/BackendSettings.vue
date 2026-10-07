@@ -1,8 +1,14 @@
 <template>
   <!-- backend -->
-  <div class="text-sm" :class="embedded ? '' : 'rounded-lg p-2'">
+  <div
+    class="text-sm"
+    :class="embedded ? '' : 'rounded-lg p-2'"
+  >
     <div :class="embedded ? 'core-layout' : 'grid items-stretch gap-3 lg:grid-cols-2 lg:gap-8'">
-      <div class="min-w-0" :class="embedded ? '' : 'rounded-lg p-2'">
+      <div
+        class="min-w-0"
+        :class="embedded ? '' : 'rounded-lg p-2'"
+      >
         <div class="dashboard-section-title">
           <span class="indicator">
             <span
@@ -29,32 +35,87 @@
             <span
               v-if="tunState.loading"
               class="loading loading-spinner loading-xs"
+              role="status"
+              :aria-label="$t('desktop.configLoading')"
             />
-            <input
+            <div
+              v-else-if="typeof tunState.enabled === 'boolean'"
+              class="flex min-w-0 flex-wrap items-center justify-end gap-2"
+            >
+              <span
+                v-if="!tunState.writable"
+                class="text-base-content/60 text-xs"
+              >
+                {{
+                  $t(
+                    tunState.source === 'host'
+                      ? 'desktop.tunReadOnlyHost'
+                      : 'desktop.tunReadOnlyApi',
+                  )
+                }}
+              </span>
+              <input
+                class="toggle shrink-0"
+                type="checkbox"
+                :aria-label="$t('tunMode')"
+                :checked="tunState.enabled"
+                :disabled="!tunState.writable"
+                @change="handlerTunModeChange"
+              />
+            </div>
+            <span
               v-else
-              class="toggle"
-              type="checkbox"
-              :checked="!!tunState.enabled"
-              :disabled="!tunState.writable"
-              @change="hanlderTunModeChange"
-            />
+              class="text-sm"
+              :class="configStatus === 'error' ? 'text-error' : 'text-base-content/60'"
+              role="status"
+            >
+              {{ $t(unknownStateLabel) }}
+            </span>
           </div>
           <div class="setting-item">
             <div class="setting-item-label">
               {{ $t('allowLan') }}
             </div>
             <span
-              v-if="!isActiveConfigLoaded"
+              v-if="configStatus === 'loading'"
               class="loading loading-spinner loading-xs"
+              role="status"
+              :aria-label="$t('desktop.configLoading')"
             />
             <input
-              v-else
+              v-else-if="typeof allowLanEnabled === 'boolean'"
               class="toggle"
               type="checkbox"
-              :checked="!!configs['allow-lan']"
+              :aria-label="$t('allowLan')"
+              :checked="allowLanEnabled"
               @change="handlerAllowLanChange"
             />
+            <span
+              v-else
+              class="text-sm"
+              :class="configStatus === 'error' ? 'text-error' : 'text-base-content/60'"
+              role="status"
+            >
+              {{ $t(unknownStateLabel) }}
+            </span>
           </div>
+        </div>
+
+        <div
+          v-if="configStatus === 'error'"
+          class="dashboard-note mt-2 flex flex-wrap items-center gap-2"
+          role="alert"
+        >
+          <span class="text-error min-w-0 flex-1 break-words"
+            >{{ $t('desktop.configReadFailed') }}: {{ configErrorMessage }}</span
+          >
+          <button
+            class="btn btn-sm dashboard-action-btn"
+            type="button"
+            @click="retryConfigs"
+          >
+            {{ $t('desktop.retry') }}
+          </button>
         </div>
 
         <div class="settings-section-label">{{ $t('desktop.actions') }}</div>
@@ -127,7 +188,13 @@
                     v-if="coreHostActions.isCoreUpgrading.value"
                     class="loading loading-spinner loading-xs"
                   />
-                  {{ $t(coreHostActions.isCoreUpgrading.value ? 'desktop.upgrading' : 'desktop.upgrade') }}
+                  {{
+                    $t(
+                      coreHostActions.isCoreUpgrading.value
+                        ? 'desktop.upgrading'
+                        : 'desktop.upgrade',
+                    )
+                  }}
                 </button>
               </span>
               <button
@@ -142,7 +209,10 @@
         </div>
       </div>
 
-      <div class="flex min-h-0 min-w-0 flex-col" :class="embedded ? '' : 'rounded-lg p-2'">
+      <div
+        class="flex min-h-0 min-w-0 flex-col"
+        :class="embedded ? '' : 'rounded-lg p-2'"
+      >
         <div class="dashboard-section-title">{{ $t('desktop.currentDownloads') }}</div>
         <div class="settings-grid min-h-[232px] flex-1">
           <div class="setting-panel-row h-full">
@@ -155,7 +225,11 @@
 </template>
 
 <script setup lang="ts">
-import { captureBackendSession } from '@/helper/backendSession'
+import {
+  backendConnectionStatus,
+  backendSessionReady,
+  captureBackendSession,
+} from '@/helper/backendSession'
 import {
   flushDNSCacheAPI,
   flushFakeIPAPI,
@@ -166,20 +240,50 @@ import { isSingBoxCore as isSingBox } from '@/assembly/version'
 import BackendVersion from '@/components/common/BackendVersion.vue'
 import TopDownloadConnections from '@/components/settings/backend/TopDownloadConnections.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
-import { hostState } from '@/composables/hostBridge'
+import { hasHostBridge, hostState, postHostMessage } from '@/composables/hostBridge'
+import { i18n } from '@/i18n'
 import { useBackendRuntimeConfig } from '@/composables/useBackendRuntimeConfig'
 import { showNotification } from '@/helper/notification'
-import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
+import {
+  getRequestErrorMessage,
+  notifyRequestErrorForSession,
+  runManualRequest,
+} from '@/helper/requestError'
 import { fetchConfigs } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
-import { inject, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 
 defineProps<{ embedded?: boolean }>()
 
 const coreHostActions = inject(coreHostActionsKey, null)
-const { configs, isActiveConfigLoaded, tunState, updateAllowLan, updateTunEnabled } =
-  useBackendRuntimeConfig()
+const {
+  configStatus,
+  configError,
+  tunState,
+  allowLanEnabled,
+  ensureConfigLoaded,
+  updateAllowLan,
+  updateTunEnabled,
+} = useBackendRuntimeConfig()
+const unknownStateLabel = computed(() =>
+  configStatus.value === 'error'
+    ? 'desktop.configReadFailed'
+    : configStatus.value === 'idle'
+      ? 'desktop.configNotLoaded'
+      : 'desktop.configUnknown',
+)
+const configErrorMessage = computed(() =>
+  configError.value
+    ? getRequestErrorMessage(configError.value)
+    : i18n.global.t(`desktop.connection.${backendConnectionStatus.value}`),
+)
+const retryConfigs = () => {
+  // Authentication/readiness failures stop the session owner and clear its data.
+  // Let the host re-probe that session; an isolated successful GET cannot clear it.
+  if (hasHostBridge && !backendSessionReady.value) postHostMessage({ type: 'refreshCoreMetadata' })
+  else void runManualRequest(ensureConfigLoaded)
+}
 
 const reloadAll = () => {
   void Promise.allSettled([fetchConfigs(true), fetchRules(), fetchProxies()])
@@ -227,14 +331,29 @@ const handlerClickUpdateGeo = async () => {
   }
 }
 
-const hanlderTunModeChange = async () => {
-  await runManualRequest(() => updateTunEnabled(!configs.value?.tun?.enable))
+const handlerTunModeChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (!tunState.value.writable) return
+  const checked = input.checked
+  input.disabled = true
+  try {
+    await runManualRequest(() => updateTunEnabled(checked))
+  } finally {
+    input.checked = tunState.value.enabled === true
+    input.disabled = !tunState.value.writable
+  }
 }
 const handlerAllowLanChange = async (event: Event) => {
-  if (!isActiveConfigLoaded.value) return
-  const checked =
-    event.target instanceof HTMLInputElement ? event.target.checked : !!configs.value?.['allow-lan']
-  await runManualRequest(() => updateAllowLan(checked))
+  const input = event.target as HTMLInputElement
+  if (typeof allowLanEnabled.value !== 'boolean') return
+  const checked = input.checked
+  input.disabled = true
+  try {
+    await runManualRequest(() => updateAllowLan(checked))
+  } finally {
+    input.checked = allowLanEnabled.value === true
+    input.disabled = typeof allowLanEnabled.value !== 'boolean'
+  }
 }
 
 const handleFlushDNSCache = async () => {

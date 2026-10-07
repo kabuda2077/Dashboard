@@ -24,7 +24,7 @@ Do not overwrite or silently stash a dirty working tree. Preserve it and establi
 | Guarantees | No plaintext persisted credentials; no untrusted native commands; correct session isolation, save acknowledgements and failure recovery; preserve data created by the supported format during normal operation | Must not be weakened for merge convenience. Implementations may change if evidence preserves the guarantee |
 | Current product choices | Single active mihomo/sing-box, Clash API, desktop process ownership, Core-first desktop workflow, portable deployment, current page/operation scope | Keep by default; propose changes to the product owner rather than silently importing them |
 | Retained visual contract | Approved sizes, alignment, control order, focus/scroll context and surfaces in [style.md](style.md) | Preserve by default; deliberate changes need a design decision and before/after evidence. Do not treat them as incidental component defaults |
-| Pending visual choices | v2 density, breakpoints, field allocation and dialog choices listed in the local-change register | Keep marked pending until decided; current code/tests do not establish owner approval |
+| Pending visual choices | Any unresolved choices listed in the local-change register; the initial six v2 choices are now explicitly accepted in style.md | Keep new proposals pending until decided; current code/tests alone do not establish owner approval |
 | Implementation | Specific classes, filenames, refs, caches, layout technique and component internals | May be replaced while preserving the preceding levels; update implementation-bound tests with equivalent evidence |
 | Historical decisions | A feature was previously deferred/rejected for cost, dependency, protocol or relevance | Revisit when the reason changes; a product-scope change still requires approval |
 
@@ -135,7 +135,7 @@ At release-candidate stage inspect the published directory and ZIP, not only the
 ## 7. What checks should protect
 
 - Behavior tests for request/reply schema, fresh bootstrap, explicit PID clearing, drafts/ACKs, same-endpoint sessions, config write/read order and core operations.
-- Actual UI interactions for operation order, selection, menus, visibility and meaningful feedback; [visual contract](style.md) for retained appearance. CI on main/v2 and PRs runs CoreLayoutTests in the real isolated WebView after the common build and uploads its evidence. This is scoped coverage: known toolbar/scroll gaps remain separately visible until fixed.
+- Actual UI interactions for operation order, selection, menus, visibility and meaningful feedback; [visual contract](style.md) for retained appearance. CI on main/v2 and PRs runs CoreLayoutTests/CoreSetupLayoutTests in the real isolated WebView after the common build and uploads evidence. The fixture uses its own synthetic API, including configuration failures and read-only states. This remains scoped coverage; any newly registered gaps must stay visible until fixed.
 - Build checks for packaged dependencies, resource completeness, startup eager dependency graph and excluded product entry points.
 - Focused manual/real integration checks for window controls, tray/suspension, both cores, permissions, sleep recovery, themes and DPI according to impact.
 

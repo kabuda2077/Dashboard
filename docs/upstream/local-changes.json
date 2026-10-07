@@ -29,17 +29,17 @@
       "origin": "desktop",
       "decision": "keep-behavior",
       "intent": "Core-first、单活动核心、内嵌设置；保留运行控制与窗口控制的独立区域，不固定布局算法。",
-      "evidence": ["5fdf3b7: Core 控制和配置布局", "eb0edc7: 缩放时避免顶栏重叠", "517d6b3: v2 快照，不能证明每个尺寸都获批准"],
+      "evidence": ["5fdf3b7: Core 控制和配置布局", "eb0edc7: 缩放时避免顶栏重叠", "517d6b3: v2 快照，不能证明每个尺寸都获批准", "本轮用户确认六项 UI 取舍：保留 v2 分卡、紧凑行、实际内容宽度断点、状态简化与 768px 弹窗；改善字段宽度并增加默认遮掩的 Secret 显隐"],
       "paths": ["dashboard-src/src/views/CorePage.vue", "dashboard-src/src/components/settings/CoreProfileFields.vue", "dashboard-src/src/components/settings/SettingsContent.vue", "dashboard-src/src/components/settings/backend/*", "dashboard-src/src/components/sidebar/*", "dashboard-src/src/router/*"],
       "watch": ["dashboard-src/src/components/common/CtrlsBar.vue", "dashboard-src/src/composables/paddingViews.ts", "dashboard-src/src/assets/styles/*", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
-      "checks": ["tests/Dashboard.Tests/CoreLayoutTests.cs", "tests/Dashboard.Tests/CoreSetupLayoutTests.cs", "dashboard-src/src/__tests__/core-operation-controls.test.ts", "dashboard-src/src/__tests__/settings-async-layout.test.ts"]
+      "checks": ["tests/Dashboard.Tests/CoreLayoutTests.cs", "tests/Dashboard.Tests/CoreSetupLayoutTests.cs", "dashboard-src/src/__tests__/core-operation-controls.test.ts", "dashboard-src/src/__tests__/core-draft.test.ts", "dashboard-src/src/__tests__/core-profile-fields.test.ts", "dashboard-src/src/__tests__/settings-async-layout.test.ts"]
     },
     {
       "id": "desktop-visuals",
       "origin": "desktop",
       "decision": "keep-behavior",
       "intent": "工具栏 36px、Core 操作 72×34px/间距 8px、输入 32px、状态灯相对对齐属于视觉约定，不是组件名约束。",
-      "evidence": ["5fdf3b7: 72×34、8px、36px、配置标签 4.5rem", "e743fb1: 独立桌面样式层", "750c162: 恢复受控下拉和顶栏样式"],
+      "evidence": ["5fdf3b7: 72×34、8px、36px、配置标签 4.5rem", "e743fb1: 独立桌面样式层", "750c162: 恢复受控下拉和顶栏样式", "本轮修正：工具栏 SelectInput 的桌面尺寸/圆角适配；标签共享自然宽度，不固定占用 120px"],
       "paths": ["dashboard-src/src/assets/styles/*", "dashboard-src/src/assets/main.css", "dashboard-src/src/assets/images/sing-box.svg", "dashboard-src/src/composables/useAppearanceVars.ts", "dashboard-src/src/helper/theme.ts", "dashboard-src/src/components/common/CtrlsBar.vue", "dashboard-src/src/components/common/WindowControls.vue", "dashboard-src/src/composables/paddingViews.ts"],
       "watch": ["dashboard-src/src/components/common/*", "dashboard-src/src/components/controls/*", "dashboard-src/tailwind.config.ts", "dashboard-src/postcss.config.js", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
       "checks": ["tests/Dashboard.Tests/CoreLayoutTests.cs"]
@@ -59,10 +59,10 @@
       "origin": "desktop",
       "decision": "keep-behavior",
       "intent": "宿主拥有进程、身份、epoch 和操作结果；Clash 数据请求不得越过会话边界或绕过原生权限。",
-      "evidence": ["fd66880: 桌面生命周期/会话整合", "517d6b3: v2 协议与请求失效边界"],
+      "evidence": ["fd66880: 桌面生命周期/会话整合", "517d6b3: v2 协议与请求失效边界", "本轮修正：配置未知值不当作关闭；会话鉴权/连接失败即使清空数据也保留错误反馈，按会话状态选择宿主重试或配置重读"],
       "paths": ["src/*", "dashboard-src/src/App.vue", "dashboard-src/src/main.ts", "dashboard-src/src/appEntry.ts", "dashboard-src/src/hostBootstrap.ts", "dashboard-src/src/views/HomePage.vue", "dashboard-src/src/composables/hostBridge.ts", "dashboard-src/src/composables/coreHostActions.ts", "dashboard-src/src/helper/appStartup.ts", "dashboard-src/src/helper/connectivity.ts", "dashboard-src/src/composables/useBackendRuntimeConfig.ts", "dashboard-src/src/api/*", "dashboard-src/src/assembly/*", "dashboard-src/src/helper/backend*", "dashboard-src/src/helper/host*", "dashboard-src/src/store/setup.ts"],
       "watch": ["dashboard-src/src/views/*", "dashboard-src/src/components/settings/backend/*", "dashboard-src/src/helper/requestError.ts", "dashboard-src/src/constant/*"],
-      "checks": ["tests/Dashboard.Tests/HostMessageRouterTests.cs", "tests/Dashboard.Tests/CoreLifecycleBoundaryTests.cs", "dashboard-src/src/__tests__/backend-session.test.ts", "dashboard-src/src/__tests__/core-draft.test.ts", "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"]
+      "checks": ["tests/Dashboard.Tests/HostMessageRouterTests.cs", "tests/Dashboard.Tests/CoreLifecycleBoundaryTests.cs", "tests/Dashboard.Tests/CoreLayoutTests.cs", "dashboard-src/src/__tests__/backend-session.test.ts", "dashboard-src/src/__tests__/backend-state-ui.test.ts", "dashboard-src/src/__tests__/core-draft.test.ts", "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"]
     },
     {
       "id": "preferences",
@@ -135,17 +135,6 @@
       "checks": ["tools/check.ps1", "tools/check-maintenance.ps1"]
     }
   ],
-  "pending": [
-    {"id": "core-density", "change": "desktop-shell", "question": "配置与桌面选项分卡、45px 配置行及整体间距是否作为最终视觉？当前实现不是批准记录。"},
-    {"id": "core-breakpoint", "change": "desktop-shell", "question": "1120px 展开侧栏时保留 v2 单列，还是恢复稳定版的信息密度？"},
-    {"id": "field-space", "change": "desktop-shell", "question": "标签列 120px 与路径输入缩窄 40px 如何取舍？需覆盖长路径和英文。"},
-    {"id": "runtime-text", "change": "desktop-shell", "question": "主状态框简化文案及 PID 隐藏阈值是否保留？"},
-    {"id": "dialog-density", "change": "desktop-shell", "question": "首次设置/切核 768px 弹窗的尺寸和密度是否确认？保留目标独立草稿。"},
-    {"id": "secret-reveal", "change": "desktop-shell", "question": "保留 Secret 默认遮掩，是否增加显隐操作？"}
-  ],
-  "knownGaps": [
-    {"id": "switch-scroll", "change": "desktop-shell", "expected": "打开/取消切核保留页面上下文", "observed": "已复现 scrollTop 240→0；配置区在切核时被卸载", "coverage": "unfixed; no automated regression guard yet"},
-    {"id": "toolbar-select-size", "change": "shared-controls", "expected": "普通桌面工具栏控件高 36px", "observed": "代理/连接/日志调用 SelectInput 未接齐尺寸，当前为 40px", "coverage": "unfixed; core geometry tests do not cover these controls"},
-    {"id": "unknown-config-state", "change": "host-session", "expected": "未知、失败、加载、只读与关闭状态可区分", "observed": "代码检查发现 unknown TUN 可显示为关闭，Allow LAN 失败仍可能显示 spinner", "coverage": "code-reviewed; full error-state visual matrix pending"}
-  ]
+  "pending": [],
+  "knownGaps": []
 }

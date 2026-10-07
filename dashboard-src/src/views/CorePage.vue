@@ -25,6 +25,7 @@
         </div>
         <div class="core-runtime-actions">
           <button
+            ref="switchButton"
             class="core-top-button btn-primary"
             :disabled="busy || !hasHostBridge || setupVisible"
             @click="openSwitch"
@@ -60,14 +61,14 @@
       </div>
 
       <div
-        v-if="draft && !setupVisible && !switchContext"
+        v-if="activeDraft && !setupVisible"
         class="core-layout"
       >
         <section class="min-w-0">
           <h2 class="dashboard-section-title">{{ t('desktop.profile') }}</h2>
-          <div class="settings-grid">
+          <div class="settings-grid core-profile-fields">
             <CoreProfileFields
-              :draft="draft"
+              :draft="activeDraft"
               id-prefix="core"
               :busy="busy"
               @choose="chooseFile"
@@ -78,7 +79,7 @@
                 ><button
                   data-testid="save-core-profile"
                   class="btn btn-primary btn-sm"
-                  :disabled="busy || !!draft.remote || !dirty"
+                  :disabled="busy || !!activeDraft.remote || !activeDirty"
                   @click="run('saveProfile')"
                 >
                   {{ t('save') }}
@@ -86,22 +87,22 @@
               >
             </CoreProfileFields>
             <div
-              v-if="dirty || draft.remote || hostState.requiresRestart"
+              v-if="activeDirty || activeDraft.remote || hostState.requiresRestart"
               class="setting-panel-row core-profile-actions"
             >
               <span
-                v-if="dirty"
+                v-if="activeDirty"
                 class="text-base-content/60 text-sm"
                 >{{ t('desktop.dirty') }}</span
               >
               <button
-                v-if="dirty || draft.remote"
+                v-if="activeDirty || activeDraft.remote"
                 data-testid="discard-core-profile"
                 class="btn btn-warning btn-sm"
                 :disabled="busy"
                 @click="reloadDraft"
               >
-                {{ t(draft.remote ? 'desktop.reload' : 'desktop.discard') }}
+                {{ t(activeDraft.remote ? 'desktop.reload' : 'desktop.discard') }}
               </button>
               <span
                 v-if="hostState.requiresRestart"
@@ -221,10 +222,10 @@
           >
             {{ t('desktop.switchTarget', { core: kind }) }}
           </p>
-          <div class="settings-grid my-4">
+          <div class="settings-grid core-profile-fields my-4">
             <CoreProfileFields
               :draft="draft"
-              id-prefix="core"
+              :id-prefix="setupVisible ? 'core' : 'core-switch'"
               :busy="busy"
               compact
               @choose="chooseFile"
@@ -238,7 +239,7 @@
             class="text-base-content/60 mt-2 text-sm"
             role="status"
           >
-            {{ t(`desktop.api.${backendConnectionStatus}`) }}
+            {{ t(`desktop.connection.${backendConnectionStatus}`) }}
           </p>
           <p
             v-if="dialogNotice"
@@ -387,6 +388,7 @@ const runtimeStatusText = computed(() =>
 const setupStartedKind = ref<CoreKind>()
 type SwitchContext = { active: CoreKind; target: CoreKind; revision: number; epoch: number }
 const switchContext = ref<SwitchContext>()
+const switchButton = ref<HTMLButtonElement>()
 const dialogNotice = ref<{ content: string; severity: 'info' | 'warning' | 'error' | 'success' }>()
 const showHostNotice = (
   message: string,
@@ -432,6 +434,9 @@ watch(
 )
 const draft = computed(() => coreDrafts[kind.value])
 const dirty = computed(() => !!draft.value && isDraftDirty(draft.value))
+// The background remains on the active profile while the dialog edits its target.
+const activeDraft = computed(() => coreDrafts[hostState.value.coreType ?? 'mihomo'])
+const activeDirty = computed(() => !!activeDraft.value && isDraftDirty(activeDraft.value))
 const pending = ref(false)
 const busy = computed(
   () =>
@@ -595,10 +600,12 @@ const openSwitch = () => {
   }
   selectedKind.value = target
 }
-const cancelSwitch = () => {
+const cancelSwitch = async () => {
   if (pending.value) return
   switchContext.value = undefined
   selectedKind.value = hostState.value.coreType ?? 'mihomo'
+  await nextTick()
+  switchButton.value?.focus({ preventScroll: true })
 }
 const confirmSwitch = async () => {
   const context = switchContext.value

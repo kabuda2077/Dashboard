@@ -18,10 +18,19 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
         var root = TestRoot;
         Directory.CreateDirectory(root);
         var initial = new SettingsStore(root);
+        await using var api = new SyntheticClashApi { Rows = 1 };
+        foreach (var kind in Enum.GetValues<CoreKind>())
+        {
+            var profile = initial.Current.Profile(kind);
+            await initial.UpdateProfileAsync(kind, profile.Revision, new()
+            {
+                ExePath = profile.ExePath, ConfigPath = profile.ConfigPath, ApiUrl = api.Origin
+            });
+        }
         await initial.SavePreferencesAsync(new Dictionary<string, string>
         {
             ["config/language"] = language, ["config/default-theme"] = theme,
-            ["config/auto-theme"] = "false", ["config/is-sidebar-collapsed"] = "true"
+            ["config/auto-theme"] = "false", ["config/is-sidebar-collapsed"] = "true", ["config/auto-ip-check"] = "false"
         });
         await initial.CompleteSetupAsync();
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -46,7 +55,17 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         var deadline = DateTime.UtcNow.AddSeconds(20);
                         while (!await condition())
                         {
-                            if (DateTime.UtcNow > deadline) throw new TimeoutException("Core layout did not settle.");
+                            if (DateTime.UtcNow > deadline)
+                            {
+                                var failureDirectory = TestDirectory.ReportDirectory("core-layout");
+                                await File.WriteAllTextAsync(Path.Combine(failureDirectory, $"failure-{language}.json"), await Script("JSON.stringify({route:location.hash,titles:[...document.querySelectorAll('.ctrls-bar [title]')].map(e=>({tag:e.tagName,title:e.title})),controls:[...document.querySelectorAll('.ctrls-bar [role=combobox]')].map(e=>e.textContent),animations:document.getAnimations().map(a=>({state:a.playState,iterations:a.effect?.getComputedTiming().iterations,target:a.effect?.target?.className}))})"));
+                                if (View()?.CoreWebView2 is { } failedView)
+                                {
+                                    await using var image = File.Create(Path.Combine(failureDirectory, $"failure-{language}.png"));
+                                    await failedView.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                                }
+                                throw new TimeoutException("Core layout did not settle; see failure-* layout evidence.");
+                            }
                             await Task.Delay(50);
                         }
                     }
@@ -56,7 +75,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     // Chinese covers sidebar geometry and desktop minimum; English covers long labels
                     // at wide/narrow widths and the intermediate expanded-sidebar boundary.
                     var cases = language == "zh-CN"
-                        ? new[] { (2200, true), (2200, false), (1120, true), (1120, false), (640, true) }
+                        ? new[] { (2200, true), (2200, false), (1360, false), (1120, true), (1120, false), (640, true) }
                         : new[] { (2200, true), (1500, false), (640, true) };
                     foreach (var (width, collapsed) in cases)
                     {
@@ -81,7 +100,12 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         await File.WriteAllTextAsync(Path.Combine(evidence, name + "-before.json"), before);
                         await using (var beforeImage = File.Create(Path.Combine(evidence, name + "-before.png")))
                             await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, beforeImage);
-                        using (var metrics = JsonDocument.Parse(before)) Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, before);
+                        using (var metrics = JsonDocument.Parse(before))
+                        {
+                            Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, before);
+                            if (language == "zh-CN" && metrics.RootElement.GetProperty("contentWidth").GetDouble() >= 640)
+                                Assert.InRange(metrics.RootElement.GetProperty("pathInset").GetDouble(), 0, 110);
+                        }
                         View()!.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new
                         {
                             protocolVersion = 2, type = "logAppend", logText = string.Join('\n', Enumerable.Range(0, 600).Select(i => $"[{i:D4}] synthetic output for scroll verification"))
@@ -122,10 +146,10 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             Assert.Equal("true", await Script("(() => { const d=document.querySelector('[data-testid=switch-core-dialog]'); const r=d.querySelector('.core-profile-dialog').getBoundingClientRect(); const b=d.querySelector('.modal-action .btn-primary').getBoundingClientRect(); return d.open && d.matches(':modal') && r.left>=0 && r.right<=innerWidth && b.bottom<=innerHeight && b.right<=r.right })()"));
                             if (width == 2200)
                             {
-                                await Script("const i=document.querySelector('#core-exe'); i.value='C:/unsaved-target.exe'; i.dispatchEvent(new Event('input',{bubbles:true})); true");
+                                await Script("const i=document.querySelector('#core-switch-exe'); i.value='C:/unsaved-target.exe'; i.dispatchEvent(new Event('input',{bubbles:true})); true");
                                 var original = host.BuildState(false);
                                 var profiles = new Dictionary<string, CoreProfileState>(original.Profiles);
-                                profiles["sing-box"] = profiles["sing-box"] with { Revision = 1, ExePath = "C:/remote-target.exe" };
+                                profiles["sing-box"] = profiles["sing-box"] with { Revision = profiles["sing-box"].Revision + 1, ExePath = "C:/remote-target.exe" };
                                 View()!.CoreWebView2.PostWebMessageAsJson(HostBridgeJson.Serialize(new { protocolVersion = 2, type = "state", state = original with { Profiles = profiles } }));
                                 await Until(async () => await Script("!!document.querySelector('[data-testid=reload-dialog-draft]')") == "true");
                                 foreach (var confirm in new[] { false, true })
@@ -135,7 +159,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                                     Assert.Equal("true", await Script("(() => { const p=document.querySelector('[data-testid=reload-draft-confirmation]'), b=p.querySelector('button'), r=b.getBoundingClientRect(); b.focus(); return p.closest('dialog').matches(':modal') && document.activeElement===b && b.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)) })()"));
                                     await Script($"document.querySelectorAll('[data-testid=reload-draft-confirmation] button')[{(confirm ? 1 : 0)}].click(); true");
                                     await Until(async () => await Script("!document.querySelector('[data-testid=reload-draft-confirmation]')") == "true");
-                                    Assert.Equal(confirm ? "C:/remote-target.exe" : "C:/unsaved-target.exe", JsonSerializer.Deserialize<string>(await Script("document.querySelector('#core-exe').value")));
+                                    Assert.Equal(confirm ? "C:/remote-target.exe" : "C:/unsaved-target.exe", JsonSerializer.Deserialize<string>(await Script("document.querySelector('#core-switch-exe').value")));
                                 }
                             }
                             await using var switchImage = File.Create(Path.Combine(evidence, name + "-switch.png"));
@@ -149,6 +173,105 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     await Until(async () => await Script("!!document.querySelector('#core-settings-connectionSettings .settings-grid')") == "true");
                     await Task.Delay(500); // Finish the user-visible smooth scroll.
                     Assert.Equal("true", await Script("(() => { const r=document.querySelector('#core-settings-connectionSettings').getBoundingClientRect(); return r.top>=document.querySelector('.core-toolbar').getBoundingClientRect().bottom && r.top<innerHeight })()"));
+                    // Regression: opening a target editor used to remove the background
+                    // profile/log block and clamp scrollTop from 240 to zero.
+                    Assert.Equal("240", await Script("(() => { const page=document.querySelector('.core-content').parentElement; page.scrollTop=240; window.__uiBeforeSwitch={panel:document.querySelector('.core-layout'),value:document.querySelector('#core-exe').value}; return page.scrollTop })()"));
+                    await Script("document.querySelector('.core-top-button.btn-primary').click(); true");
+                    await Until(async () => await Script("!!document.querySelector('[data-testid=switch-core-dialog]')") == "true");
+                    Assert.Equal("true", await Script("(() => { const ids=[...document.querySelectorAll('[id]')].map(e=>e.id); return document.querySelector('.core-layout')===window.__uiBeforeSwitch.panel && document.querySelector('#core-exe').value===window.__uiBeforeSwitch.value && new Set(ids).size===ids.length && document.querySelector('.core-content').parentElement.scrollTop===240 })()"));
+                    await Script("document.querySelector('[data-testid=switch-core-dialog] .modal-action .dashboard-action-btn').click(); true");
+                    await Until(async () => await Script("!document.querySelector('[data-testid=switch-core-dialog]') && document.activeElement===document.querySelector('.core-top-button.btn-primary')") == "true");
+                    Assert.Equal("240", await Script("document.querySelector('.core-content').parentElement.scrollTop"));
+                    await File.WriteAllTextAsync(Path.Combine(evidence, $"switch-scroll-{language}.json"), "{\"before\":240,\"after\":240,\"backgroundRetained\":true,\"focusReturned\":true}");
+
+                    // Shared SelectInput remains upstream-owned; verify the desktop
+                    // consumer's size on all three affected toolbars, not CSS strings.
+                    form.ClientSize = new System.Drawing.Size(1360, 1000);
+                    foreach (var route in new[] { "proxies", "connections", "logs" })
+                    {
+                        await Script($"window.__previousToolbar=document.querySelector('.ctrls-bar'); location.hash='#/{route}'; true");
+                        // The previous page can still have a combobox during out-in
+                        // transitions. Require its DOM to leave and the new page to settle.
+                        await Until(async () => await Script("!window.__previousToolbar?.isConnected && !!document.querySelector('.ctrls-bar [role=combobox]') && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
+                        var controls = await Script("JSON.stringify([...document.querySelectorAll('.ctrls-bar [role=combobox]')].map(e=>({height:e.getBoundingClientRect().height,radius:parseFloat(getComputedStyle(e).borderRadius)})))");
+                        var json = JsonSerializer.Deserialize<string>(controls)!;
+                        await File.WriteAllTextAsync(Path.Combine(evidence, $"toolbar-{route}-{language}.json"), json);
+                        await using (var image = File.Create(Path.Combine(evidence, $"toolbar-{route}-{language}.png")))
+                            await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                        using var measured = JsonDocument.Parse(json);
+                        Assert.Equal(route == "logs" ? 2 : 1, measured.RootElement.GetArrayLength());
+                        foreach (var control in measured.RootElement.EnumerateArray())
+                        {
+                            Assert.InRange(control.GetProperty("height").GetDouble(), 35.5, 36.5);
+                            Assert.InRange(control.GetProperty("radius").GetDouble(), 7.5, 8.5);
+                        }
+                    }
+                    // Render error/unknown/read-only states through the real API and
+                    // v2 session owner, using only our ephemeral synthetic service.
+                    await Script("location.hash='#/core'; true");
+                    await Until(async () => await Script("!!document.querySelector('.core-content')") == "true");
+                    long epoch = 100;
+                    void SendBackendState(bool? readOnlyTun = null, string apiStatus = "ready")
+                    {
+                        var state = host.BuildState(false);
+                        var kind = readOnlyTun.HasValue ? CoreKind.SingBox : CoreKind.Mihomo;
+                        var runtime = state.Runtime with
+                        {
+                            CoreType = kind, CoreTitle = AppSettings.CoreTitleFor(kind),
+                            IsRunning = true, ProcessId = 12345, ApiStatus = apiStatus, RuntimeEpoch = epoch++,
+                            ApiUrl = api.Origin, ReadOnlyTunEnabled = readOnlyTun
+                        };
+                        View()!.CoreWebView2.PostWebMessageAsJson(HostBridgeJson.Serialize(new { protocolVersion = 2, type = "state", state = state with { Runtime = runtime } }));
+                    }
+                    async Task RecordBackendState(string name)
+                    {
+                        await Until(async () => await Script("!document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
+                        var json = await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'); return {text:root.innerText,controls:[...root.querySelectorAll('input[type=checkbox]')].map(e=>({label:e.getAttribute('aria-label'),checked:e.checked,disabled:e.disabled}))} })()");
+                        await File.WriteAllTextAsync(Path.Combine(evidence, $"backend-{name}-{language}.json"), json);
+                        await using var image = File.Create(Path.Combine(evidence, $"backend-{name}-{language}.png"));
+                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                    }
+                    api.ConfigStatusCode = 404; // permanent read failure; no background retry races
+                    api.ConfigResponse = new { message = "fixture API denied <img src=x>" };
+                    SendBackendState();
+                    await Until(async () => await Script("!!document.querySelector('#core-settings-backendSettings [role=alert]')") == "true");
+                    Assert.Equal("true", await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===0 && !document.querySelector('#core-settings-backendSettings [role=alert] img') && document.querySelector('#core-settings-backendSettings [role=alert]').textContent.includes('fixture API denied <img src=x>')"));
+                    await RecordBackendState("error");
+                    var readsBeforeRetry = api.Requests.GetValueOrDefault("/configs");
+                    api.ConfigStatusCode = 200;
+                    api.ConfigResponse = null;
+                    await Script("document.querySelector('#core-settings-backendSettings [role=alert] button').click(); true");
+                    await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2") == "true");
+                    Assert.True(api.Requests.GetValueOrDefault("/configs") > readsBeforeRetry);
+                    Assert.Equal("true", await Script("[...document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]')].every(e=>!e.checked&&!e.disabled)"));
+                    await RecordBackendState("recovered");
+                    api.ConfigResponse = new { tun = new { } };
+                    SendBackendState();
+                    var unknownLabel = language == "zh-CN" ? "状态未知" : "Unknown state";
+                    await Until(async () => await Script("document.querySelector('#core-settings-backendSettings').textContent.includes(" + JsonSerializer.Serialize(unknownLabel) + ")") == "true");
+                    Assert.Equal("0", await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length"));
+                    await RecordBackendState("unknown");
+                    foreach (var enabled in new[] { false, true })
+                    {
+                        api.ConfigStatusCode = 404;
+                        api.ConfigResponse = new { message = "fixture read-only API failure" };
+                        SendBackendState(enabled);
+                        var expected = enabled ? "true" : "false";
+                        await Until(async () => await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'), inputs=root.querySelectorAll('input[type=checkbox]'); return inputs.length===1 && inputs[0].disabled && inputs[0].checked===" + expected + " && !!root.querySelector('[role=alert]') })()") == "true");
+                        await RecordBackendState("read-only-" + expected);
+                    }
+                    foreach (var status in new[] { "unauthorized", "unreachable" })
+                    {
+                        SendBackendState(apiStatus: status);
+                        var message = (status, language) switch
+                        {
+                            ("unauthorized", "zh-CN") => "鉴权失败", ("unreachable", "zh-CN") => "无法连接",
+                            ("unauthorized", _) => "Authentication failed", _ => "Unreachable"
+                        };
+                        await Until(async () => await Script("document.querySelector('#core-settings-backendSettings [role=alert]')?.textContent.includes(" + JsonSerializer.Serialize(message) + ")") == "true");
+                        await RecordBackendState(status);
+                    }
+                    Assert.False(host.IsRunning);
                     await host.ShutdownAsync();
                     await TestBrowser.DisposeAsync(form);
                     completion.TrySetResult();
@@ -188,7 +311,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           if (!near(tr.left, pr.left)) errors.push('toolbar/profile left edge');
           const lamp = toolbar.querySelector('.core-runtime-dot'), lr = rect(lamp), sr = rect(toolbar.querySelector('.core-status-box'));
           const precise = (a,b) => Math.abs(a-b) < 0.5;
-          // Retained visual contract, independent of the pending density/breakpoint choices.
+          // Retained visual contract; v2 density and actual-content breakpoints are also accepted.
           if (!precise(sr.height, 36)) errors.push('visual contract: status box height 36px');
           if (!precise(lr.left - pr.left, 2) || !precise(sr.left - pr.left, 30)) errors.push('retained lamp/status optical insets');
           if (!precise(lr.width, 12) || !precise(lr.height, 12) || !precise(sr.left - lr.right, 16)) errors.push('lamp diameter/status gap');
@@ -205,7 +328,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           } finally { lamp.className = originalClass; reference.remove(); }
           const save = document.querySelector('[data-testid=save-core-profile]');
           const secret = document.querySelector('#core-secret');
-          if (save.parentElement !== secret.parentElement || !near(rect(save).top,rect(secret).top)) errors.push('save/secret inline');
+          if (!near(rect(save).top,rect(secret).top) || !near(rect(save).left - rect(secret).right, 8)) errors.push('save/secret inline');
           if (profile.querySelector('h2').textContent.includes('·')) errors.push('duplicate core name in heading');
           if (!near(pr.left, br.left) || !near(pr.width, br.width)) errors.push('profile/backend columns');
           const optionTitle = profileCard.nextElementSibling, optionRow = profile.querySelector('.setting-item');
@@ -237,7 +360,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           const windows = document.querySelector('[aria-label="最小化"]');
           if (windows && tr.right > rect(windows).left) errors.push('toolbar overlaps window controls');
           if (content.parentElement.scrollWidth > content.parentElement.clientWidth) errors.push('page horizontal overflow');
-          return {errors, viewportWidth:innerWidth, contentWidth, wide, statusHeight:sr.height, actionSizes:actions.map(a=>({width:rect(a).width,height:rect(a).height})), toolbarLeft:tr.left, profileLeft:pr.left, backendLeft:br.left, profileWidth:pr.width, backendWidth:br.width, outputHeight:or.height, lampInset:lr.left-pr.left, statusInset:sr.left-pr.left, lampGap:sr.left-lr.right, lampCenterOffset:lr.top+lr.height/2-sr.top-sr.height/2};
+          return {errors, viewportWidth:innerWidth, contentWidth, wide, pathInset:rect(document.getElementById('core-exe')).left-pr.left, pathInputWidth:rect(document.getElementById('core-exe')).width, statusHeight:sr.height, actionSizes:actions.map(a=>({width:rect(a).width,height:rect(a).height})), toolbarLeft:tr.left, profileLeft:pr.left, backendLeft:br.left, profileWidth:pr.width, backendWidth:br.width, outputHeight:or.height, lampInset:lr.left-pr.left, statusInset:sr.left-pr.left, lampGap:sr.left-lr.right, lampCenterOffset:lr.top+lr.height/2-sr.top-sr.height/2};
         })()
         """;
 }
