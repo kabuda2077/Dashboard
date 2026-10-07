@@ -10,4 +10,9 @@ foreach ($name in @('@bufbuild/protobuf', '@connectrpc/connect', '@xterm/xterm',
 foreach ($file in @('index.html', 'src/main.ts', 'src/appEntry.ts', 'src/composables/hostBridge.ts')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot $file) -PathType Leaf)) { throw "Missing desktop entry: $file" }
 }
+. (Join-Path $PSScriptRoot '..\..\tools\internal\fork-policy.ps1')
+$repository = [IO.Path]::GetFullPath((Join-Path $SourceRoot '..'))
+$policy = Read-ForkPolicy -Root $repository
+Test-ForkMirrors -Root $repository -Policy $policy
+Write-Host "Fork policy/mirrors passed; $(@($policy.pending).Count) decisions and $(@($policy.knownGaps).Count) known gaps remain (not a conformance pass)."
 Write-Host 'Desktop packaging source boundaries passed. Runtime behavior is covered by the unit/integration suites.'

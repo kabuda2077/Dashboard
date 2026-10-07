@@ -75,7 +75,12 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             """);
                         await Until(async () => await Script($"!!document.querySelector('.home-page.sidebar-' + (matchMedia('(max-width: 768px)').matches || {collapsed.ToString().ToLowerInvariant()} ? 'collapsed' : 'expanded'))") == "true");
                         await Task.Delay(400); // Finish the actual sidebar transition before geometry assertions.
+                        var name = $"{language}-{theme}-{width}-{(collapsed ? "collapsed" : "expanded")}";
                         var before = await Script(Measure);
+                        // Persist evidence before asserting so CI also retains the failing layout.
+                        await File.WriteAllTextAsync(Path.Combine(evidence, name + "-before.json"), before);
+                        await using (var beforeImage = File.Create(Path.Combine(evidence, name + "-before.png")))
+                            await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, beforeImage);
                         using (var metrics = JsonDocument.Parse(before)) Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, before);
                         View()!.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new
                         {
@@ -83,6 +88,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         }));
                         await Until(async () => await Script("document.querySelector('.core-output-log').scrollHeight > document.querySelector('.core-output-log').clientHeight") == "true");
                         var after = await Script(Measure);
+                        await File.WriteAllTextAsync(Path.Combine(evidence, name + ".json"), after);
                         using (var metrics = JsonDocument.Parse(after))
                         {
                             Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, after);
@@ -104,8 +110,6 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         }
                         View()!.CoreWebView2.PostWebMessageAsJson(HostBridgeJson.Serialize(HostOutboundMessage.Runtime(host.BuildRuntimeState(false))));
                         await Until(async () => await Script("!document.querySelector('.core-status-pid')") == "true");
-                        var name = $"{language}-{theme}-{width}-{(collapsed ? "collapsed" : "expanded")}";
-                        await File.WriteAllTextAsync(Path.Combine(evidence, name + ".json"), after);
                         await using var screenshot = File.Create(Path.Combine(evidence, name + ".png"));
                         await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, screenshot);
                         await Script("document.querySelector('.core-content').parentElement.scrollTop = 250; true");
@@ -184,7 +188,9 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           if (!near(tr.left, pr.left)) errors.push('toolbar/profile left edge');
           const lamp = toolbar.querySelector('.core-runtime-dot'), lr = rect(lamp), sr = rect(toolbar.querySelector('.core-status-box'));
           const precise = (a,b) => Math.abs(a-b) < 0.5;
-          if (!precise(lr.left - pr.left, 2) || !precise(sr.left - pr.left, 30)) errors.push('v1.2.2 lamp/status optical insets');
+          // Retained visual contract, independent of the pending density/breakpoint choices.
+          if (!precise(sr.height, 36)) errors.push('visual contract: status box height 36px');
+          if (!precise(lr.left - pr.left, 2) || !precise(sr.left - pr.left, 30)) errors.push('retained lamp/status optical insets');
           if (!precise(lr.width, 12) || !precise(lr.height, 12) || !precise(sr.left - lr.right, 16)) errors.push('lamp diameter/status gap');
           if (!precise(lr.top + lr.height/2, sr.top + sr.height/2)) errors.push('lamp/status vertical center');
           const originalClass = lamp.className, reference = document.createElement('span');
@@ -210,12 +216,18 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           }
           const actions = [...toolbar.querySelectorAll('.core-runtime-actions button')];
           if (toolbar.querySelector('select') || actions.length !== 3) errors.push('runtime toolbar must only have switch/start/stop');
+          for (const [index, action] of actions.entries()) {
+            const ar = rect(action);
+            if (!precise(ar.width, 72) || !precise(ar.height, 34)) errors.push('visual contract: Core action 72x34px');
+            if (index && !precise(ar.left - rect(actions[index-1]).right, 8)) errors.push('visual contract: Core action gap 8px');
+          }
           if (wide && !near(tr.right, pr.right)) errors.push('toolbar/profile right edge');
           if (wide && (!near(pr.top, or.top) || !near(or.bottom, rect(profile).bottom))) errors.push('output does not align with left column');
           if (!wide && or.top < rect(profile).bottom) errors.push('narrow layout did not stack');
           for (const id of ['core-exe','core-config','core-api','core-secret']) {
             const input = document.getElementById(id), label = document.querySelector(`label[for="${id}"]`);
             const ir = rect(input), lr = rect(label);
+            if (!precise(ir.height, 32)) errors.push('visual contract: field input height 32px');
             if (contentWidth >= 640 && (lr.right > ir.left || !near(lr.top+lr.height/2,ir.top+ir.height/2))) errors.push(id + ' label/input row');
             if (contentWidth < 640 && lr.bottom > ir.top) errors.push(id + ' narrow field');
             if (ir.width < 60 || ir.right > pr.right || ir.left < pr.left) errors.push(id + ' clipped input');
@@ -225,7 +237,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           const windows = document.querySelector('[aria-label="最小化"]');
           if (windows && tr.right > rect(windows).left) errors.push('toolbar overlaps window controls');
           if (content.parentElement.scrollWidth > content.parentElement.clientWidth) errors.push('page horizontal overflow');
-          return {errors, viewportWidth:innerWidth, contentWidth, wide, toolbarLeft:tr.left, profileLeft:pr.left, backendLeft:br.left, profileWidth:pr.width, backendWidth:br.width, outputHeight:or.height, lampInset:lr.left-pr.left, statusInset:sr.left-pr.left, lampGap:sr.left-lr.right, lampCenterOffset:lr.top+lr.height/2-sr.top-sr.height/2};
+          return {errors, viewportWidth:innerWidth, contentWidth, wide, statusHeight:sr.height, actionSizes:actions.map(a=>({width:rect(a).width,height:rect(a).height})), toolbarLeft:tr.left, profileLeft:pr.left, backendLeft:br.left, profileWidth:pr.width, backendWidth:br.width, outputHeight:or.height, lampInset:lr.left-pr.left, statusInset:sr.left-pr.left, lampGap:sr.left-lr.right, lampCenterOffset:lr.top+lr.height/2-sr.top-sr.height/2};
         })()
         """;
 }
