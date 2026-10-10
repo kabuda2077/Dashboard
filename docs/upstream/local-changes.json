@@ -38,7 +38,7 @@
       "id": "desktop-visuals",
       "origin": "desktop",
       "decision": "keep-behavior",
-      "intent": "工具栏 36px、Core 操作 72×34px/间距 8px、输入 32px、状态灯相对对齐属于视觉约定，不是组件名约束。",
+      "intent": "默认保留紧凑、对齐、一致的桌面体验；36px 工具栏、72×34px Core 操作/8px 间距和 32px 输入是当前参考尺寸，可用有证据的等效尺寸/实现跟进上游。明显或不确定的视觉变化需要对比和决定。",
       "evidence": ["5fdf3b7: 72×34、8px、36px、配置标签 4.5rem", "e743fb1: 独立桌面样式层", "750c162: 恢复受控下拉和顶栏样式", "本轮修正：工具栏 SelectInput 的桌面尺寸/圆角适配；标签共享自然宽度，不固定占用 120px"],
       "paths": ["dashboard-src/src/assets/styles/*", "dashboard-src/src/assets/main.css", "dashboard-src/src/assets/images/sing-box.svg", "dashboard-src/src/composables/useAppearanceVars.ts", "dashboard-src/src/helper/theme.ts", "dashboard-src/src/components/common/CtrlsBar.vue", "dashboard-src/src/components/common/WindowControls.vue", "dashboard-src/src/composables/paddingViews.ts"],
       "watch": ["dashboard-src/src/components/common/*", "dashboard-src/src/components/controls/*", "dashboard-src/tailwind.config.ts", "dashboard-src/postcss.config.js", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
@@ -60,7 +60,7 @@
       "decision": "keep-behavior",
       "intent": "宿主拥有进程、身份、epoch 和操作结果；Clash 数据请求不得越过会话边界或绕过原生权限。",
       "evidence": ["fd66880: 桌面生命周期/会话整合", "517d6b3: v2 协议与请求失效边界", "本轮修正：配置未知值不当作关闭；会话鉴权/连接失败即使清空数据也保留错误反馈，按会话状态选择宿主重试或配置重读"],
-      "paths": ["src/*", "dashboard-src/src/App.vue", "dashboard-src/src/main.ts", "dashboard-src/src/appEntry.ts", "dashboard-src/src/hostBootstrap.ts", "dashboard-src/src/views/HomePage.vue", "dashboard-src/src/composables/hostBridge.ts", "dashboard-src/src/composables/coreHostActions.ts", "dashboard-src/src/helper/appStartup.ts", "dashboard-src/src/helper/connectivity.ts", "dashboard-src/src/composables/useBackendRuntimeConfig.ts", "dashboard-src/src/api/*", "dashboard-src/src/assembly/*", "dashboard-src/src/helper/backend*", "dashboard-src/src/helper/host*", "dashboard-src/src/store/setup.ts"],
+      "paths": ["src/*", "dashboard-src/src/App.vue", "dashboard-src/src/main.ts", "dashboard-src/src/appEntry.ts", "dashboard-src/src/hostBootstrap.ts", "dashboard-src/src/views/HomePage.vue", "dashboard-src/src/views/SetupPage.vue", "dashboard-src/src/composables/hostBridge.ts", "dashboard-src/src/composables/coreHostActions.ts", "dashboard-src/src/helper/appStartup.ts", "dashboard-src/src/helper/connectivity.ts", "dashboard-src/src/composables/useBackendRuntimeConfig.ts", "dashboard-src/src/api/*", "dashboard-src/src/assembly/*", "dashboard-src/src/helper/backend*", "dashboard-src/src/helper/host*", "dashboard-src/src/store/setup.ts"],
       "watch": ["dashboard-src/src/views/*", "dashboard-src/src/components/settings/backend/*", "dashboard-src/src/helper/requestError.ts", "dashboard-src/src/constant/*"],
       "checks": ["tests/Dashboard.Tests/HostMessageRouterTests.cs", "tests/Dashboard.Tests/CoreLifecycleBoundaryTests.cs", "tests/Dashboard.Tests/CoreLayoutTests.cs", "dashboard-src/src/__tests__/backend-session.test.ts", "dashboard-src/src/__tests__/backend-state-ui.test.ts", "dashboard-src/src/__tests__/core-draft.test.ts", "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"]
     },
@@ -90,7 +90,7 @@
       "decision": "keep-behavior",
       "intent": "保留代理分组、文件夹、测速、图标缓存与滚动；可复用上游渲染/计算，不固定缓存和组件名字。",
       "evidence": ["8ac1119: 上游虚拟化、滚动和测速跟进", "517d6b3: 复用延迟计算与移除未使用分支"],
-      "paths": ["dashboard-src/src/components/proxies/*", "dashboard-src/src/composables/renderProxies.ts", "dashboard-src/src/composables/proxies*", "dashboard-src/src/composables/proxyGroupChain.ts", "dashboard-src/src/store/smart.ts", "dashboard-src/src/store/proxy*", "dashboard-src/src/helper/proxy*"],
+      "paths": ["dashboard-src/src/views/ProxiesPage.vue", "dashboard-src/src/components/proxies/*", "dashboard-src/src/composables/renderProxies.ts", "dashboard-src/src/composables/proxies*", "dashboard-src/src/composables/proxyGroupChain.ts", "dashboard-src/src/store/smart.ts", "dashboard-src/src/store/proxy*", "dashboard-src/src/helper/proxy*"],
       "watch": ["dashboard-src/src/assembly/proxies/*", "dashboard-src/src/components/common/Virtual*", "dashboard-src/src/assets/styles/*"],
       "checks": ["dashboard-src/src/__tests__/proxy-folders.test.ts", "dashboard-src/src/__tests__/provider-latency.test.ts", "dashboard-src/src/__tests__/proxy-request-lifecycle.test.ts"]
     },
@@ -100,7 +100,7 @@
       "decision": "keep-behavior",
       "intent": "保留 Clash 连接字段、链路、分组、排序、日志/规则及历史。共用 VirtualTable 替代重复表格；未支持 native API 的空分支不是功能。",
       "evidence": ["8ac1119: 连接分组、完整链路、GeoIP 和表格更新", "517d6b3: 表格/复制复用与字段裁剪"],
-      "paths": ["dashboard-src/src/components/connections/*", "dashboard-src/src/components/logs/*", "dashboard-src/src/components/rules/*", "dashboard-src/src/components/overview/ConnectionHistory.vue", "dashboard-src/src/composables/connection*", "dashboard-src/src/composables/rules*", "dashboard-src/src/store/connections.ts", "dashboard-src/src/store/connHistory.ts", "dashboard-src/src/store/logs.ts", "dashboard-src/src/helper/connection*", "dashboard-src/src/helper/sourceip.ts", "dashboard-src/src/helper/ansi.ts", "dashboard-src/src/helper/topConnections.ts"],
+      "paths": ["dashboard-src/src/views/ConnectionsPage.vue", "dashboard-src/src/views/LogsPage.vue", "dashboard-src/src/views/RulesPage.vue", "dashboard-src/src/components/connections/*", "dashboard-src/src/components/logs/*", "dashboard-src/src/components/rules/*", "dashboard-src/src/components/overview/ConnectionHistory.vue", "dashboard-src/src/composables/connection*", "dashboard-src/src/composables/rules*", "dashboard-src/src/store/connections.ts", "dashboard-src/src/store/connHistory.ts", "dashboard-src/src/store/logs.ts", "dashboard-src/src/helper/connection*", "dashboard-src/src/helper/sourceip.ts", "dashboard-src/src/helper/ansi.ts", "dashboard-src/src/helper/topConnections.ts"],
       "watch": ["dashboard-src/src/components/common/VirtualTable.vue", "dashboard-src/src/assembly/connections/*", "dashboard-src/src/assembly/logs/*", "dashboard-src/src/assembly/rules/*", "dashboard-src/src/helper/indexeddb.ts"],
       "checks": ["dashboard-src/src/__tests__/connection-presentation.test.ts", "dashboard-src/src/__tests__/connection-history.test.ts", "dashboard-src/src/__tests__/rules-request-lifecycle.test.ts", "dashboard-src/src/__tests__/logs-accumulator.test.ts"]
     },
@@ -110,7 +110,7 @@
       "decision": "replaceable",
       "intent": "保留概览、网络检查与图表数据/暂停语义；按需加载和隐藏时停用。删掉无生产调用的 seconds 分支不是高度回归。",
       "evidence": ["fd66880: 图表停用生命周期", "517d6b3: 按需加载与绘制边界"],
-      "paths": ["dashboard-src/src/components/overview/*", "dashboard-src/src/components/charts/*", "dashboard-src/src/composables/useEChart.ts", "dashboard-src/src/composables/overview.ts", "dashboard-src/src/store/overview.ts"],
+      "paths": ["dashboard-src/src/views/OverviewPage.vue", "dashboard-src/src/components/overview/*", "dashboard-src/src/components/charts/*", "dashboard-src/src/composables/useEChart.ts", "dashboard-src/src/composables/overview.ts", "dashboard-src/src/store/overview.ts"],
       "watch": ["dashboard-src/src/assembly/overview/*", "dashboard-src/src/assets/styles/*", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
       "checks": ["dashboard-src/src/__tests__/overview-chart-lifecycle.test.ts", "dashboard-src/src/__tests__/ip-check.test.ts"]
     },
@@ -120,9 +120,9 @@
       "decision": "product-review",
       "intent": "多后端独立 Settings、native API/Tools/DNS/Earth 等不在当前桌面范围；不意味着相关通用修复永久拒绝。",
       "evidence": ["docs/upstream/v3.26.0.md: 已评审采用/适配/暂缓/不纳入范围"],
-      "paths": ["dashboard-src/src/views/*", "dashboard-src/src/components/tools/*", "dashboard-src/src/components/dns/*", "dashboard-src/src/components/overview/Earth*", "dashboard-src/src/components/overview/Honk*", "dashboard-src/src/api/singbox*", "dashboard-src/src/types/singbox*", "dashboard-src/src/proto/*", "dashboard-src/src/assets/images/earth/*", "dashboard-src/src/assets/images/honk.svg", "dashboard-src/src/composables/backendActions.ts", "dashboard-src/src/composables/backendListProbe.ts", "dashboard-src/src/composables/backendReachability.ts", "dashboard-src/src/composables/terminalConfig.ts", "dashboard-src/src/helper/reverseDns.ts"],
+      "paths": ["dashboard-src/src/views/SettingsPage.vue", "dashboard-src/src/views/Tools*.vue", "dashboard-src/src/views/Terminal*.vue", "dashboard-src/src/views/Dns*.vue", "dashboard-src/src/views/Earth*.vue", "dashboard-src/src/views/Honk*.vue", "dashboard-src/src/components/tools/*", "dashboard-src/src/components/dns/*", "dashboard-src/src/components/overview/Earth*", "dashboard-src/src/components/overview/Honk*", "dashboard-src/src/api/singbox*", "dashboard-src/src/types/singbox*", "dashboard-src/src/proto/*", "dashboard-src/src/assets/images/earth/*", "dashboard-src/src/assets/images/honk.svg", "dashboard-src/src/composables/backendActions.ts", "dashboard-src/src/composables/backendListProbe.ts", "dashboard-src/src/composables/backendReachability.ts", "dashboard-src/src/composables/terminalConfig.ts", "dashboard-src/src/helper/reverseDns.ts"],
       "watch": ["dashboard-src/src/router/*", "dashboard-src/src/constant/*", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
-      "checks": ["tests/scripts/DesktopSources.Tests.ps1"]
+      "checks": ["tests/scripts/DesktopSources.Tests.ps1", "dashboard-src/src/__tests__/product-routes.test.ts"]
     },
     {
       "id": "local-tooling",

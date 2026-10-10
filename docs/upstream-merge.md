@@ -23,7 +23,7 @@ Do not overwrite or silently stash a dirty working tree. Preserve it and establi
 | --- | --- | --- |
 | Guarantees | No plaintext persisted credentials; no untrusted native commands; correct session isolation, save acknowledgements and failure recovery; preserve data created by the supported format during normal operation | Must not be weakened for merge convenience. Implementations may change if evidence preserves the guarantee |
 | Current product choices | Single active mihomo/sing-box, Clash API, desktop process ownership, Core-first desktop workflow, portable deployment, current page/operation scope | Keep by default; propose changes to the product owner rather than silently importing them |
-| Retained visual contract | Approved sizes, alignment, control order, focus/scroll context and surfaces in [style.md](style.md) | Preserve by default; deliberate changes need a design decision and before/after evidence. Do not treat them as incidental component defaults |
+| Retained visual contract | Compact density, alignment, consistency, control order, focus/scroll context and surfaces in [style.md](style.md); sizes are current references | Preserve the experience by default; equivalent sizes/implementations may follow upstream with consumer evidence. Obvious or uncertain visual changes need comparison and a design decision |
 | Pending visual choices | Any unresolved choices listed in the local-change register; the initial six v2 choices are now explicitly accepted in style.md | Keep new proposals pending until decided; current code/tests alone do not establish owner approval |
 | Implementation | Specific classes, filenames, refs, caches, layout technique and component internals | May be replaced while preserving the preceding levels; update implementation-bound tests with equivalent evidence |
 | Historical decisions | A feature was previously deferred/rejected for cost, dependency, protocol or relevance | Revisit when the reason changes; a product-scope change still requires approval |
@@ -87,6 +87,8 @@ The audit reads R from a temporary archive and D from the current candidate incl
 
 Three declared mirrors are checked offline by Check/Release; the audit additionally verifies their recorded hashes against real U0 files. These are narrow ownership guards, not a frozen hash list for the whole codebase. Do not refresh hashes from candidate files. If upstream replaces a local fix, remove the explained patch only after checking consumers. The audit never advances U0, updates a screenshot/hash baseline, merges, pushes or approves a release.
 
+Data page entries are explicitly owned by proxy-experience, tables-history or overview-charts so an upstream page-only change triggers the relevant consumer checks. Excluded page patterns name the excluded scope; they do not classify every view as excluded. Browser Setup belongs to host-session and remains separate from desktop Core setup.
+
 A new group needs an intent/evidence/check link; a new change in an existing group still needs semantic review. Watches are explicit dependency triggers, not a complete dependency graph. Formatting and comments remain visible in source diffs and may be grouped after inspection, rather than automatically ignored.
 
 ### Integration steps
@@ -114,7 +116,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\create-release.ps1
 ```
 
-Both use the same automated verification stages. Release rechecks its own inputs before publishing and packaging. Internal front-end build, icon generation and resource assertions are not a separate user workflow.
+Both use the same automated verification stages. Release captures the source revision and tracked/untracked source manifest before verification, checks it again after verification/publish and immediately before replacing the ZIP, and saves that starting manifest. Changed inputs abort and preserve the previous ZIP. The two tracked generated icons (resources/app.ico and resources/tray.ico) are outputs, excluded from source comparison; their tracked favicon and generator remain inputs, and ZIP content hashes cover the produced files. Internal front-end build, icon generation and resource assertions are not a separate user workflow.
 
 Optional real WebView validation:
 
@@ -136,7 +138,7 @@ At release-candidate stage inspect the published directory and ZIP, not only the
 
 - Behavior tests for request/reply schema, fresh bootstrap, explicit PID clearing, drafts/ACKs, same-endpoint sessions, config write/read order and core operations.
 - Actual UI interactions for operation order, selection, menus, visibility and meaningful feedback; [visual contract](style.md) for retained appearance. CI on main/v2 and PRs runs CoreLayoutTests/CoreSetupLayoutTests in the real isolated WebView after the common build and uploads evidence. The fixture uses its own synthetic API, including configuration failures and read-only states. This remains scoped coverage; any newly registered gaps must stay visible until fixed.
-- Build checks for packaged dependencies, resource completeness, startup eager dependency graph and excluded product entry points.
+- Build checks for packaged dependencies, resource completeness and startup eager dependency graph. The frontend product-routes test imports the production router/navigation and renders the actual sidebar: only Core/Proxies/Connections/Overview/Logs/Rules are exposed, browser setup stays separate, and desktop setup redirects to Core. Page bodies/sidebar extras are stubbed; router and navigation are not. The offline audit fixture verifies page-only incoming changes reach their actual feature checks.
 - Focused manual/real integration checks for window controls, tray/suspension, both cores, permissions, sleep recovery, themes and DPI according to impact.
 
 Do not require a variable called `lastKeys`, a particular `shallowRef` spelling or a component called MiniSparkline. If an implementation changes, identify the invariant the previous test protected, replace that evidence, then remove the obsolete assertion. Do not simply delete failed guards to pass the build.

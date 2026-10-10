@@ -41,7 +41,14 @@ try {
         $null = Git $directory @('config', 'user.name', 'Audit fixture')
         $null = Git $directory @('config', 'core.autocrlf', 'false')
     }
-    $files = @('src/common/Control.vue', 'src/views/Page.vue', 'src/retired.ts', 'src/back-to-upstream.ts')
+    $pageOwners = [ordered]@{
+        'ProxiesPage.vue' = 'proxy-experience'
+        'ConnectionsPage.vue' = 'tables-history'
+        'LogsPage.vue' = 'tables-history'
+        'RulesPage.vue' = 'tables-history'
+        'OverviewPage.vue' = 'overview-charts'
+    }
+    $files = @('src/common/Control.vue', 'src/views/Page.vue', 'src/retired.ts', 'src/back-to-upstream.ts') + @($pageOwners.Keys | ForEach-Object { 'src/views/' + $_ })
     foreach ($file in $files) { Put $upstream $file "upstream`n" }
     $null = Git $upstream @('add', '.')
     $null = Git $upstream @('commit', '--quiet', '-m', 'U0')
@@ -64,12 +71,17 @@ try {
         mirrors = @(@{ path = 'dashboard-src/src/common/Control.vue'; sha256 = Get-NormalizedSourceHash (Join-Path $upstream $files[0]) })
         changes = @(@{
             id = 'desktop'; origin = 'desktop'; decision = 'keep-behavior'; intent = 'Fixture desktop contract'; evidence = @('fixture history')
-            paths = @('dashboard-src/src/views/*', 'src/*')
+            paths = @('dashboard-src/src/views/Page.vue', 'src/*')
             watch = @('dashboard-src/src/common/Control.vue')
             checks = @('checks/behavior.txt')
         })
         pending = @(@{ id = 'density'; change = 'desktop'; question = 'Not approved yet' })
         knownGaps = @(@{ id = 'scroll-gap'; change = 'desktop'; expected = 'Preserve scroll'; observed = 'Unfixed'; coverage = 'not covered' })
+    }
+    # Use the real register so page-only incoming changes exercise its ownership map.
+    foreach ($group in $policy.changes | Where-Object { $_.id -in @($pageOwners.Values) -or $_.id -eq 'excluded-product-scope' }) {
+        $script:fixturePolicy.changes += $group
+        foreach ($check in $group.checks) { Put $local $check 'fixture check reference' }
     }
     Save-Policy
     Put $local 'dashboard-src/src/common/Control.vue' "upstream`r`n"
@@ -82,6 +94,9 @@ try {
     Put $upstream 'src/common/Control.vue' "new upstream control`n"
     Put $upstream 'src/retired.ts' "changed upstream retired feature`n"
     Put $upstream 'src/new-feature.ts' "new upstream feature`n"
+    foreach ($pageName in $pageOwners.Keys) { Put $upstream ('src/views/' + $pageName) "page-only upstream change`n" }
+    Put $upstream 'src/views/FuturePage.vue' "unknown product entry`n"
+    Put $upstream 'src/views/SettingsPage.vue' "excluded standalone settings`n"
     $null = Git $upstream @('add', '.')
     $null = Git $upstream @('commit', '--quiet', '-m', 'U1')
     $script:u1 = [string](Git $upstream @('rev-parse', 'HEAD'))
@@ -103,6 +118,15 @@ try {
     Assert-True (-not $control.localOverlap -and 'desktop' -in $control.changes -and 'checks/behavior.txt' -in $control.checks) 'Unmodified shared control did not trigger consumer checks.'
     Assert-True (($report.incoming | Where-Object path -eq 'dashboard-src/src/retired.ts').localOverlap) 'A locally removed file was treated as safe incoming code.'
     Assert-True (($report.incoming | Where-Object path -eq 'dashboard-src/src/new-feature.ts').attention -eq 'unclassified') 'Unknown feature was silently adopted.'
+    foreach ($pageName in $pageOwners.Keys) {
+        $owner = $pageOwners[$pageName]
+        $item = $report.incoming | Where-Object path -eq ('dashboard-src/src/views/' + $pageName)
+        $expectedChecks = @($policy.changes | Where-Object id -eq $owner | ForEach-Object { $_.checks })
+        Assert-True ($owner -in $item.changes -and 'excluded-product-scope' -notin $item.changes -and -not $item.localOverlap) "Page-only change lost its real owner: $pageName"
+        foreach ($check in $expectedChecks) { Assert-True ($check -in $item.checks) "Page-only change omitted $check for $pageName" }
+    }
+    Assert-True (($report.incoming | Where-Object path -eq 'dashboard-src/src/views/FuturePage.vue').attention -eq 'unclassified') 'Unknown page was hidden by a catch-all scope label.'
+    Assert-True ('excluded-product-scope' -in ($report.incoming | Where-Object path -eq 'dashboard-src/src/views/SettingsPage.vue').changes) 'Excluded standalone Settings lost its product review trigger.'
     Assert-True ($report.candidateDirty -and $report.pendingDecisions.Count -eq 1 -and $report.knownGaps.Count -eq 1) 'Dirty input or unfinished work was hidden.'
     Assert-True ([string](Git $local @('rev-parse', 'HEAD')) -eq $r) 'Audit moved the candidate branch.'
 
