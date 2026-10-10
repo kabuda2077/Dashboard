@@ -54,7 +54,6 @@ import { usePaddingForViews } from '@/composables/paddingViews'
 import { disableProxiesPageScroll, renderProxiesPageItems } from '@/composables/proxies'
 import { PROXY_TAB_TYPE } from '@/constant'
 import { isMiddleScreen } from '@/helper/utils'
-import { fetchProxies } from '@/assembly/proxies'
 import { proxiesTabShow } from '@/assembly/proxies'
 import { disableProxiesPageTextSelect, twoColumnProxyGroup } from '@/store/settings'
 import { folderManagerOpen, isProxyFolderModeActive } from '@/store/proxyFolders'
@@ -248,9 +247,6 @@ onMounted(() => {
   nextTick(() => {
     syncScrollMargin()
     restoreScrollPosition()
-  })
-  setTimeout(() => {
-    fetchProxies()
   })
 })
 

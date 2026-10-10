@@ -1,17 +1,27 @@
-using System.Reflection;
-using Dashboard;
+using System.Net;
 
 namespace Dashboard.Tests;
 
 public sealed class ProxyGroupIconCacheTests : TemporaryDirectoryTest
 {
-    [Fact]
-    public async Task ExtractsProxyGroupIconsFromYamlOnlyInsideProxyGroups()
+    private sealed class IconHandler : HttpMessageHandler
     {
-        var tempRoot = TestRoot;
-        Directory.CreateDirectory(tempRoot);
-        var configPath = Path.Combine(tempRoot, "config.yaml");
-        await File.WriteAllTextAsync(configPath, """
+        public int Downloads;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Downloads++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("icon") });
+        }
+    }
+
+    private string ConfigPath => Path.Combine(TestRoot, "config.yaml");
+    private static readonly Uri DashboardUri = new("http://127.0.0.1:33291/");
+    private ProxyGroupIconCache CreateCache(HttpClient? client = null) => new(Path.Combine(TestRoot, "icon-cache"), client);
+
+    [Fact]
+    public async Task PublishesOnlyWebIconsInsideProxyGroups()
+    {
+        await File.WriteAllTextAsync(ConfigPath, """
         mixed-port: 7890
         proxy-groups:
           - name: Auto
@@ -27,100 +37,60 @@ public sealed class ProxyGroupIconCacheTests : TemporaryDirectoryTest
           - name: outside
             icon: https://example.test/outside.png
         """);
-
-        var icons = ExtractIconUrls(configPath);
-
-        Assert.Equal(
-            new[] { "https://example.test/auto.png", "https://example.test/fallback.svg" },
-            icons);
+        var handler = new IconHandler();
+        using var client = new HttpClient(handler);
+        var cache = CreateCache(client);
+        await cache.RefreshAsync(ConfigPath);
+        Assert.Equal(new[] { "https://example.test/auto.png", "https://example.test/fallback.svg" }, cache.GetDashboardMap(DashboardUri).Keys);
+        Assert.Equal(2, handler.Downloads);
     }
 
-    [Fact]
-    public async Task StaleExistingCacheScanDoesNotPublishOrMutateMap()
-    {
-        var root = TestRoot;
-        Directory.CreateDirectory(root);
-        var configPath = Path.Combine(root, "config.yaml");
-        const string iconUrl = "https://example.test/a.png";
-        await File.WriteAllTextAsync(configPath, $"proxy-groups:\n  - name: A\n    icon: {iconUrl}\n");
-        var cache = new ProxyGroupIconCache(Path.Combine(root, "icon-cache"));
-        var fileName = InvokeGetCacheFileName(new Uri(iconUrl));
-        await File.WriteAllTextAsync(Path.Combine(cache.CacheDirectory, fileName), "cached");
-        var published = false;
-        cache.CacheChanged += (_, _) => published = true;
-
-        await cache.LoadExistingAsync(configPath, isCurrent: () => false);
-
-        Assert.False(published);
-        Assert.Empty(GetCachedFileKeys(cache));
-    }
-
-    [Fact]
-    public async Task ExistingCacheScanHonorsCancellationWithoutPublishing()
-    {
-        var root = TestRoot;
-        Directory.CreateDirectory(root);
-        var configPath = Path.Combine(root, "config.yaml");
-        await File.WriteAllTextAsync(configPath, "proxy-groups:\n  - name: A\n    icon: https://example.test/a.png\n");
-        var cache = new ProxyGroupIconCache(Path.Combine(root, "icon-cache"));
-        var published = false;
-        cache.CacheChanged += (_, _) => published = true;
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => cache.LoadExistingAsync(configPath, cancellation.Token));
-        Assert.False(published);
-    }
-
-    [Fact]
-    public void MissingConfigProducesNoIconUrls()
-    {
-        var icons = ExtractIconUrls(Path.Combine(TestRoot, "missing.yaml"));
-
-        Assert.Empty(icons);
-    }
-
-    // ProxyIcon.vue looks up the icon twice: the string verbatim, then
-    // `new URL(icon).href`. That second read is a case-sensitive JavaScript
-    // property access, so a normalized form that differs from the config text
-    // has to be present in the map as its own key.
     [Theory]
-    // Already normalized: AbsoluteUri equals the input, so one key covers both.
-    [InlineData("https://example.test/icon.png", 1)]
-    // Path normalization changes the key under any comparer, so both are kept.
-    [InlineData("https://example.test/a/../icon.png", 2)]
-    // Host normalization must survive the frontend's case-sensitive object lookup.
-    [InlineData("https://Example.TEST/icon.png", 2)]
-    public void NonNormalizedIconUrlsAreRecordedUnderBothForms(string iconUrl, int expectedKeyCount)
+    [InlineData("https://example.test/icon.png")]
+    [InlineData("https://example.test/a/../icon.png")]
+    [InlineData("https://Example.TEST/icon.png")]
+    public async Task ConfigUrlsPublishCanonicalKeysOnDownloadAndColdCacheScan(string iconUrl)
     {
-        var cache = CreateCache();
+        await File.WriteAllTextAsync(ConfigPath, $"proxy-groups:\n  - name: A\n    icon: {iconUrl}\n");
+        var handler = new IconHandler();
+        using var client = new HttpClient(handler);
+        var cache = CreateCache(client);
+        await cache.RefreshAsync(ConfigPath);
+        var downloaded = Assert.Single(cache.GetDashboardMap(DashboardUri));
+        Assert.Equal(new Uri(iconUrl).AbsoluteUri, downloaded.Key);
+        Assert.StartsWith(DashboardUri + "__mihomo/icon-cache/", downloaded.Value);
 
-        var changed = InvokeTryRecordCacheFile(cache, iconUrl, "cached.png");
-        var keys = GetCachedFileKeys(cache);
-
-        Assert.True(changed);
-        Assert.Equal(expectedKeyCount, keys.Count);
-        Assert.Contains(iconUrl, keys);
-        if (expectedKeyCount == 2)
-        {
-            Assert.Contains(new Uri(iconUrl).AbsoluteUri, keys);
-        }
+        cache.ClearPublishedMap();
+        await cache.LoadExistingAsync(ConfigPath);
+        Assert.Equal(downloaded, Assert.Single(cache.GetDashboardMap(DashboardUri)));
+        Assert.Equal(1, handler.Downloads);
     }
 
-    // Both spellings are valid lookup keys in the browser.
     [Fact]
-    public void NormalizedHostCaseIsStoredSeparately()
+    public async Task StaleOrCancelledScanCannotPublishCachedIcons()
     {
-        var cache = CreateCache();
-        const string iconUrl = "https://Example.TEST/icon.png";
+        await File.WriteAllTextAsync(ConfigPath, "proxy-groups:\n  - name: A\n    icon: https://example.test/a.png\n");
+        using var client = new HttpClient(new IconHandler());
+        var cache = CreateCache(client);
+        await cache.RefreshAsync(ConfigPath);
+        cache.ClearPublishedMap();
+        var published = false;
+        cache.CacheChanged += (_, _) => published = true;
+        await cache.LoadExistingAsync(ConfigPath, isCurrent: () => false);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cache.LoadExistingAsync(ConfigPath, cancelled.Token));
+        Assert.False(published);
+        Assert.Empty(cache.GetDashboardMap(DashboardUri));
+    }
 
-        InvokeTryRecordCacheFile(cache, iconUrl, "cached.png");
-        var keys = GetCachedFileKeys(cache);
-
-        Assert.Equal(2, keys.Count);
-        Assert.Contains(iconUrl, keys);
-        Assert.Contains(new Uri(iconUrl).AbsoluteUri, keys);
+    [Fact]
+    public async Task MissingConfigProducesNoIconUrls()
+    {
+        using var client = new HttpClient(new IconHandler());
+        var cache = CreateCache(client);
+        await cache.RefreshAsync(ConfigPath);
+        Assert.Empty(cache.GetDashboardMap(DashboardUri));
     }
 
     [Fact]
@@ -138,55 +108,19 @@ public sealed class ProxyGroupIconCacheTests : TemporaryDirectoryTest
     }
 
     [Fact]
-    public void RecordingTheSameIconTwiceReportsNoChange()
+    public async Task RefreshPublishesOnlyWhenTheCachedFileChanges()
     {
-        var cache = CreateCache();
-        const string iconUrl = "https://Example.TEST/icon.png";
-
-        Assert.True(InvokeTryRecordCacheFile(cache, iconUrl, "cached.png"));
-        Assert.False(InvokeTryRecordCacheFile(cache, iconUrl, "cached.png"));
-        Assert.True(InvokeTryRecordCacheFile(cache, iconUrl, "different.png"));
-    }
-
-    private ProxyGroupIconCache CreateCache() => new(Path.Combine(TestRoot, "icon-cache"));
-
-    private static string InvokeGetCacheFileName(Uri uri)
-    {
-        var method = typeof(ProxyGroupIconCache).GetMethod(
-            "GetCacheFileName",
-            BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new MissingMethodException(typeof(ProxyGroupIconCache).FullName, "GetCacheFileName");
-        return (string)method.Invoke(null, [uri])!;
-    }
-
-    private static bool InvokeTryRecordCacheFile(ProxyGroupIconCache cache, string iconUrl, string fileName)
-    {
-        var method = typeof(ProxyGroupIconCache).GetMethod(
-            "TryRecordCacheFile",
-            BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new MissingMethodException(typeof(ProxyGroupIconCache).FullName, "TryRecordCacheFile");
-
-        return (bool)method.Invoke(cache, new object?[] { iconUrl, fileName, null })!;
-    }
-
-    private static ICollection<string> GetCachedFileKeys(ProxyGroupIconCache cache)
-    {
-        var field = typeof(ProxyGroupIconCache).GetField(
-            "_cachedFiles",
-            BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new MissingFieldException(typeof(ProxyGroupIconCache).FullName, "_cachedFiles");
-
-        return ((Dictionary<string, string>)field.GetValue(cache)!).Keys;
-    }
-
-    private static string[] ExtractIconUrls(string configPath)
-    {
-        var method = typeof(ProxyGroupIconCache).GetMethod(
-            "ExtractProxyGroupIconUrls",
-            BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new MissingMethodException(typeof(ProxyGroupIconCache).FullName, "ExtractProxyGroupIconUrls");
-
-        var values = (IEnumerable<string>)method.Invoke(null, new object[] { configPath })!;
-        return values.ToArray();
+        await File.WriteAllTextAsync(ConfigPath, "proxy-groups:\n  - name: A\n    icon: https://Example.TEST/icon.png\n");
+        using var client = new HttpClient(new IconHandler());
+        var cache = CreateCache(client);
+        var changes = 0;
+        cache.CacheChanged += (_, _) => changes++;
+        await cache.RefreshAsync(ConfigPath);
+        await cache.RefreshAsync(ConfigPath);
+        Assert.Equal(1, changes);
+        var file = Assert.Single(Directory.GetFiles(cache.CacheDirectory));
+        File.SetLastWriteTimeUtc(file, File.GetLastWriteTimeUtc(file).AddSeconds(1));
+        await cache.RefreshAsync(ConfigPath);
+        Assert.Equal(2, changes);
     }
 }

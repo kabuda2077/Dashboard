@@ -40,23 +40,17 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         UpdateTrayStatus();
         var shouldStartCore = _host.Settings.DesktopOptions.StartCoreOnLaunch || startCoreAfterLaunch;
         var isAdministrator = DashboardHost.IsRunningAsAdministrator();
-        // Starting the core without elevation always ends in an elevated relaunch,
-        // so both the window and the autostart reconcile wait for that restart.
+        // Avoid a window flash before elevation; an earlier launch failure restores visible recovery.
         var willRelaunchElevated = WillRelaunchElevated(shouldStartCore, isAdministrator);
         var resumeSetup = startCoreAfterLaunch && !_host.Settings.SetupCompleted && !willRelaunchElevated;
         if (resumeSetup)
             _ = ResumeSetupAsync();
-        else if (!willRelaunchElevated)
+        else
             _ = RunStartupOperationsAsync(shouldStartCore);
 
         if (!startMinimized && !willRelaunchElevated && !resumeSetup)
         {
             ShowMainWindow();
-        }
-
-        if (willRelaunchElevated)
-        {
-            _ = _host.StartCoreAsync();
         }
 
         _ = RunAutomaticUpdateCheckAsync(_lifetimeCancellation.Token);
@@ -110,16 +104,26 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     internal bool HasMainWindow => _mainForm is { IsDisposed: false };
 
     private Task RunStartupOperationsAsync(bool shouldStartCore) =>
-        RunStartupOperationsAsync(shouldStartCore, async () => { await _host.StartCoreAsync(); }, _host.ReconcileAutostartAsync);
+        RunStartupOperationsAsync(shouldStartCore, () => _host.StartCoreAsync(), _host.ReconcileAutostartAsync,
+            result =>
+            {
+                if (_exiting) return;
+                if (!_startMinimized || !_host.Settings.SetupCompleted) ShowMainWindow();
+                OnMessageRequested(this, new("内核启动失败", result.Message ?? result.Code, MessageBoxIcon.Warning));
+            });
 
     internal static async Task RunStartupOperationsAsync(
         bool shouldStartCore,
-        Func<Task> startCore,
-        Func<Task> reconcileAutostartAsync)
+        Func<Task<CommandResult>> startCore,
+        Func<Task> reconcileAutostartAsync,
+        Action<CommandResult> reportStartFailure)
     {
-        // Starting and autostart reconciliation share the core configuration gate.
-        // Keep their order explicit so reconciliation cannot reject launch startup.
-        if (shouldStartCore) await startCore();
+        if (shouldStartCore)
+        {
+            var result = await startCore();
+            if (result.Status == "elevationRequired") return;
+            if (result.Status != "completed") reportStartFailure(result);
+        }
         await reconcileAutostartAsync();
     }
 
@@ -319,6 +323,8 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     {
         if (_exiting) return;
         _exiting = true;
+        // Keep the confirmed draft stable while an accepted autostart operation drains.
+        if (_mainForm is { IsDisposed: false } mainForm) mainForm.Enabled = false;
         try
         {
             var arguments = new List<string>();
@@ -341,22 +347,33 @@ internal sealed class DashboardApplicationContext : ApplicationContext
 
             var handedOff = await RelaunchAfterConfirmationAsync(
                 ConfirmCurrentWindowExitAsync,
-                () =>
-                {
-                    using var replacement = Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
+                () => _host.RelaunchAfterAutostartAsync(
+                    () =>
                     {
-                        WorkingDirectory = AppSettings.AppDirectory,
-                        UseShellExecute = true,
-                        Verb = "runas"
-                    }) ?? throw new InvalidOperationException("未能创建管理员进程。");
-                },
-                FinishExitAsync);
-            if (!handedOff) _exiting = false;
+                        using var replacement = Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
+                        {
+                            WorkingDirectory = AppSettings.AppDirectory,
+                            UseShellExecute = true,
+                            Verb = "runas"
+                        }) ?? throw new InvalidOperationException("未能创建管理员进程。");
+                    },
+                    FinishExitAsync));
+            if (!handedOff)
+            {
+                _exiting = false;
+                if (_mainForm is { IsDisposed: false } cancelledForm) cancelledForm.Enabled = true;
+            }
         }
         catch (Exception ex)
         {
-            _exiting = false;
             HostOperationLogger.Error("host", "Failed to restart as administrator.", ex);
+            if (_host.IsClosing)
+            {
+                await FinishExitAsync();
+                return;
+            }
+            _exiting = false;
+            if (_mainForm is { IsDisposed: false } retainedForm) retainedForm.Enabled = true;
             if (!request.StartMinimized)
             {
                 ShowMainWindow();
@@ -416,11 +433,10 @@ internal sealed class DashboardApplicationContext : ApplicationContext
             : Task.FromResult(true);
 
     internal static async Task<bool> RelaunchAfterConfirmationAsync(
-        Func<Task<bool>> confirmExit, Action startReplacement, Func<Task> finishExit)
+        Func<Task<bool>> confirmExit, Func<Task> relaunchAsync)
     {
         if (!await confirmExit()) return false;
-        startReplacement(); // cancellation/failure must leave the old host alive
-        await finishExit();
+        await relaunchAsync();
         return true;
     }
 
@@ -429,8 +445,14 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         HostOperationLogger.Diagnostic("window-lifecycle", "context exit requested; awaiting host shutdown.");
         _trayMenu?.Close();
         _trayIcon.Visible = false;
+        if (_mainForm is { IsDisposed: false } mainForm) mainForm.Enabled = false;
         await CompleteExitAsync(
             _host.ShutdownAsync,
+            _host.RetryCoreShutdownAsync,
+            () => MessageBox.Show(_mainForm,
+                (_host.IsRunning ? $"内核仍在运行（PID：{_host.ProcessId}）。" : "尚未能确认内核关闭已完成。")
+                    + "\n\nDashboard 已进入退出流程，无法恢复正常使用。\n选择“是”重试停止；选择“否”强制退出 Dashboard，内核可能继续运行。",
+                "内核停止失败", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1) == DialogResult.Yes,
             () =>
             {
                 if (_mainForm is { IsDisposed: false } form)
@@ -444,25 +466,30 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         await flushAsync() || confirmDiscard();
 
     internal static async Task CompleteExitAsync(
-        Func<Task> shutdownAsync,
+        Func<Task<bool>> shutdownAsync,
+        Func<Task<bool>> retryCoreShutdownAsync,
+        Func<bool> retryInsteadOfForceExit,
         Action closeWindows,
         Action exitThread)
     {
-        try
+        var stop = shutdownAsync;
+        while (true)
         {
-            // Keep the WinForms message loop alive while host operations complete;
-            // their existing UI-context continuations must remain runnable.
-            await shutdownAsync();
+            var stopped = false;
+            try
+            {
+                // Keep the UI loop alive for accepted operations and the explicit exit decision.
+                stopped = await stop();
+            }
+            catch (Exception ex)
+            {
+                HostOperationLogger.Error("shutdown", "Asynchronous host shutdown failed.", ex);
+            }
+            if (stopped || !retryInsteadOfForceExit()) break;
+            stop = retryCoreShutdownAsync;
         }
-        catch (Exception ex)
-        {
-            HostOperationLogger.Error("shutdown", "Asynchronous host shutdown failed.", ex);
-        }
-        finally
-        {
-            closeWindows();
-            exitThread();
-        }
+        try { closeWindows(); }
+        finally { exitThread(); }
     }
 
     protected override void ExitThreadCore()

@@ -1,8 +1,8 @@
 import type { StorageLike, UseStorageOptions } from '@vueuse/core'
 import { tryOnMounted, useStorage as useVueUseStorage } from '@vueuse/core'
 import { toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { isValidPreferenceValue } from './preferenceValues'
 import { notifyDashboardSettingsChanged } from './settingsChanges'
-import { isValidPreferenceEnum } from './preferenceValues'
 
 // Keep native Storage identity: VueUse emits storage events for same-document
 // writes and also observes cross-document changes. A custom StorageLike wrapper
@@ -21,7 +21,7 @@ export function useDashboardStorage<T>(
   watch(
     [value, () => toValue(key)],
     ([next, currentKey]) => {
-      if (!isValidPreferenceEnum(currentKey, next)) value.value = toValue(defaults)
+      if (!isValidPreferenceValue(currentKey, next)) value.value = toValue(defaults)
     },
     { immediate: true, flush: 'sync' },
   )

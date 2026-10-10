@@ -54,7 +54,16 @@ public sealed class DesktopDataIntegrationTests
                 async Task Until(Func<Task<bool>> condition)
                 {
                     var deadline = DateTime.UtcNow.AddSeconds(25);
-                    while (!await condition()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Persistent data scenario timed out."); await Task.Delay(50); }
+                    while (!await condition())
+                    {
+                        if (DateTime.UtcNow >= deadline)
+                        {
+                            var report = Path.Combine(TestDirectory.ReportDirectory("desktop-data"), "failure.json");
+                            await File.WriteAllTextAsync(report, await Script("JSON.stringify({url:location.href,text:document.body.innerText,expanded:document.querySelector('[data-testid=settings-toggle]')?.getAttribute('aria-expanded'),inputs:[...document.querySelectorAll('input')].map(e=>({type:e.type,accept:e.accept})),errors:window.__dataErrors})"));
+                            throw new TimeoutException("Persistent data scenario timed out; see " + report);
+                        }
+                        await Task.Delay(50);
+                    }
                 }
                 async Task<Dictionary<string, string>[]> ReadStore(string name)
                 {
@@ -82,9 +91,10 @@ public sealed class DesktopDataIntegrationTests
                         await Until(() => Task.FromResult(host.BuildState(false).Runtime.ApiStatus == "ready" && api.ActiveSockets > 0));
                         if (initial)
                         {
-                            await Script("document.querySelector('[data-testid=settings-toggle]').click(); true");
-                            await Until(async () => await Script("!!document.querySelector('input[type=file][accept=\"image/*\"]')") == "true");
-                            await Script("(()=>{ window.confirm=()=>false;const canvas=document.createElement('canvas');canvas.width=4;canvas.height=4;const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,4,4);window.__uploaded=canvas.toDataURL('image/png');const bytes=Uint8Array.from(atob(window.__uploaded.split(',')[1]),c=>c.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([bytes],'fixture.png',{type:'image/png'}));const input=document.querySelector('input[type=file][accept=\"image/*\"]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()");
+                            await Script("window.__dataErrors=[];window.addEventListener('error',e=>window.__dataErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__dataErrors.push(String(e.reason)));document.querySelector('[data-testid=settings-toggle]').click(); true");
+                            // Proxy icons also accept images; select the background uploader by its settings section.
+                            await Until(async () => await Script("!!document.querySelector('#core-settings-generalSettings input[type=file][accept=\"image/*\"]')") == "true");
+                            await Script("(()=>{ window.confirm=()=>false;const canvas=document.createElement('canvas');canvas.width=4;canvas.height=4;const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,4,4);window.__uploaded=canvas.toDataURL('image/png');const bytes=Uint8Array.from(atob(window.__uploaded.split(',')[1]),c=>c.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([bytes],'fixture.png',{type:'image/png'}));const input=document.querySelector('#core-settings-generalSettings input[type=file][accept=\"image/*\"]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()");
                             await Until(() => Task.FromResult(host.Preferences.TryGetValue("config/custom-background-image", out var value) && value.Contains("local-image")));
                             Assert.True(await form.FlushPreferencesAsync());
                             image = JsonSerializer.Deserialize<string>(await Script("window.__uploaded"));

@@ -118,17 +118,7 @@ public sealed class ProxyGroupIconCache
         }
     }
 
-    // Records the icon under the URL as written in the config, and additionally
-    // under its normalized absolute form when the two differ.
-    //
-    // Both keys are needed because ProxyIcon.vue looks up twice: first the icon
-    // string verbatim, then `new URL(icon).href`. That second lookup is a plain
-    // JavaScript property read, so it is case-sensitive and cannot fall back to
-    // this dictionary's OrdinalIgnoreCase comparer. Storing only the raw key
-    // would leave the normalized lookup unmatched whenever a config writes a
-    // URL in non-normalized form.
-    //
-    // Returns true when the mapping changed.
+    // The config extractor already normalizes URLs; ProxyIcon normalizes its lookup too.
     private bool TryRecordCacheFile(string iconUrl, string fileName, Func<bool>? isCurrent)
     {
         lock (_sync)
@@ -137,15 +127,7 @@ public sealed class ProxyGroupIconCache
             var stamp = File.GetLastWriteTimeUtc(Path.Combine(CacheDirectory, fileName)).Ticks;
             var versionChanged = !_fileVersions.TryGetValue(fileName, out var previousStamp) || previousStamp != stamp;
             _fileVersions[fileName] = stamp;
-            var changed = RecordKey(iconUrl, fileName) || versionChanged;
-
-            if (Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
-                && !string.Equals(iconUrl, uri.AbsoluteUri, StringComparison.Ordinal))
-            {
-                changed |= RecordKey(uri.AbsoluteUri, fileName);
-            }
-
-            return changed;
+            return RecordKey(iconUrl, fileName) || versionChanged;
         }
     }
 
@@ -174,12 +156,7 @@ public sealed class ProxyGroupIconCache
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(_refreshTimeout);
             var iconUrls = ExtractProxyGroupIconUrls(configPath).Distinct(StringComparer.Ordinal).Take(MaxCacheFiles).ToArray();
-            var currentKeys = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var iconUrl in iconUrls)
-            {
-                currentKeys.Add(iconUrl);
-                if (Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)) currentKeys.Add(uri.AbsoluteUri);
-            }
+            var currentKeys = iconUrls.ToHashSet(StringComparer.Ordinal);
             lock (_sync)
             {
                 if (isCurrent?.Invoke() == false) return;

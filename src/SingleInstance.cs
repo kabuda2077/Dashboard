@@ -32,7 +32,8 @@ public sealed class SingleInstance : IDisposable
         Action activate,
         bool waitForPreviousExit,
         SingleInstanceNames names,
-        out SingleInstance? instance)
+        out SingleInstance? instance,
+        Func<Mutex, int, bool>? waitForOwnership = null)
     {
         var mutex = CreateMutex(names.MutexName, out var createdNew);
         var ownsMutex = createdNew;
@@ -40,8 +41,9 @@ public sealed class SingleInstance : IDisposable
         {
             try
             {
-                // Allow the previous host's preference flush (5s) and shutdown budget (10s).
-                ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(20));
+                // An accepted handoff waits for the old owner's lifetime, including exit decisions.
+                waitForOwnership ??= static (handle, timeout) => handle.WaitOne(timeout);
+                ownsMutex = waitForOwnership(mutex, Timeout.Infinite);
             }
             catch (AbandonedMutexException)
             {

@@ -24,18 +24,28 @@ export const resetBackendRuntime = () => {
 // Called once by the root App. Views consume stores; they do not own global streams.
 export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
   const started = new Set<string>()
+  const pending = new Map<string, Promise<unknown>>()
   let frame = 0
   const ensure = (key: string, action: () => unknown) => {
-    if (!backendSessionReady.value || started.has(key)) return
+    if (!backendSessionReady.value || started.has(key) || pending.has(key)) return
     started.add(key)
     const epoch = backendSessionGeneration.value
-    void Promise.resolve()
+    const task: Promise<unknown> = Promise.resolve()
       .then(() => {
-        if (epoch === backendSessionGeneration.value && backendSessionReady.value) return action()
+        if (
+          pending.get(key) === task &&
+          epoch === backendSessionGeneration.value &&
+          backendSessionReady.value
+        )
+          return action()
       })
       .catch(() => {
-        if (epoch === backendSessionGeneration.value) started.delete(key)
+        if (pending.get(key) === task) started.delete(key)
       })
+      .finally(() => {
+        if (pending.get(key) === task) pending.delete(key)
+      })
+    pending.set(key, task)
   }
   const routeData = () => {
     switch (toValue(route)) {
@@ -68,16 +78,25 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
     () => {
       cancelAnimationFrame(frame)
       started.clear()
+      pending.clear()
       resetBackendRuntime()
       if (!backendSessionReady.value) return
       startConfigRuntime()
-      ensure('connections', () => initConnections('full'))
+      ensure('connections', initConnections)
       routeData()
       deferred()
     },
     { immediate: true, flush: 'sync' },
   )
-  const stopRoute = watch(() => toValue(route), routeData)
+  const stopRoute = watch(
+    () => toValue(route),
+    (name, previous) => {
+      // Re-entering proxies refreshes the snapshot, but reuses any in-flight load.
+      if (name === 'proxies' && previous !== undefined && !pending.has('proxies'))
+        started.delete('proxies')
+      routeData()
+    },
+  )
   const visible = () => {
     if (document.visibilityState !== 'hidden' && backendSessionReady.value) {
       routeData()
@@ -88,6 +107,7 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
   const stop = () => {
     stopSession()
     stopRoute()
+    pending.clear()
     cancelAnimationFrame(frame)
     document.removeEventListener('visibilitychange', visible)
     stopConfigRuntime()

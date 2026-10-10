@@ -67,6 +67,7 @@
             type="checkbox"
             class="toggle"
             :checked="!isDisabled"
+            :disabled="isTogglingDisabled"
             @change="toggleRuleDisabledHandler"
             @click.stop
           />
@@ -176,7 +177,10 @@ const updateRuleProviderClickHandler = async () => {
   }
 }
 
-const toggleRuleDisabledHandler = async () => {
+const toggleRuleDisabledHandler = async (event: Event) => {
+  // Keep the last confirmed value until the backend refresh succeeds.
+  const input = event.currentTarget as HTMLInputElement
+  input.checked = !isDisabled.value
   if (isTogglingDisabled.value) return
 
   const session = captureBackendSession()

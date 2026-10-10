@@ -1,8 +1,22 @@
 import {
-  CONNECTION_DISPLAY_STYLE, EMOJIS, FOLDER_MODE, FONTS, IP_INFO_API, LANG,
-  LIST_DISPLAY_STYLE, LOG_LEVEL, PROXY_CARD_SIZE, PROXY_CHAIN_DIRECTION,
-  PROXY_PREVIEW_TYPE, PROXY_SEARCH_MODE, PROXY_SORT_TYPE, SORT_DIRECTION,
-  SORT_TYPE, SPEEDTEST_MODE, TABLE_SIZE, TABLE_WIDTH_MODE,
+  CONNECTION_DISPLAY_STYLE,
+  EMOJIS,
+  FOLDER_MODE,
+  FONTS,
+  IP_INFO_API,
+  LANG,
+  LIST_DISPLAY_STYLE,
+  LOG_LEVEL,
+  PROXY_CARD_SIZE,
+  PROXY_CHAIN_DIRECTION,
+  PROXY_PREVIEW_TYPE,
+  PROXY_SEARCH_MODE,
+  PROXY_SORT_TYPE,
+  SORT_DIRECTION,
+  SORT_TYPE,
+  SPEEDTEST_MODE,
+  TABLE_SIZE,
+  TABLE_WIDTH_MODE,
 } from '@/constant'
 
 // Raw string preferences use VueUse's string serializer (not JSON quoting).
@@ -31,11 +45,52 @@ const enumValues: Record<string, readonly string[]> = {
 }
 
 export const isValidPreferenceEnum = (key: string, value: unknown) =>
-  !Object.hasOwn(enumValues, key) ||
-  (typeof value === 'string' && enumValues[key].includes(value))
+  !Object.hasOwn(enumValues, key) || (typeof value === 'string' && enumValues[key].includes(value))
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+const strings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string')
+const validFolderState = (value: unknown) =>
+  record(value) &&
+  typeof value.activeId === 'string' &&
+  typeof value.seeded === 'boolean' &&
+  Array.isArray(value.folders) &&
+  value.folders.every(
+    (folder) =>
+      record(folder) &&
+      typeof folder.id === 'string' &&
+      typeof folder.name === 'string' &&
+      typeof folder.order === 'number' &&
+      Number.isFinite(folder.order) &&
+      (folder.icon === undefined || typeof folder.icon === 'string') &&
+      strings(folder.manualIncludes) &&
+      Array.isArray(folder.rules) &&
+      folder.rules.every(
+        (rule) =>
+          record(rule) &&
+          typeof rule.type === 'string' &&
+          (rule.type === 'auto'
+            ? rule.value === 'nodeOnly' || rule.value === 'hasGroup'
+            : rule.type === 'regex' || rule.type === 'excludeRegex'
+              ? typeof rule.pattern === 'string'
+              : true),
+      ),
+  )
+
+export const isValidPreferenceValue = (key: string, value: unknown) =>
+  key === 'config/proxy-folders' ? validFolderState(value) : isValidPreferenceEnum(key, value)
 
 export const validatePreferenceValues = (values: Record<string, unknown>) => {
   for (const [key, value] of Object.entries(values)) {
-    if (!isValidPreferenceEnum(key, value)) throw new Error(`Invalid preference value: ${key}`)
+    let decoded = value
+    if (key === 'config/proxy-folders' && typeof value === 'string') {
+      try {
+        decoded = JSON.parse(value)
+      } catch {
+        throw new Error(`Invalid preference value: ${key}`)
+      }
+    }
+    if (!isValidPreferenceValue(key, decoded)) throw new Error(`Invalid preference value: ${key}`)
   }
 }

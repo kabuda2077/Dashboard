@@ -20,7 +20,7 @@ export const useTooltip = () => {
       placement: 'top',
       animation: 'scale',
       appendTo: appContent,
-      allowHTML: true,
+      allowHTML: false,
       showOnCreate: true,
       onHidden: () => {
         tippyInstance?.destroy()

@@ -26,11 +26,14 @@ public sealed class UpgradeRecoveryIntegrationTests : TemporaryDirectoryTest
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(12)]
-    [InlineData(-1)]
+    [InlineData(0, 0)]
+    [InlineData(12, 0)]
+    [InlineData(0, 800)]
+    [InlineData(12, 800)]
+    [InlineData(-1, 800)]
+    [InlineData(-2, 0)]
     [Trait("Category", "RealCoreIntegration")]
-    public async Task VersionValidCandidateCommitsOrRestoresExactOriginalAndRunningApi(int exitCode)
+    public async Task VersionValidCandidateCommitsOrRestoresExactOriginalAndRunningApi(int exitCode, int startupDelayMs)
     {
         var temporary = TestRoot;
         Directory.CreateDirectory(temporary);
@@ -50,6 +53,8 @@ public sealed class UpgradeRecoveryIntegrationTests : TemporaryDirectoryTest
                 class Candidate {
                     static int Main(string[] args) {
                         if(args.Length > 0 && args[0] == "version") { Console.WriteLine("sing-box version 99.0.0"); return 0; }
+                        System.Threading.Thread.Sleep({{startupDelayMs}});
+                        if ({{exitCode}} == -2) { System.Threading.Thread.Sleep(60000); return 0; } // alive, but never serves its API
                         if ({{exitCode}} >= 0) { Console.Error.WriteLine("intentional candidate failure"); return {{exitCode}}; }
                         var start = new ProcessStartInfo({{JsonSerializer.Serialize(delegated)}}, string.Join(" ", Array.ConvertAll(args, arg => "\"" + arg + "\"")));
                         start.UseShellExecute = false; start.CreateNoWindow = true;
@@ -79,10 +84,12 @@ public sealed class UpgradeRecoveryIntegrationTests : TemporaryDirectoryTest
             await fixture.ReadyAsync();
             var epoch = fixture.Controller.Epoch;
             var result = await fixture.Controller.ExecuteAsync(new() { Type = "upgradeCore", CoreType = fixture.Kind });
-            Assert.Equal(exitCode < 0 ? "completed" : "failed", result.Status);
+            var success = exitCode == -1;
+            Assert.Equal(success ? "completed" : "failed", result.Status);
+            if (success) Assert.Equal("ready", fixture.Controller.ApiStatus);
             Assert.Equal(1, handler.Downloads);
             var installed = SHA256.HashData(await File.ReadAllBytesAsync(fixture.Executable));
-            if (exitCode < 0) Assert.NotEqual(original, installed);
+            if (success) Assert.NotEqual(original, installed);
             else Assert.Equal(original, installed);
             await fixture.ReadyAsync();
             Assert.True(fixture.Controller.Epoch > epoch);

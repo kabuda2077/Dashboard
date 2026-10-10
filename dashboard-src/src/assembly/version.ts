@@ -38,8 +38,6 @@ export const mihomo = computed<[MIHOMO, string] | undefined>(() => {
 
 export const fetchVersionAPI = () => fetchClashVersion()
 
-const getHostCoreVersion = () => hostState.value.coreVersion || ''
-
 let versionFetchId = 0
 
 const refreshVersion = async () => {
@@ -61,12 +59,13 @@ const refreshVersion = async () => {
     const { data } = await fetchVersionAPI()
     nextVersion = data?.version || ''
   } catch {
-    nextVersion = getHostCoreVersion()
+    // A browser session has no host version to fall back to.
+    nextVersion = ''
   }
 
   if (currentFetchId !== versionFetchId || !session.isCurrent()) return
 
-  version.value = nextVersion || getHostCoreVersion()
+  version.value = nextVersion
   isCoreUpdateAvailable.value = false
   if (isSingBoxCore.value || !checkUpgradeCore.value || activeBackend.value?.disableUpgradeCore) {
     return

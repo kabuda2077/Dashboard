@@ -13,11 +13,12 @@ import {
   saveConnectionHistoryToIndexedDB,
   type ConnectionHistoryData,
 } from '@/helper/indexeddb'
+import { registerPersistenceFlusher } from '@/helper/persistenceBarrier'
 import type { Connection } from '@/types'
 import ipaddr from 'ipaddr.js'
+import { getDomain } from 'tldts'
 import { shallowRef } from 'vue'
 import { activeBackend } from './setup'
-import { registerPersistenceFlusher } from '@/helper/persistenceBarrier'
 
 const uuid = () => activeBackend.value?.uuid || ''
 const allHistoryTypes: ConnectionHistoryType[] = [
@@ -29,6 +30,7 @@ const allHistoryTypes: ConnectionHistoryType[] = [
 ]
 
 type AggregationMaps = Record<ConnectionHistoryType, Map<string, ConnectionHistoryData>>
+type HistorySnapshot = Record<ConnectionHistoryType, ConnectionHistoryData[]>
 
 const createAggregationMaps = (): AggregationMaps => ({
   [ConnectionHistoryType.SourceIP]: new Map<string, ConnectionHistoryData>(),
@@ -71,6 +73,7 @@ interface InitContext {
 
 let currentContext: InitContext | undefined
 let persistenceQueue: Promise<void> = Promise.resolve()
+const pendingSnapshots = new Map<string, HistorySnapshot>()
 
 const enqueuePersistence = <T>(operation: () => Promise<T>) => {
   const result = persistenceQueue.then(operation)
@@ -139,6 +142,17 @@ const saveSnapshot = async (
   return success
 }
 
+const persistSnapshot = async (targetUuid: string, snapshot: HistorySnapshot) => {
+  if (pendingSnapshots.get(targetUuid) !== snapshot) return true
+  const success = await saveSnapshot(targetUuid, snapshot)
+  if (success && pendingSnapshots.get(targetUuid) === snapshot) pendingSnapshots.delete(targetUuid)
+  return success
+}
+const queueSnapshot = (targetUuid: string, snapshot: HistorySnapshot) => {
+  pendingSnapshots.set(targetUuid, snapshot)
+  return enqueuePersistence(() => persistSnapshot(targetUuid, snapshot))
+}
+
 const flushCurrentSession = () => {
   if (!sessionUuid || !dirty) return Promise.resolve()
 
@@ -151,8 +165,7 @@ const flushCurrentSession = () => {
   const snapshot = snapshotMaps(aggregationMaps)
 
   dirty = false
-  return enqueuePersistence(async () => {
-    const success = await saveSnapshot(targetUuid, snapshot)
+  return queueSnapshot(targetUuid, snapshot).then((success) => {
     if (!success && sessionUuid === targetUuid && sessionGeneration === targetGeneration) {
       dirty = true
     }
@@ -161,10 +174,16 @@ const flushCurrentSession = () => {
 
 registerPersistenceFlusher(async () => {
   await flushCurrentSession()
+  await Promise.all(
+    [...pendingSnapshots].map(([targetUuid, snapshot]) =>
+      enqueuePersistence(() => persistSnapshot(targetUuid, snapshot)),
+    ),
+  )
   await persistenceQueue
   // Initialization or an incoming batch may have completed while awaiting disk.
   if (dirty) await flushCurrentSession()
-  if (dirty) throw new Error('Connection history has not been saved. Retry before closing.')
+  if (dirty || pendingSnapshots.size)
+    throw new Error('Connection history has not been saved. Retry before closing.')
 })
 
 export const aggregateConnections = (
@@ -183,7 +202,7 @@ export const aggregateConnections = (
       key =
         ipaddr.IPv4.isValid(host) || ipaddr.IPv6.isValid(host)
           ? host
-          : host.split('.').slice(-2).join('.')
+          : getDomain(host, { allowPrivateDomains: true }) || host
     } else if (type === ConnectionHistoryType.Process) {
       key = getProcessFromConnection(connection)
     } else if (type === ConnectionHistoryType.Outbound) {
@@ -235,14 +254,16 @@ const accumulateCurrent = (connections: Connection[]) => {
 
 const loadHistoryMaps = async (targetUuid: string) => {
   const maps = createAggregationMaps()
+  // A failed commit is newer than disk, even after leaving this session.
+  const snapshot = pendingSnapshots.get(targetUuid)
 
   for (const type of allHistoryTypes) {
-    let data = await getConnectionHistoryFromIndexedDB(targetUuid, type)
+    let data = snapshot?.[type] ?? (await getConnectionHistoryFromIndexedDB(targetUuid, type))
     if (data.length > TRIM_THRESHOLD) {
       data = data.sort((a, b) => b.download - a.download).slice(0, TRIM_KEEP)
       await saveConnectionHistoryToIndexedDB(targetUuid, type, data)
     }
-    for (const item of data) maps[type].set(item.key, item)
+    for (const item of data) maps[type].set(item.key, { ...item })
   }
   return maps
 }
@@ -269,7 +290,7 @@ const settleStaleContext = async (context: InitContext, maps: AggregationMaps) =
 
   accumulateInto(maps, pending)
   const snapshot = snapshotMaps(maps)
-  await enqueuePersistence(() => saveSnapshot(context.uuid, snapshot).then(() => undefined))
+  await queueSnapshot(context.uuid, snapshot)
 }
 
 setInterval(() => {
@@ -324,7 +345,10 @@ export const clearConnectionHistory = async () => {
   lastClearEpoch = context.epoch
   currentContext = context
   resetCurrentSession(context.uuid)
-  await enqueuePersistence(() => clearConnectionHistoryFromIndexedDB())
+  await enqueuePersistence(async () => {
+    await clearConnectionHistoryFromIndexedDB()
+    pendingSnapshots.clear()
+  })
 
   if (context.epoch !== initEpoch) {
     await settleStaleContext(context, createAggregationMaps())

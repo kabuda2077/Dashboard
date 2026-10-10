@@ -8,9 +8,10 @@ internal sealed class DashboardHost : IDisposable
     internal const string MihomoRepositoryUrl = "https://github.com/MetaCubeX/mihomo";
     internal const string SingBoxRepositoryUrl = "https://github.com/reF1nd/sing-box";
     private readonly SettingsStore _settings;
-    private readonly CoreProcessManager _core = new();
+    private readonly CoreProcessManager _core;
     private readonly CoreLifecycleController _lifecycle;
     private readonly Func<string, CoreKind, CancellationToken, Task<string>> _readCoreVersion;
+    private readonly Func<bool, Task<AutostartOperationResult>> _setAutostart;
     private readonly ProxyGroupIconCache _icons;
     private readonly DashboardServer _server;
     private readonly ShutdownTaskTracker _tasks = new();
@@ -28,7 +29,7 @@ internal sealed class DashboardHost : IDisposable
     private long _lastRuntimeEpoch;
     private CoreProfiles _lastProfiles;
     private CoreKind _lastActiveCoreKind;
-    private Task? _shutdownTask;
+    private Task<bool>? _shutdownTask;
     private bool _disposed;
     private string _iconConfigKey = "";
 
@@ -36,9 +37,13 @@ internal sealed class DashboardHost : IDisposable
 
     public DashboardHost(string? dataDirectory = null, string? dashboardDirectory = null, bool ephemeralPort = false,
         Func<bool>? isAdministrator = null, int testPort = 0,
-        Func<string, CoreKind, CancellationToken, Task<string>>? readCoreVersion = null)
+        Func<string, CoreKind, CancellationToken, Task<string>>? readCoreVersion = null,
+        Func<bool, Task<AutostartOperationResult>>? setAutostart = null,
+        CoreProcessManager? core = null)
     {
+        _core = core ?? new CoreProcessManager();
         _readCoreVersion = readCoreVersion ?? CoreVersionReader.ReadAsync;
+        _setAutostart = setAutostart ?? AutostartManager.SetEnabledAsync;
         _settings = new SettingsStore(dataDirectory);
         _lastProfiles = Settings.Profiles;
         _lastActiveCoreKind = Settings.ActiveCoreKind;
@@ -58,6 +63,7 @@ internal sealed class DashboardHost : IDisposable
     internal string DataDirectory => Path.GetDirectoryName(_settings.FilePath)!;
     public Uri DashboardUri { get; }
     public bool IsRunning => _core.IsRunning;
+    internal bool IsClosing => _disposed || _tasks.IsClosing;
     public int? ProcessId => _core.ProcessId;
     public long RuntimeEpoch => _lifecycle.Epoch;
     public bool IsUpgradeInProgress => _lifecycle.IsUpgradeInProgress;
@@ -209,6 +215,20 @@ internal sealed class DashboardHost : IDisposable
         if (!_disposed && !_tasks.IsClosing) RelaunchRequested?.Invoke(this, new(true, true, true));
     }
 
+    internal async Task RelaunchAfterAutostartAsync(Action startReplacement, Func<Task> finishExit)
+    {
+        await _autostartGate.WaitAsync();
+        Task exit;
+        try
+        {
+            if (_disposed || _tasks.IsClosing) throw new InvalidOperationException("Dashboard 已进入退出流程。");
+            startReplacement(); // UAC failure releases the gate without sealing the old host.
+            exit = finishExit(); // seals new host work synchronously before the gate is released
+        }
+        finally { _autostartGate.Release(); }
+        await exit;
+    }
+
     public Task ReconcileAutostartAsync() => _tasks.Run(async token =>
     {
         // Only reconcile this version's explicitly enabled task. No registry/old-install migration.
@@ -224,11 +244,13 @@ internal sealed class DashboardHost : IDisposable
     private async Task<CommandResult> SetAutostartAsync(bool value, CancellationToken token)
     {
         if (!await _autostartGate.WaitAsync(0, token).ConfigureAwait(false)) return CommandResult.Rejected("busy");
-        IsAutostartUpdating = true;
-        PublishState();
         try
         {
-            var result = await AutostartManager.SetEnabledAsync(value).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (_disposed) return CommandResult.Rejected("closing");
+            IsAutostartUpdating = true;
+            PublishState();
+            var result = await _setAutostart(value).ConfigureAwait(false);
             if (!result.Success) return CommandResult.Failed("autostartFailed", result.Message);
             try
             {
@@ -480,19 +502,40 @@ internal sealed class DashboardHost : IDisposable
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
-    public Task ShutdownAsync() => _shutdownTask ??= ShutdownOwnedAsync();
-    private async Task ShutdownOwnedAsync()
+    public Task<bool> ShutdownAsync() => ShutdownAsync(TimeSpan.FromSeconds(10));
+    internal Task<bool> ShutdownAsync(TimeSpan timeout) => _shutdownTask ??= ShutdownOwnedAsync(timeout);
+    private async Task<bool> ShutdownOwnedAsync(TimeSpan timeout)
     {
         _disposed = true;
-        var core = _lifecycle.ShutdownAsync(TimeSpan.FromSeconds(10));
-        var background = _tasks.StopAndWaitAsync(TimeSpan.FromSeconds(10));
+        var core = _lifecycle.ShutdownAsync(timeout);
+        var background = _tasks.StopAndWaitAsync(timeout);
         var server = _server.StopAsync();
+        // The autostart gate covers both the OS mutation and its settings commit.
+        // New work is sealed above; an accepted mutation must finish before exit.
+        await _autostartGate.WaitAsync().ConfigureAwait(false);
+        _autostartGate.Release();
         await Task.WhenAll(core, background, server).ConfigureAwait(false);
         if (!core.Result || !background.Result) HostOperationLogger.Error("shutdown", "Shutdown budget expired; unfinished resources are not disposed under active work.", new TimeoutException());
         Detach();
         if (core.Result) { _lifecycle.Dispose(); _core.Dispose(); }
         if (background.Result) _tasks.Dispose();
+        return core.Result;
     }
+
+    internal async Task<bool> RetryCoreShutdownAsync()
+    {
+        if (!_disposed || _shutdownTask is not { IsCompleted: true })
+            throw new InvalidOperationException("只能在退出失败后重试停止内核。");
+        var stopped = await _lifecycle.ShutdownAsync(TimeSpan.FromSeconds(10));
+        if (stopped)
+        {
+            _lifecycle.Dispose();
+            _core.Dispose();
+            _shutdownTask = Task.FromResult(true);
+        }
+        return stopped;
+    }
+
     private void Detach()
     {
         _settings.Changed -= OnSettingsChanged;

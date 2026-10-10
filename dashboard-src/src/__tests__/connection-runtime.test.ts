@@ -1,7 +1,7 @@
 import { CONNECTION_TAB_TYPE } from '@/constant'
 import type { Connection } from '@/types'
-import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 describe('connection runtime', () => {
   it('merges active and closed connections and closes the stream explicitly', async () => {
@@ -41,7 +41,7 @@ describe('connection runtime', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
-  it('restarts the connection stream when the backend changes', async () => {
+  it('replaces and releases its previous subscription when the runtime starts a new session', async () => {
     vi.resetModules()
     const activeUuid = ref('mihomo')
     const firstClose = vi.fn()
@@ -67,12 +67,11 @@ describe('connection runtime', () => {
 
     const store = await import('@/store/connections')
 
-    store.initConnections('full')
-    store.initConnections('full')
+    store.initConnections()
     expect(fetchConnectionsAPI).toHaveBeenCalledTimes(1)
 
     activeUuid.value = 'singbox'
-    store.initConnections('full')
+    store.initConnections()
 
     expect(firstClose).toHaveBeenCalledTimes(1)
     expect(fetchConnectionsAPI).toHaveBeenCalledTimes(2)

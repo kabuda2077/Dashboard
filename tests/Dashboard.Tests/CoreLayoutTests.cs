@@ -206,6 +206,11 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             Assert.InRange(control.GetProperty("radius").GetDouble(), 7.5, 8.5);
                         }
                     }
+                    // Visiting the real proxies page must not bypass the stopped-session gate.
+                    Assert.Equal(0, api.Requests.GetValueOrDefault("/proxies"));
+                    Assert.Equal(0, api.Requests.GetValueOrDefault("/providers/proxies"));
+                    // Verify the solid toolbar variant against the built CSS, including its cascade.
+                    Assert.Equal("true", await Script("(() => { const bar=document.querySelector('.ctrls-bar'); const plain=getComputedStyle(bar).borderRadius; bar.classList.add('ctrls-bar-solid'); try { const solid=getComputedStyle(bar); return parseFloat(plain)===0 && parseFloat(solid.borderRadius)>0 && solid.boxShadow!=='none'; } finally { bar.classList.remove('ctrls-bar-solid'); } })()"));
                     // Render error/unknown/read-only states through the real API and
                     // v2 session owner, using only our ephemeral synthetic service.
                     await Script("location.hash='#/core'; true");

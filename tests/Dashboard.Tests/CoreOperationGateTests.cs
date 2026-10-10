@@ -24,31 +24,6 @@ public sealed class CoreOperationGateTests
         gate.Close();
         active!.Dispose();
         active.Dispose();
-        Assert.True(gate.IsClosing);
-        Assert.Null(gate.TryEnter());
-    }
-
-    [Fact]
-    public async Task ShutdownWaitsForActiveConfigurationLeaseWithinBudget()
-    {
-        var gate = new CoreOperationGate();
-        var active = gate.TryEnter();
-        gate.Close();
-
-        var wait = gate.WaitForIdleAsync(TimeSpan.FromSeconds(2));
-        Assert.False(wait.IsCompleted);
-        active!.Dispose();
-        Assert.True(await wait);
-    }
-
-    [Fact]
-    public async Task ShutdownTimesOutWithoutRevokingActiveLease()
-    {
-        var gate = new CoreOperationGate();
-        using var active = gate.TryEnter();
-        gate.Close();
-
-        Assert.False(await gate.WaitForIdleAsync(TimeSpan.FromMilliseconds(50)));
         Assert.Null(gate.TryEnter());
     }
 

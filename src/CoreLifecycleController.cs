@@ -21,6 +21,7 @@ internal sealed class CoreLifecycleController : IDisposable
     private string _operation = "idle";
     private bool _closing;
     private Task<bool>? _shutdownTask;
+    private Task? _shutdownStop;
 
     public event EventHandler? Changed;
     public long Epoch { get { lock (_sync) return _epoch; } }
@@ -111,7 +112,7 @@ internal sealed class CoreLifecycleController : IDisposable
                 var current = _settings.Current.Profile(kind);
                 if (_core.IsRunning && Kind == kind && (before.ApiUrl != current.ApiUrl || before.Secret != current.Secret
                     || before.SecretDecryptionFailed != current.SecretDecryptionFailed))
-                    Connect(current);
+                    _ = Connect(current);
             }
             switch (request.Type)
             {
@@ -147,11 +148,12 @@ internal sealed class CoreLifecycleController : IDisposable
         catch (Exception error)
         {
             HostOperationLogger.Error("core", $"Core operation {request.Type} failed.", error);
-            return CommandResult.Failed(error is ArgumentException ? "invalidInput" : "operationFailed", error.Message, saved);
+            return CommandResult.Failed(error is ArgumentException ? "invalidInput" : "operationFailed",
+                error is MihomoApiUpgradeException upgradeError ? upgradeError.UserMessage : error.Message, saved);
         }
     }
 
-    private async Task<CommandResult> StartAsync(CoreLaunchSpec spec, bool saved, CancellationToken token)
+    private async Task<CommandResult> StartAsync(CoreLaunchSpec spec, bool saved, CancellationToken token, bool waitForApi = false)
     {
         token.ThrowIfCancellationRequested();
         if (_closing) return CommandResult.Rejected("closing");
@@ -160,7 +162,15 @@ internal sealed class CoreLifecycleController : IDisposable
         lock (_sync) { _running = spec; _connection = spec.Profile; }
         await _core.StartAsync(spec, token).ConfigureAwait(false);
         if (!_core.IsRunning) return CommandResult.Failed("processStartFailed", saved: saved);
-        Connect(spec.Profile);
+        var probe = Connect(spec.Profile);
+        if (waitForApi)
+        {
+            var epoch = Epoch;
+            await probe.WaitAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (!_core.IsRunning || Epoch != epoch || ApiStatus != "ready")
+                throw new InvalidOperationException("升级后内核 API 未就绪，正在恢复原内核。");
+        }
         return CommandResult.Completed("processStarted", saved);
     }
 
@@ -229,7 +239,7 @@ internal sealed class CoreLifecycleController : IDisposable
             if (!_core.IsRunning || ApiStatus != "ready") return CommandResult.Rejected("apiNotReady");
             var result = await MihomoApiUpdater.UpgradeAsync(profile.ApiUrl, profile.Secret, token).ConfigureAwait(false);
             if (result.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
-            Connect(profile);
+            _ = Connect(profile);
             return CommandResult.Completed("upgraded", saved);
         }
         var previous = _core.IsRunning ? Running : null;
@@ -242,10 +252,8 @@ internal sealed class CoreLifecycleController : IDisposable
             if (upgrade.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
             if (previous is not null)
             {
-                var started = await StartAsync(new(kind, profile), saved, token).ConfigureAwait(false);
+                var started = await StartAsync(new(kind, profile), saved, token, waitForApi: true).ConfigureAwait(false);
                 if (started.Status != "completed") throw new InvalidOperationException("升级后内核未能启动。");
-                await Task.Delay(250, token).ConfigureAwait(false);
-                if (!_core.IsRunning) throw new InvalidOperationException("升级后的内核立即退出。");
             }
             return CommandResult.Completed("upgraded", saved);
         }
@@ -287,14 +295,14 @@ internal sealed class CoreLifecycleController : IDisposable
         using var lease = _gate.TryEnter();
         if (lease is null) return CommandResult.Rejected(_closing ? "closing" : "busy");
         if (!_core.IsRunning) return CommandResult.Rejected("apiNotReady");
-        Connect(_settings.Current.Profile(Kind));
+        _ = Connect(_settings.Current.Profile(Kind));
         return CommandResult.Completed();
     }
 
-    private void Connect(CoreProfile profile)
+    private Task Connect(CoreProfile profile)
     {
         CancelProbe();
-        if (_closing || !_core.IsRunning) return;
+        if (_closing || !_core.IsRunning) return Task.CompletedTask;
         CancellationTokenSource probe;
         long epoch;
         lock (_sync)
@@ -307,7 +315,7 @@ internal sealed class CoreLifecycleController : IDisposable
             _probe = probe;
         }
         Publish();
-        _ = _tasks.Run(async _ =>
+        return _tasks.Run(async _ =>
         {
             try
             {
@@ -359,7 +367,13 @@ internal sealed class CoreLifecycleController : IDisposable
 
     public Task<bool> ShutdownAsync(TimeSpan timeout)
     {
-        lock (_sync) return _shutdownTask ??= ShutdownOwnedAsync(timeout);
+        lock (_sync)
+        {
+            if (_shutdownTask is null || (_shutdownTask.IsCompleted
+                && (!_shutdownTask.IsCompletedSuccessfully || !_shutdownTask.Result)))
+                _shutdownTask = ShutdownOwnedAsync(timeout);
+            return _shutdownTask;
+        }
     }
 
     private async Task<bool> ShutdownOwnedAsync(TimeSpan timeout)
@@ -368,11 +382,12 @@ internal sealed class CoreLifecycleController : IDisposable
         _gate.Close();
         CancelProbe();
         var drain = _tasks.StopAndWaitAsync(timeout);
-        var stop = _core.StopAsync();
+        // A timeout ends this wait, not the stop; retries must not queue another stop behind it.
+        var stop = _shutdownStop is { IsCompleted: false } pending ? pending : _shutdownStop = _core.StopAsync();
         try
         {
             await Task.WhenAll(drain, stop).WaitAsync(timeout).ConfigureAwait(false);
-            return await drain;
+            return await drain && !_core.IsRunning;
         }
         catch (Exception error)
         {

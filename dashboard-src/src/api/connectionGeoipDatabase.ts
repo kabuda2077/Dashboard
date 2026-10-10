@@ -97,7 +97,7 @@ const getReader = <T extends GeoIPResponse>(url: string): Promise<AsyncMMDBReade
 
   const reader = loadReader(url).catch((error) => {
     // Drop the failed entry so a later lookup can retry the download.
-    readerCache.delete(url)
+    if (readerCache.get(url) === reader) readerCache.delete(url)
     throw error
   })
 
@@ -175,6 +175,7 @@ const EMPTY_GEOIP_INFO: IPInfo = {
 const GEOIP_INFO_CACHE_MAX = 4096
 const geoInfoCache = reactive(new Map<string, IPInfo>())
 const geoInfoPending = new Set<string>()
+let geoInfoGeneration = 0
 
 /**
  * Reactive, synchronous GeoIP lookup for render paths (e.g. table cells).
@@ -195,9 +196,11 @@ export const getConnectionGeoIPInfoSync = (ip: string): IPInfo => {
   }
 
   if (!geoInfoPending.has(ip)) {
+    const generation = geoInfoGeneration
     geoInfoPending.add(ip)
     getGeoIPInfo(ip)
       .then((info) => {
+        if (generation !== geoInfoGeneration) return
         geoInfoCache.set(ip, info)
 
         // Evict oldest entries beyond the cap (FIFO; safe here since this runs
@@ -213,18 +216,21 @@ export const getConnectionGeoIPInfoSync = (ip: string): IPInfo => {
         }
       })
       .catch(() => {})
-      .finally(() => geoInfoPending.delete(ip))
+      .finally(() => {
+        if (generation === geoInfoGeneration) geoInfoPending.delete(ip)
+      })
   }
 
   return EMPTY_GEOIP_INFO
 }
 
-// URL changes only invalidate local state. A new download still waits until a
-// visible connection GeoIP cell asks for data.
+// Database and language changes invalidate displayed values. Downloads still
+// wait until a visible connection GeoIP cell asks for data.
 watchDebounced(
-  [geoipCountryDatabaseURL, geoipASNDatabaseURL],
-  () => {
-    readerCache.clear()
+  [geoipCountryDatabaseURL, geoipASNDatabaseURL, language],
+  (current, previous) => {
+    geoInfoGeneration++
+    if (current[0] !== previous[0] || current[1] !== previous[1]) readerCache.clear()
     geoInfoCache.clear()
     geoInfoPending.clear()
   },

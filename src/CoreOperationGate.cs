@@ -6,8 +6,6 @@ internal sealed class CoreOperationGate
     private readonly object _sync = new();
     private bool _busy;
     private bool _closing;
-    private TaskCompletionSource _idle = CompletedSignal();
-    public bool IsClosing { get { lock (_sync) return _closing; } }
 
     public IDisposable? TryEnter()
     {
@@ -15,34 +13,11 @@ internal sealed class CoreOperationGate
         {
             if (_busy || _closing) return null;
             _busy = true;
-            _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             return new Lease(this);
         }
     }
 
     public void Close() { lock (_sync) _closing = true; }
-
-    public async Task<bool> WaitForIdleAsync(TimeSpan timeout)
-    {
-        Task idle;
-        lock (_sync) idle = _idle.Task;
-        try
-        {
-            await idle.WaitAsync(timeout);
-            return true;
-        }
-        catch (TimeoutException)
-        {
-            return false;
-        }
-    }
-
-    private static TaskCompletionSource CompletedSignal()
-    {
-        var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        signal.SetResult();
-        return signal;
-    }
 
     private sealed class Lease(CoreOperationGate owner) : IDisposable
     {
@@ -55,7 +30,6 @@ internal sealed class CoreOperationGate
                 lock (gate._sync)
                 {
                     gate._busy = false;
-                    gate._idle.TrySetResult();
                 }
             }
         }

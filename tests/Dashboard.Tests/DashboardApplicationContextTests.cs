@@ -6,16 +6,18 @@ public sealed class DashboardApplicationContextTests
     public async Task ExitKeepsCleanupPendingUntilAsynchronousShutdownCompletes()
     {
         var calls = new List<string>();
-        var shutdown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var shutdown = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var exit = DashboardApplicationContext.CompleteExitAsync(
             () => { calls.Add("shutdown"); return shutdown.Task; },
+            () => throw new InvalidOperationException("Unexpected retry"),
+            () => throw new InvalidOperationException("Unexpected failure prompt"),
             () => calls.Add("close"),
             () => calls.Add("exit"));
         Assert.Equal(["shutdown"], calls);
         Assert.False(exit.IsCompleted);
 
-        shutdown.SetResult();
+        shutdown.SetResult(true);
         await exit;
         Assert.Equal(["shutdown", "close", "exit"], calls);
     }
@@ -43,21 +45,11 @@ public sealed class DashboardApplicationContextTests
         var calls = new List<string>();
         var consent = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var result = DashboardApplicationContext.RelaunchAfterConfirmationAsync(() => consent.Task,
-            () => calls.Add("spawn"), () => { calls.Add("finish"); return Task.CompletedTask; });
+            () => { calls.Add("spawn"); calls.Add("finish"); return Task.CompletedTask; });
         Assert.Empty(calls);
         consent.SetResult(confirmed);
         Assert.Equal(confirmed, await result);
         Assert.Equal(confirmed ? new[] { "spawn", "finish" } : Array.Empty<string>(), calls);
-    }
-
-    [Fact]
-    public async Task FailedOrCancelledReplacementKeepsTheOldHostAlive()
-    {
-        var exited = false;
-        await Assert.ThrowsAsync<InvalidOperationException>(() => DashboardApplicationContext.RelaunchAfterConfirmationAsync(
-            () => Task.FromResult(true), () => throw new InvalidOperationException("UAC cancelled"),
-            () => { exited = true; return Task.CompletedTask; }));
-        Assert.False(exited);
     }
 
     [Fact]
@@ -67,8 +59,9 @@ public sealed class DashboardApplicationContextTests
 
         await DashboardApplicationContext.RunStartupOperationsAsync(
             shouldStartCore: true,
-            () => { calls.Add("start"); return Task.CompletedTask; },
-            () => { calls.Add("reconcile"); return Task.CompletedTask; });
+            () => { calls.Add("start"); return Task.FromResult(CommandResult.Completed()); },
+            () => { calls.Add("reconcile"); return Task.CompletedTask; },
+            _ => throw new InvalidOperationException("Unexpected launch failure"));
 
         Assert.Equal(["start", "reconcile"], calls);
     }
@@ -80,8 +73,9 @@ public sealed class DashboardApplicationContextTests
 
         await DashboardApplicationContext.RunStartupOperationsAsync(
             shouldStartCore: false,
-            () => { calls.Add("start"); return Task.CompletedTask; },
-            () => { calls.Add("reconcile"); return Task.CompletedTask; });
+            () => { calls.Add("start"); return Task.FromResult(CommandResult.Completed()); },
+            () => { calls.Add("reconcile"); return Task.CompletedTask; },
+            _ => throw new InvalidOperationException("Unexpected launch failure"));
 
         Assert.Equal(["reconcile"], calls);
     }

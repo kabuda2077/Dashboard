@@ -22,6 +22,7 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
     public string Origin { get; }
     public int ConfigStatusCode { get; set; } = 200;
     public object? ConfigResponse { get; set; }
+    public int UpgradeStatusCode { get; set; } = 200;
     public readonly ConcurrentDictionary<string, int> Requests = new();
     public readonly ConcurrentQueue<string> Errors = new();
 
@@ -80,7 +81,12 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
             {
                 var body = JsonSerializer.SerializeToUtf8Bytes(Response(path, 1));
                 var cors = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Authorization, Content-Type\r\nAccess-Control-Allow-Methods: GET, PATCH, POST, PUT, DELETE, OPTIONS\r\n";
-                var status = path == "/configs" && parts[0] != "OPTIONS" ? ConfigStatusCode : 200;
+                var status = parts[0] == "OPTIONS" ? 200 : path switch
+                {
+                    "/configs" => ConfigStatusCode,
+                    "/upgrade" => UpgradeStatusCode,
+                    _ => 200
+                };
                 await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {(status == 200 ? "OK" : "Error")}\r\n{cors}Content-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
                 await stream.WriteAsync(body, _stop.Token);
             }
@@ -91,6 +97,7 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
     private object Response(string path, int tick) => path switch
     {
         "/version" => new { version = "1.19.31", meta = true },
+        "/upgrade" => new { message = "upgrade unavailable" },
         "/configs" => ConfigResponse ?? new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false } },
         "/providers/proxies" or "/providers/rules" => new { providers = new { } },
         "/proxies" => new { proxies = Proxies() },

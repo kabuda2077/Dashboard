@@ -121,19 +121,6 @@ internal static class Program
         }
     }
 
-    private static void ReportCrash(Exception exception)
-    {
-        if (IsShutdownNoise(exception))
-        {
-            return;
-        }
-
+    private static void ReportCrash(Exception exception) =>
         HostOperationLogger.Critical("crash", "Unhandled application exception.", exception);
-    }
-
-    private static bool IsShutdownNoise(Exception exception)
-    {
-        return exception is OperationCanceledException or ObjectDisposedException
-            || exception.GetBaseException() is OperationCanceledException or ObjectDisposedException;
-    }
 }

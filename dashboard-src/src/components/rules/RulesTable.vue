@@ -251,7 +251,12 @@ const ruleColumns: ColumnDef<Rule>[] = [
         checked: !isRuleDisabled(rule),
         disabled: togglingRules.value.includes(`${rule.type}-${rule.payload}`),
         onClick: (event: MouseEvent) => event.stopPropagation(),
-        onChange: () => toggleRuleHandler(rule),
+        onChange: (event: Event) => {
+          // The browser toggles checked before change; wait for the backend value.
+          const input = event.currentTarget as HTMLInputElement
+          input.checked = !isRuleDisabled(rule)
+          void toggleRuleHandler(rule)
+        }
       })
     },
     meta: { cellClass: 'w-20' },

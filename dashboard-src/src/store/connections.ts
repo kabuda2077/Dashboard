@@ -33,7 +33,6 @@ import {
   proxyChainDirection,
   showFullProxyChain,
 } from './settings'
-import { activeUuid } from './setup'
 
 export const connectionTabShow = ref(CONNECTION_TAB_TYPE.ACTIVE)
 export const connectionSortType = useStorage<SORT_TYPE>(
@@ -59,20 +58,9 @@ export const downloadTotal = ref(0)
 export const uploadTotal = ref(0)
 
 let cancel: (() => void) | undefined
-type ConnectionsMode = 'summary' | 'full'
-let connectionMode: ConnectionsMode | null = null
-let connectionBackendUuid: string | null = null
 
-export const initConnections = (mode: ConnectionsMode = 'full') => {
-  const backendUuid = activeUuid.value
-
-  if (cancel && connectionMode === mode && connectionBackendUuid === backendUuid) {
-    return
-  }
-
-  cancel?.()
-  connectionMode = mode
-  connectionBackendUuid = backendUuid
+export const initConnections = () => {
+  stopConnections()
   activeConnections.value = []
   closedConnections.value = []
   activeConnectionCount.value = 0
@@ -92,11 +80,7 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
 
     if (isPaused.value || document.visibilityState === 'hidden') {
       // Continue collecting closed-history even while the visible lists are paused.
-      if (mode === 'full' && snapshot.closed.length) saveConnectionHistory(snapshot.closed)
-      return
-    }
-
-    if (mode === 'summary') {
+      if (snapshot.closed.length) saveConnectionHistory(snapshot.closed)
       return
     }
 
@@ -136,8 +120,6 @@ export const initConnections = (mode: ConnectionsMode = 'full') => {
 export const stopConnections = () => {
   cancel?.()
   cancel = undefined
-  connectionMode = null
-  connectionBackendUuid = null
 }
 
 export const resetConnections = () => {

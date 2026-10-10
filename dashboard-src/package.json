@@ -38,6 +38,7 @@
     "reconnectingwebsocket": "^1.0.0",
     "subsetted-fonts": "1.0.4",
     "tippy.js": "^6.3.7",
+    "tldts": "7.4.13",
     "uuid": "^14.0.1",
     "vue": "^3.5.40",
     "vue-i18n": "^11.4.8",

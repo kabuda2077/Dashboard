@@ -55,4 +55,9 @@ it('refreshes for browser backend switches and actual credential edits', async (
   setup.backendList.value[1].password = 'changed'
   await vi.waitFor(() => expect(version.value).toBe('core-b-refreshed'))
   expect(fetchVersion).toHaveBeenCalledTimes(3)
+
+  fetchVersion.mockRejectedValueOnce(new Error('offline'))
+  setup.backendList.value[1].password = 'offline'
+  await vi.waitFor(() => expect(version.value).toBe(''))
+  expect(fetchVersion).toHaveBeenCalledTimes(4)
 })
