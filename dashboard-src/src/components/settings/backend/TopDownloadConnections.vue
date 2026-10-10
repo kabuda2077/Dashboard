@@ -40,7 +40,7 @@
       v-else
       class="text-base-content/60 col-span-full row-span-4 flex h-full min-h-[232px] items-center justify-center text-sm"
     >
-      暂无下载中的连接
+      {{ $t('desktop.noCurrentDownloads') }}
     </div>
   </div>
 </template>
