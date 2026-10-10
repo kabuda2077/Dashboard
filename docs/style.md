@@ -9,7 +9,7 @@ Product/update rules live in [upstream-merge.md](upstream-merge.md), system boun
 | Level | Rule |
 | --- | --- |
 | Guarantees | Do not weaken trust, persistence ACKs, session isolation, failure feedback, draft safety or accessibility for a merge/refactor. |
-| Retained product/visual contract | Preserve the behavior and appearance below by default. A deliberate change needs an explicit product/design decision and before/after evidence. These are not disposable implementation defaults. |
+| Retained product/visual contract | Preserve product behavior and a compact, aligned, consistent appearance by default. Equivalent sizes or implementations may follow upstream with evidence. Obvious or uncertain visual changes need before/after comparison and a product/design decision. |
 | Pending choices | Preserve the current implementation while a decision is pending, but do **not** label it approved or refresh the reference to bless it. |
 | Implementation | Components, filenames, Grid/Flex/container queries, observers, caches and renderer internals are replaceable when the preceding levels remain satisfied. |
 
@@ -17,7 +17,7 @@ Neither `v1.3.2` nor today's v2 is a pixel-perfect specification for every state
 
 ## Retained visual contract
 
-Nominal sizes are **CSS pixels at the default text size**, not physical display pixels. Long labels, keyboard focus and supported zoom must remain usable. Deliberate responsive exceptions need a stated condition and evidence; do not silently substitute a new component's defaults.
+Nominal sizes below are the **current reference in CSS pixels at the default text size**, not permanent pixel locks or physical display pixels. The retained result is compact density, alignment, consistent controls, usable text/focus/zoom and safe interaction. Equivalent upstream sizes or layout techniques may replace them when consumer checks establish that result. For obvious or uncertain changes, compare matched before/after views and obtain the design decision before changing the reference or assertions; a new component's defaults alone are not evidence.
 
 | Surface/control | Retained result |
 | --- | --- |
@@ -81,11 +81,11 @@ These are deliberate v2 adaptations, not accidental divergence from the 1.3.2 re
 ## Verification and changing the contract
 
 1. Use identical fixtures, fonts, themes, locale and viewport when comparing. Record source SHAs and dirty input; volatile log/time content is not a reliable screenshot oracle.
-2. Run behavior tests for the affected interaction, and actual DOM geometry checks for the retained sizes/relationships. Keep screenshot review for information density, surfaces and interaction states that coordinates alone miss.
+2. Run behavior tests for the affected interaction and actual DOM geometry checks for the current reference and retained relationships. Equivalent upstream dimensions may update size assertions when comparison and consumer checks preserve compactness, alignment, consistency and usability. Keep screenshot review for density, surfaces and interaction states that coordinates alone miss.
 3. CoreLayoutTests checks action sizes/gaps, status/input heights, optical alignment, compact Chinese labels, retained background/scroll/focus on cancel, and 36px/8px-radius selects on Proxies/Connections/Logs. It waits for the target page rather than measuring a fading previous page.
 4. CI runs CoreLayoutTests and CoreSetupLayoutTests against the built UI and isolated host/profile/API ports, and uploads JSON/screenshots/TRX. All API data comes from SyntheticClashApi, never the default 9090 endpoint. Offscreen focus is explicitly emulated for the Secret interaction test without activating a desktop window.
 5. The initial `switch-scroll`, `toolbar-select-size` and `unknown-config-state` gaps are fixed and guarded. Configuration error/retry, unknown, host read-only and native authentication/unreachable states are rendered against the synthetic API; component tests also cover malformed data and failed-write rollback. CoreProfileFields tests cover masking, focus, profile changes and unreadable credentials. Removing a gap does not imply that physical multi-monitor/DPI, every dialog or actual core/TUN/UAC scenarios have been accepted.
 6. Before accepting an upstream common-control/style/dependency change, check its desktop consumers even if their files did not change. The audit's explicit watch patterns are a minimum review map, not a complete static dependency graph.
-7. To intentionally change a retained result: state the reason, show before/after evidence, get the product/design decision, then update this contract and its checks together. Do not refresh screenshots or remove assertions merely because an implementation changed.
+7. For an equivalent implementation/size adjustment, record its reason and evidence and update the affected reference/checks together. For an obvious or uncertain change to the retained experience, show before/after comparison and get the product/design decision first. Do not refresh screenshots or remove assertions merely because an implementation changed.
 
 Keep the review matrix small but real: Core/settings, proxies, connections/logs/rules, overview; expanded/collapsed sidebar, light/dark, Chinese/English, constrained and wide layouts. Select extra error/busy/conflict, focus, background and zoom cases according to impact. System acceptance boundaries remain in maintenance.md.

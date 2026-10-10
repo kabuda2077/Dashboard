@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $script:RepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $script:PipelineDirectory = $PSScriptRoot
 . (Join-Path $PSScriptRoot 'frontend-tools.ps1')
+. (Join-Path $PSScriptRoot 'source-fingerprint.ps1')
 
 function Invoke-Checked {
     param([string]$Name, [scriptblock]$Action)
@@ -184,8 +185,9 @@ function Assert-ReleaseArchive {
 }
 
 function Write-ReleaseArchive {
-    param([string]$PublishDirectory, [string]$OutputZip)
+    param([string]$PublishDirectory, [string]$OutputZip, $SourceSnapshot)
     if ([IO.Path]::GetFileName($OutputZip) -ne $OutputZip -or $OutputZip -notmatch '\.zip$') { throw 'OutputZip must be a ZIP filename, not a path.' }
+    if ($SourceSnapshot) { Assert-ReleaseSourceSnapshot -Root $script:RepositoryRoot -Snapshot $SourceSnapshot }
     Assert-PublishDirectory -Path $PublishDirectory
     $directory = Join-Path $script:RepositoryRoot 'artifacts\releases'
     New-Item -ItemType Directory -Force $directory | Out-Null
@@ -204,6 +206,7 @@ function Write-ReleaseArchive {
         }
         finally { $writer.Dispose() }
         Assert-ReleaseArchive -ArchivePath $temporary -PublishDirectory $PublishDirectory
+        if ($SourceSnapshot) { Assert-ReleaseSourceSnapshot -Root $script:RepositoryRoot -Snapshot $SourceSnapshot }
         if (Test-Path $output) { [IO.File]::Replace($temporary, $output, [NullString]::Value) }
         else { [IO.File]::Move($temporary, $output) }
     }
