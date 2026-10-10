@@ -111,6 +111,7 @@ const zhTW: LANG_MESSAGE = {
   ruleCount: '規則數',
   hitCount: '命中',
   missCount: '未命中',
+  hitMissCount: '命中 / 未命中',
   behavior: '行為',
   vehicleType: '來源類型',
   customTableColumns: '自訂表格列',
@@ -245,6 +246,8 @@ const zhTW: LANG_MESSAGE = {
   independentLatencyTestTip:
     '開啟獨立延遲測試會在測速中盡可能的使用配置檔案中的url覆蓋面板設定的url，並展示根據策略組設定的url獲取的延遲。',
   search: '搜尋',
+  searchVisibleColumns: '僅搜尋展示的欄位',
+  searchHiddenColumns: '搜尋包含隱藏的欄位',
   searchProxyGroup: '搜尋代理組',
   searchProxyNode: '搜尋節點',
   proxySearchModeGlobal: '節點搜尋',

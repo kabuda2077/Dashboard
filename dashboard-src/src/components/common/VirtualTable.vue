@@ -4,86 +4,92 @@
     class="base-container m-3 h-full overflow-auto backdrop-blur-none!"
   >
     <div class="bg-base-100/80 min-w-min">
-      <table :class="['table', sizeOfTable]">
-      <thead class="bg-base-100 border-base-300/60 sticky top-0 z-10 border-b backdrop-blur-none!">
-        <tr
-          v-for="headerGroup in tanstackTable.getHeaderGroups()"
-          :key="headerGroup.id"
+      <table :class="['table', sizeOfTable, tableClass]">
+        <thead
+          class="bg-base-100 border-base-300/60 sticky top-0 z-10 border-b backdrop-blur-none!"
         >
-          <th
-            v-for="header in headerGroup.headers"
-            :key="header.id"
-            :colSpan="header.colSpan"
-            :class="[inheritedStyle, header.column.getCanSort() && 'cursor-pointer select-none']"
-            @click="header.column.getToggleSortingHandler()?.($event)"
-          >
-            <div class="flex items-center gap-1 whitespace-nowrap">
-              <FlexRender
-                v-if="!header.isPlaceholder"
-                :render="header.column.columnDef.header"
-                :props="header.getContext()"
-              />
-              <ArrowUpCircleIcon
-                v-if="header.column.getIsSorted() === 'asc'"
-                class="h-4 w-4"
-              />
-              <ArrowDownCircleIcon
-                v-if="header.column.getIsSorted() === 'desc'"
-                class="h-4 w-4"
-              />
-            </div>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-if="rows.length === 0">
-          <td
-            :colspan="tanstackTable.getVisibleLeafColumns().length"
-            class="text-base-content/50 h-90"
-          >
-            <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <CircleStackIcon class="h-10 w-10 opacity-60" />
-              <div class="text-base">{{ t('noData') }}</div>
-            </div>
-          </td>
-        </tr>
-        <template v-else>
           <tr
-            v-if="paddingTop > 0"
-            :style="{ height: `${paddingTop}px` }"
-          ></tr>
-          <tr
-            v-for="virtualRow in virtualRows"
-            :key="virtualRow.key.toString()"
-            :style="{ height: `${estimateSize}px` }"
-            class="hover:bg-primary! hover:text-primary-content!"
-            :class="[
-              virtualRow.index % 2 === 0 ? 'bg-base-150' : 'bg-base-100',
-              rowClass?.(rows[virtualRow.index].original),
-            ]"
-            @click="emits('rowClick', rows[virtualRow.index].original)"
+            v-for="headerGroup in tanstackTable.getHeaderGroups()"
+            :key="headerGroup.id"
           >
-            <td
-              v-for="cell in rows[virtualRow.index].getVisibleCells()"
-              :key="cell.id"
-              class="max-w-xl truncate text-sm whitespace-nowrap"
-              :class="cell.column.columnDef.meta?.cellClass"
-              :title="cellTitle(cell)"
-              @contextmenu="handleCellRightClick($event, cell)"
+            <th
+              v-for="header in headerGroup.headers"
+              :key="header.id"
+              :colSpan="header.colSpan"
+              :class="[
+                inheritedStyle,
+                header.column.columnDef.meta?.headerClass,
+                header.column.getCanSort() && 'cursor-pointer select-none',
+              ]"
+              @click="header.column.getToggleSortingHandler()?.($event)"
             >
-              <FlexRender
-                v-if="!cell.getIsPlaceholder()"
-                :render="cell.column.columnDef.cell"
-                :props="cell.getContext()"
-              />
+              <div class="inline-flex items-center gap-1 whitespace-nowrap">
+                <FlexRender
+                  v-if="!header.isPlaceholder"
+                  :render="header.column.columnDef.header"
+                  :props="header.getContext()"
+                />
+                <ArrowUpCircleIcon
+                  v-if="header.column.getIsSorted() === 'asc'"
+                  class="h-4 w-4"
+                />
+                <ArrowDownCircleIcon
+                  v-if="header.column.getIsSorted() === 'desc'"
+                  class="h-4 w-4"
+                />
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="rows.length === 0">
+            <td
+              :colspan="tanstackTable.getVisibleLeafColumns().length"
+              class="text-base-content/50 h-90"
+            >
+              <div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <CircleStackIcon class="h-10 w-10 opacity-60" />
+                <div class="text-base">{{ t('noData') }}</div>
+              </div>
             </td>
           </tr>
-          <tr
-            v-if="paddingBottom > 0"
-            :style="{ height: `${paddingBottom}px` }"
-          ></tr>
-        </template>
-      </tbody>
+          <template v-else>
+            <tr
+              v-if="paddingTop > 0"
+              :style="{ height: `${paddingTop}px` }"
+            ></tr>
+            <tr
+              v-for="virtualRow in virtualRows"
+              :key="virtualRow.key.toString()"
+              :style="{ height: `${estimateSize}px` }"
+              class="hover:bg-primary! hover:text-primary-content!"
+              :class="[
+                virtualRow.index % 2 === 0 ? 'bg-base-150' : 'bg-base-100',
+                rowClass?.(rows[virtualRow.index].original),
+              ]"
+              @click="emits('rowClick', rows[virtualRow.index].original)"
+            >
+              <td
+                v-for="cell in rows[virtualRow.index].getVisibleCells()"
+                :key="cell.id"
+                class="max-w-xl truncate text-sm whitespace-nowrap"
+                :class="cell.column.columnDef.meta?.cellClass"
+                :title="cellTitle(cell)"
+                @contextmenu="handleCellRightClick($event, cell)"
+              >
+                <FlexRender
+                  v-if="!cell.getIsPlaceholder()"
+                  :render="cell.column.columnDef.cell"
+                  :props="cell.getContext()"
+                />
+              </td>
+            </tr>
+            <tr
+              v-if="paddingBottom > 0"
+              :style="{ height: `${paddingBottom}px` }"
+            ></tr>
+          </template>
+        </tbody>
       </table>
     </div>
   </div>
@@ -122,6 +128,7 @@ const props = withDefaults(
     columnVisibility?: VisibilityState
     rowClass?: (row: T) => string | undefined
     getRowKey?: (row: T, index: number) => string | number
+    tableClass?: string
   }>(),
   {
     estimateSize: 36,
@@ -202,7 +209,10 @@ const inheritedStyle = computed(() =>
   backgroundImage.value ? 'bg-inherit backdrop-blur-sm' : 'bg-inherit',
 )
 
+// Custom tooltips show the full value; the raw sorting value adds a competing title.
 const cellTitle = (cell: Cell<T, unknown>) => {
+  if (cell.column.columnDef.meta?.noCellTitle) return undefined
+
   const value = cell.getValue()
 
   return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined

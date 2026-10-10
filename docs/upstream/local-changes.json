@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "upstream": {
     "repository": "https://github.com/Zephyruso/zashboard.git",
-    "tag": "v3.26.0",
-    "revision": "b31d05f42702b121e0b17eab1e3697d5f1d6db8d"
+    "tag": "v3.27.0",
+    "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
   },
   "reference": {
     "tag": "v1.3.2",
@@ -40,7 +40,7 @@
       "decision": "keep-behavior",
       "intent": "默认保留紧凑、对齐、一致的桌面体验；36px 工具栏、72×34px Core 操作/8px 间距和 32px 输入是当前参考尺寸，可用有证据的等效尺寸/实现跟进上游。明显或不确定的视觉变化需要对比和决定。",
       "evidence": ["5fdf3b7: 72×34、8px、36px、配置标签 4.5rem", "e743fb1: 独立桌面样式层", "750c162: 恢复受控下拉和顶栏样式", "本轮修正：工具栏 SelectInput 的桌面尺寸/圆角适配；标签共享自然宽度，不固定占用 120px"],
-      "paths": ["dashboard-src/src/assets/styles/*", "dashboard-src/src/assets/main.css", "dashboard-src/src/assets/images/sing-box.svg", "dashboard-src/src/composables/useAppearanceVars.ts", "dashboard-src/src/helper/theme.ts", "dashboard-src/src/components/common/CtrlsBar.vue", "dashboard-src/src/components/common/WindowControls.vue", "dashboard-src/src/composables/paddingViews.ts"],
+      "paths": ["dashboard-src/src/assets/styles/*", "dashboard-src/src/assets/main.css", "dashboard-src/src/assets/images/sing-box.svg", "dashboard-src/src/composables/useAppearanceVars.ts", "dashboard-src/src/composables/useThemeColor.ts", "dashboard-src/src/helper/theme.ts", "dashboard-src/src/components/common/CtrlsBar.vue", "dashboard-src/src/components/common/WindowControls.vue", "dashboard-src/src/composables/paddingViews.ts"],
       "watch": ["dashboard-src/src/components/common/*", "dashboard-src/src/components/controls/*", "dashboard-src/tailwind.config.ts", "dashboard-src/postcss.config.js", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
       "checks": ["tests/Dashboard.Tests/CoreLayoutTests.cs"]
     },
@@ -52,7 +52,7 @@
       "evidence": ["8ac1119: 引入 v3.26.0 的 SelectInput/SegmentedControl", "517d6b3: 本地替换调用点和键盘增强；不是推进上游版本"],
       "paths": ["dashboard-src/src/components/common/*", "dashboard-src/src/components/controls/*", "dashboard-src/src/composables/floatingMenu.ts", "dashboard-src/src/composables/keyboard.ts", "dashboard-src/src/composables/swipe.ts", "dashboard-src/src/composables/dialog.ts", "dashboard-src/src/composables/pageTransition.ts", "dashboard-src/src/helper/clipboard.ts", "dashboard-src/src/helper/confirmDialog.ts", "dashboard-src/src/helper/tooltip.ts"],
       "watch": ["dashboard-src/src/assets/styles/*", "dashboard-src/package.json", "dashboard-src/pnpm-lock.yaml"],
-      "checks": ["dashboard-src/src/__tests__/segmented-control.test.ts", "dashboard-src/src/__tests__/clipboard.test.ts", "dashboard-src/src/__tests__/confirm-dialog.test.ts"]
+      "checks": ["dashboard-src/src/__tests__/segmented-control.test.ts", "dashboard-src/src/__tests__/clipboard.test.ts", "dashboard-src/src/__tests__/confirm-dialog.test.ts", "dashboard-src/src/__tests__/tooltip-text.test.ts"]
     },
     {
       "id": "host-session",
@@ -102,7 +102,7 @@
       "evidence": ["8ac1119: 连接分组、完整链路、GeoIP 和表格更新", "517d6b3: 表格/复制复用与字段裁剪"],
       "paths": ["dashboard-src/src/views/ConnectionsPage.vue", "dashboard-src/src/views/LogsPage.vue", "dashboard-src/src/views/RulesPage.vue", "dashboard-src/src/components/connections/*", "dashboard-src/src/components/logs/*", "dashboard-src/src/components/rules/*", "dashboard-src/src/components/overview/ConnectionHistory.vue", "dashboard-src/src/composables/connection*", "dashboard-src/src/composables/rules*", "dashboard-src/src/store/connections.ts", "dashboard-src/src/store/connHistory.ts", "dashboard-src/src/store/logs.ts", "dashboard-src/src/helper/connection*", "dashboard-src/src/helper/sourceip.ts", "dashboard-src/src/helper/ansi.ts", "dashboard-src/src/helper/topConnections.ts"],
       "watch": ["dashboard-src/src/components/common/VirtualTable.vue", "dashboard-src/src/assembly/connections/*", "dashboard-src/src/assembly/logs/*", "dashboard-src/src/assembly/rules/*", "dashboard-src/src/helper/indexeddb.ts"],
-      "checks": ["dashboard-src/src/__tests__/connection-presentation.test.ts", "dashboard-src/src/__tests__/connection-history.test.ts", "dashboard-src/src/__tests__/rules-request-lifecycle.test.ts", "dashboard-src/src/__tests__/logs-accumulator.test.ts"]
+      "checks": ["dashboard-src/src/__tests__/connection-presentation.test.ts", "dashboard-src/src/__tests__/connection-history.test.ts", "dashboard-src/src/__tests__/rules-request-lifecycle.test.ts", "dashboard-src/src/__tests__/logs-accumulator.test.ts", "dashboard-src/src/__tests__/connection-search-scope.test.ts", "dashboard-src/src/__tests__/rules-table-tooltip.test.ts", "dashboard-src/src/__tests__/rules-controls.test.ts", "dashboard-src/src/__tests__/history-save-recovery.test.ts", "dashboard-src/src/__tests__/connection-history-domains.test.ts"]
     },
     {
       "id": "overview-charts",
@@ -130,11 +130,30 @@
       "decision": "replaceable",
       "intent": "桌面测试/构建/入口适配；稳定版已不随桌面分发上游独立部署样例、文档及浏览器专用 test。归组不等于完整覆盖上游测试或批准新增产品范围。",
       "evidence": ["301cf81: 开发产物隔离和共享 pnpm 配置"],
-      "paths": ["dashboard-src/src/__tests__/*", "dashboard-src/bench/*", "dashboard-src/package.json", "dashboard-src/pnpm-*.yaml", "dashboard-src/tsconfig*.json", "dashboard-src/vite.config.ts", "dashboard-src/tailwind.config.ts", "dashboard-src/postcss.config.js", "dashboard-src/eslint.config.js", "dashboard-src/env.d.ts", "dashboard-src/index.html", "dashboard-src/README*", "dashboard-src/LICENSE", "dashboard-src/CHANGELOG.md", "dashboard-src/Caddyfile", "dashboard-src/Dockerfile", "dashboard-src/docs/*", "dashboard-src/test/*", "dashboard-src/.*", "dashboard-src/public/*", "dashboard-src/src/types/*", "dashboard-src/src/shims/*", "dashboard-src/src/constant/*", "dashboard-src/src/helper/index.ts", "Dashboard.csproj", "tools/*", "tests/*"],
+      "paths": ["dashboard-src/src/__tests__/*", "dashboard-src/scripts/gen-icon.mjs", "dashboard-src/bench/*", "dashboard-src/package.json", "dashboard-src/pnpm-*.yaml", "dashboard-src/tsconfig*.json", "dashboard-src/vite.config.ts", "dashboard-src/tailwind.config.ts", "dashboard-src/postcss.config.js", "dashboard-src/eslint.config.js", "dashboard-src/env.d.ts", "dashboard-src/index.html", "dashboard-src/README*", "dashboard-src/LICENSE", "dashboard-src/CHANGELOG.md", "dashboard-src/Caddyfile", "dashboard-src/Dockerfile", "dashboard-src/docs/*", "dashboard-src/test/*", "dashboard-src/.*", "dashboard-src/public/*", "dashboard-src/src/types/*", "dashboard-src/src/shims/*", "dashboard-src/src/constant/*", "dashboard-src/src/helper/index.ts", "Dashboard.csproj", "tools/*", "tests/*"],
       "watch": [],
       "checks": ["tools/check.ps1", "tools/check-maintenance.ps1"]
     }
   ],
-  "pending": [],
-  "knownGaps": []
+  "pending": [
+    {
+      "id": "upstream-327-brand-icon",
+      "change": "local-tooling",
+      "question": "v3.27.0 replaces the cube logo with a new block design and colors. Keep the current favicon/app/tray icons until an explicit visual comparison is accepted; see docs/upstream/v3.27.0.md."
+    },
+    {
+      "id": "upstream-327-mobile-overlay",
+      "change": "proxy-experience",
+      "question": "Keep current proxy overlay transitions and browser theme-color behavior. The v3.27.0 mobile overlay/status-bar synchronization requires mobile-browser comparison before adoption; desktop WebView evidence does not establish equivalence."
+    }
+  ],
+  "knownGaps": [
+    {
+      "id": "system-acceptance-boundary",
+      "change": "desktop-shell",
+      "expected": "Real UAC, logon tasks, cross-account credentials, physical DPI/touch and TUN sleep recovery are checked in an isolated system environment.",
+      "observed": "Automated tests cover injected OS boundaries and isolated real WebView/core processes; no dedicated system environment was available for these manual scenarios.",
+      "coverage": "Do not infer these system results from passing unit, WebView, real-core or performance suites. Follow docs/maintenance.md."
+    }
+  ]
 }

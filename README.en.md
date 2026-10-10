@@ -92,6 +92,6 @@ A successful check or ZIP does not imply all manual Windows scenarios passed. Ke
 - [Maintenance](docs/maintenance.md): current configuration contracts, validation/artifact rules and remaining acceptance boundaries, not an implementation diary (Chinese).
 - [Upstream guide](docs/upstream-merge.md): the sole upstream workflow; preserve product guarantees while allowing better implementations.
 - [UI rules](docs/style.md): visual principles and current defaults.
-- [Upstream baseline](docs/upstream/v3.26.0.md): exact revision and retained decisions for the next merge (Chinese).
+- [Upstream baseline](docs/upstream/v3.27.0.md): exact revision and retained decisions for the next merge (Chinese).
 
 MIT License. Upstream frontend copyright is retained in `dashboard-src/LICENSE`.

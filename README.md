@@ -94,6 +94,6 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewI
 - [维护说明](docs/maintenance.md)：当前配置约定、验证与产物规则、剩余验收事项；不维护实施流水账。
 - [上游跟进指南](docs/upstream-merge.md)：唯一正式跟进入口，保护产品保证，允许有证据地替换实现。
 - [样式规则](docs/style.md)：视觉原则与当前默认，不冻结类名/组件内部实现。
-- [上游基线](docs/upstream/v3.26.0.md)：下次合并所需的确切版本与保留取舍。
+- [上游基线](docs/upstream/v3.27.0.md)：下次合并所需的确切版本与保留取舍。
 
 MIT License；内置前端原版权见 `dashboard-src/LICENSE`。

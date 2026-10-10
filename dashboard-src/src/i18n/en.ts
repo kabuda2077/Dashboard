@@ -109,6 +109,7 @@ const en = {
   ruleCount: 'Rule count',
   hitCount: 'Hits',
   missCount: 'Misses',
+  hitMissCount: 'Hits / Misses',
   behavior: 'Behavior',
   vehicleType: 'Vehicle type',
   customTableColumns: 'Custom table columns',
@@ -247,6 +248,8 @@ const en = {
   independentLatencyTestTip:
     "When enabled, the latency test will use URLs specified in the configuration file instead of zashboard's URL settings. Latency will be displayed independently based on the URLs set in policy groups.",
   search: 'Search',
+  searchVisibleColumns: 'Search displayed columns',
+  searchHiddenColumns: 'Search hidden columns too',
   searchProxyGroup: 'Search proxy groups',
   searchProxyNode: 'Search proxy nodes',
   proxySearchModeGlobal: 'Node search',

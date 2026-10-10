@@ -63,10 +63,13 @@ import ProxyChainPath from '@/components/common/ProxyChainPath.vue'
 import VirtualTable from '@/components/common/VirtualTable.vue'
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
 import {
+  EMPTY_CELL,
+  formatRuleHitCount,
   getRuleSize,
   isRuleDisabled,
   isUpdateableRuleSet,
   toggleRuleDisabledWithSideEffects,
+  useRuleHitTooltip,
 } from '@/composables/rules'
 import { RULE_TAB_TYPE } from '@/constant'
 import { fromNow } from '@/helper/utils'
@@ -79,6 +82,7 @@ import { computed, h, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const { showRuleHitTip } = useRuleHitTooltip()
 const ruleIndexMap = computed(() => new Map(rules.value.map((rule, index) => [rule, index + 1])))
 const hasRuleExtra = computed(() => rules.value.some((rule) => rule.extra))
 const ruleColumnVisibility = computed(() => ({
@@ -151,6 +155,7 @@ const updateButton = (name: string, onClick: () => void) =>
     'button',
     {
       class: `btn btn-circle btn-ghost btn-xs ${updatingProviders.value.includes(name) ? 'animate-spin' : ''}`,
+      disabled: updatingProviders.value.includes(name),
       onClick: (event: MouseEvent) => {
         event.stopPropagation()
         onClick()
@@ -165,12 +170,8 @@ const ruleColumns: ColumnDef<Rule>[] = [
     id: 'index',
     accessorFn: (rule) => ruleIndexMap.value.get(rule) ?? 0,
     cell: ({ row }) =>
-      h(
-        'span',
-        { class: 'text-base-content/50 tabular-nums' },
-        ruleIndexMap.value.get(row.original) ?? '',
-      ),
-    meta: { cellClass: 'w-12' },
+      h('span', { class: 'tabular-nums opacity-50' }, ruleIndexMap.value.get(row.original) ?? ''),
+    meta: { cellClass: 'w-12 text-right', headerClass: 'text-right' },
   },
   {
     header: () => t('type'),
@@ -186,7 +187,7 @@ const ruleColumns: ColumnDef<Rule>[] = [
     cell: ({ row }) =>
       row.original.payload
         ? h(HighlightText, { text: row.original.payload, filter: rulesFilter.value })
-        : h('span', { class: 'text-base-content/40' }, '-'),
+        : h('span', { class: 'opacity-40' }, EMPTY_CELL),
   },
   {
     header: () => t('proxyGroup'),
@@ -210,32 +211,57 @@ const ruleColumns: ColumnDef<Rule>[] = [
 
       return typeof size === 'number' && size !== -1 ? size : ''
     },
-    cell: ({ getValue }) => h('span', { class: 'tabular-nums' }, String(getValue() ?? '')),
-    meta: { cellClass: 'w-24' },
+    cell: ({ getValue }) => {
+      const size = getValue<number | ''>()
+
+      return size === ''
+        ? h('span', { class: 'opacity-40' }, EMPTY_CELL)
+        : h('span', { class: 'tabular-nums' }, size.toLocaleString())
+    },
+    meta: { cellClass: 'w-24 text-right', headerClass: 'text-right' },
   },
   {
     header: () => t('hitCount'),
     id: 'hitCount',
     accessorFn: (rule) => rule.extra?.hitCount ?? 0,
     cell: ({ row }) =>
-      h('span', { class: 'tabular-nums' }, [
-        String(row.original.extra?.hitCount ?? 0),
-        row.original.extra?.hitAt
-          ? h(
-              'span',
-              { class: 'text-base-content/40 ml-1 text-xs' },
-              dayjs(row.original.extra.hitAt).format('MM-DD HH:mm'),
-            )
-          : null,
-      ]),
-    meta: { cellClass: 'w-40' },
+      h(
+        'span',
+        {
+          class: 'tabular-nums',
+          onMouseenter: (event: MouseEvent) => showRuleHitTip(event, row.original),
+        },
+        [
+          h(
+            'span',
+            { class: row.original.extra?.hitCount ? '' : 'opacity-40' },
+            formatRuleHitCount(row.original.extra?.hitCount),
+          ),
+          row.original.extra?.hitAt
+            ? h(
+                'span',
+                { class: 'ml-1 text-xs opacity-40' },
+                dayjs(row.original.extra.hitAt).format('MM-DD HH:mm'),
+              )
+            : null,
+        ],
+      ),
+    meta: { cellClass: 'w-40 text-right', headerClass: 'text-right', noCellTitle: true },
   },
   {
     header: () => t('missCount'),
     id: 'missCount',
     accessorFn: (rule) => rule.extra?.missCount ?? 0,
-    cell: ({ getValue }) => h('span', { class: 'tabular-nums' }, String(getValue() ?? 0)),
-    meta: { cellClass: 'w-24' },
+    cell: ({ row }) =>
+      h(
+        'span',
+        {
+          class: row.original.extra?.missCount ? 'tabular-nums' : 'tabular-nums opacity-40',
+          onMouseenter: (event: MouseEvent) => showRuleHitTip(event, row.original),
+        },
+        formatRuleHitCount(row.original.extra?.missCount),
+      ),
+    meta: { cellClass: 'w-24 text-right', headerClass: 'text-right', noCellTitle: true },
   },
   {
     header: () => t('statusLabel'),
@@ -256,7 +282,7 @@ const ruleColumns: ColumnDef<Rule>[] = [
           const input = event.currentTarget as HTMLInputElement
           input.checked = !isRuleDisabled(rule)
           void toggleRuleHandler(rule)
-        }
+        },
       })
     },
     meta: { cellClass: 'w-20' },
@@ -279,8 +305,8 @@ const providerColumns: ColumnDef<RuleProvider>[] = [
     id: 'index',
     accessorFn: (provider) => renderRulesProvider.value.indexOf(provider) + 1,
     cell: ({ getValue }) =>
-      h('span', { class: 'text-base-content/50 tabular-nums' }, String(getValue() ?? '')),
-    meta: { cellClass: 'w-12' },
+      h('span', { class: 'tabular-nums opacity-50' }, String(getValue() ?? '')),
+    meta: { cellClass: 'w-12 text-right', headerClass: 'text-right' },
   },
   {
     header: () => t('name'),
@@ -292,8 +318,9 @@ const providerColumns: ColumnDef<RuleProvider>[] = [
     header: () => t('ruleCount'),
     id: 'ruleCount',
     accessorFn: (provider) => provider.ruleCount,
-    cell: ({ getValue }) => h('span', { class: 'tabular-nums' }, String(getValue() ?? 0)),
-    meta: { cellClass: 'w-24' },
+    cell: ({ getValue }) =>
+      h('span', { class: 'tabular-nums' }, (getValue<number>() ?? 0).toLocaleString()),
+    meta: { cellClass: 'w-24 text-right', headerClass: 'text-right' },
   },
   {
     header: () => t('behavior'),

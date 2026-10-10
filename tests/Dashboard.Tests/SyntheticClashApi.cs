@@ -22,6 +22,8 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
     public string Origin { get; }
     public int ConfigStatusCode { get; set; } = 200;
     public object? ConfigResponse { get; set; }
+    public object? RulesResponse { get; set; }
+    public Func<int, object>? LogResponse { get; set; }
     public int UpgradeStatusCode { get; set; } = 200;
     public readonly ConcurrentDictionary<string, int> Requests = new();
     public readonly ConcurrentQueue<string> Errors = new();
@@ -101,10 +103,10 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
         "/configs" => ConfigResponse ?? new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false } },
         "/providers/proxies" or "/providers/rules" => new { providers = new { } },
         "/proxies" => new { proxies = Proxies() },
-        "/rules" => new { rules = Array.Empty<object>() },
+        "/rules" => RulesResponse ?? new { rules = Array.Empty<object>() },
         "/traffic" => new { up = tick * 1024L, down = tick * 2048L },
         "/memory" => new { inuse = 32 * 1024 * 1024 },
-        "/logs" => new { type = "info", payload = "isolated workload " + tick },
+        "/logs" => LogResponse?.Invoke(tick) ?? new { type = "info", payload = "isolated workload " + tick },
         "/connections" => new { uploadTotal = tick * 1024L * Rows, downloadTotal = tick * 2048L * Rows, memory = 32 * 1024 * 1024, connections = Connections(tick) },
         _ => new { }
     };

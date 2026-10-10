@@ -47,6 +47,11 @@ export enum CONNECTIONS_TABLE_ACCESSOR_KEY {
   InboundUser = 'inboundUser',
 }
 
+// Searchable values exclude the Close action column.
+export const CONNECTION_SEARCHABLE_KEYS = Object.values(CONNECTIONS_TABLE_ACCESSOR_KEY).filter(
+  (key) => key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close,
+)
+
 export enum TABLE_WIDTH_MODE {
   AUTO = 'auto',
   MANUAL = 'manual',

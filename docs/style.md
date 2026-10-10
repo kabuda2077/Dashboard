@@ -1,6 +1,6 @@
 # Dashboard UI contract
 
-**Reference:** Dashboard `v1.3.2` (`3089aca`). It is the UI/UX and behavior reference, not an implementation template. Keep v2's host protocol, persistence and component architecture. The reviewed upstream source is still zashboard `v3.26.0`; these are two different baselines.
+**Reference:** Dashboard `v1.3.2` (`3089aca`). It is the UI/UX and behavior reference, not an implementation template. Keep v2's host protocol, persistence and component architecture. The reviewed upstream source is zashboard `v3.27.0`; these are two different baselines. New brand icons and mobile overlay synchronization remain pending comparisons in the change register.
 
 Product/update rules live in [upstream-merge.md](upstream-merge.md), system boundaries in [maintenance.md](maintenance.md). The small [local-change register](upstream/local-changes.json) records origin, intent, checks, pending choices and known gaps. Generated inventories/screenshots belong in `.tmp/reports/`, not in this document.
 

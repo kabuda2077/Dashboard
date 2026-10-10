@@ -4,7 +4,7 @@ This is the **single operational guide** for upstream updates. Build implementat
 
 ## 1. Baseline and authority
 
-The reviewed upstream baseline is zashboard **v3.26.0**, SHA `b31d05f42702b121e0b17eab1e3697d5f1d6db8d`. Its repository root maps to local `dashboard-src/`. The Dashboard 2.0 restructuring does not advance this upstream baseline. See [the baseline and retained decisions](upstream/v3.26.0.md) and [maintenance boundaries](maintenance.md). Generate comparisons from the exact upstream baseline and current local source; historical reports are not current validation.
+The reviewed upstream baseline is zashboard **v3.27.0**, SHA `98aa6e00a2217af141196f4439b91e184a55df23`. Its repository root maps to local `dashboard-src/`. This advances the upstream comparison point after the explicit v3.26.0 → v3.27.0 pilot; pending visual choices remain local exceptions. See [the baseline and retained decisions](upstream/v3.27.0.md) and [maintenance boundaries](maintenance.md). Generate comparisons from the exact upstream baseline and current local source; historical reports are not current validation.
 
 For each update identify:
 
@@ -73,7 +73,7 @@ Keep an isolated upstream checkout at U0. Fetch proposed refs there, without cha
 
 ```powershell
 # One-time checkout for the current baseline; use the register when the baseline advances.
-git clone --depth 1 --branch v3.26.0 https://github.com/Zephyruso/zashboard.git .tmp/experiments/upstream-audit-v3.26.0
+git clone --depth 1 --branch v3.27.0 https://github.com/Zephyruso/zashboard.git .tmp/experiments/upstream-audit-v3.27.0
 pwsh -NoProfile -File tools/internal/audit-upstream.ps1
 # After fetching a proposed tag/commit into that checkout (leave HEAD at U0):
 pwsh -NoProfile -File tools/internal/audit-upstream.ps1 -TargetRef <proposed-upstream-ref>

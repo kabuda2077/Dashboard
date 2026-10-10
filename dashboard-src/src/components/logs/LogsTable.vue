@@ -6,6 +6,7 @@
     :estimate-size="36"
     :get-row-key="(log: LogWithSeq) => log.seq"
     :row-class="rowClass"
+    table-class="table-fixed min-w-2xl"
     @row-click="handlerRowClick"
   />
 </template>
@@ -41,14 +42,19 @@ const columns: ColumnDef<LogWithSeq>[] = [
     accessorFn: (log) => log.seq,
     sortingFn: (prev, next) => prev.original.seq - next.original.seq,
     cell: ({ row }) => h('span', { class: 'text-base-content/50 tabular-nums' }, row.original.seq),
-    meta: { cellClass: 'w-12' },
+    meta: { headerClass: 'w-16' },
   },
   {
     header: () => t('time'),
     id: 'time',
     accessorFn: (log) => log.time,
-    cell: ({ row }) => h(HighlightText, { text: row.original.time, filter: logFilter.value }),
-    meta: { cellClass: 'w-40' },
+    cell: ({ row }) =>
+      h(
+        'span',
+        { class: 'tabular-nums' },
+        h(HighlightText, { text: row.original.time, filter: logFilter.value }),
+      ),
+    meta: { headerClass: 'w-40' },
   },
   {
     header: () => t('logLevel'),
@@ -60,7 +66,7 @@ const columns: ColumnDef<LogWithSeq>[] = [
         { class: `text-xs tracking-wide uppercase ${colorMapForType[row.original.type] ?? ''}` },
         h(HighlightText, { text: row.original.type, filter: logFilter.value }),
       ),
-    meta: { cellClass: 'w-24' },
+    meta: { headerClass: 'w-24' },
   },
   {
     header: () => t('content'),
@@ -69,6 +75,7 @@ const columns: ColumnDef<LogWithSeq>[] = [
     accessorFn: (log) => log.payload,
     cell: ({ row }) =>
       h(HighlightText, { text: row.original.payload, filter: logFilter.value, ansi: true }),
+    // Fixed header widths leave the remaining space for the log content.
     meta: { cellClass: 'max-w-none!' },
   },
 ]
