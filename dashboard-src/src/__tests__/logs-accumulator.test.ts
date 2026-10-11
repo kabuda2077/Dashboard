@@ -64,22 +64,62 @@ describe('logs accumulator', () => {
     accumulator.dispose()
   })
 
-  it('drops paused logs while preserving sequence order', async () => {
+  it('keeps display frozen while paused and resumes with only the latest retained logs', async () => {
     const { createLogsAccumulator } = await import('@/assembly/logs/accumulator')
-
+    const { logRetentionLimit } = await import('@/store/settings')
+    logRetentionLimit.value = 3
     const logs = ref<LogWithSeq[]>([])
-    let paused = true
+    let paused = false
     const accumulator = createLogsAccumulator(logs, () => paused)
-
-    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'paused' }])
-    paused = false
     accumulator.push([{ type: LOG_LEVEL.Info, payload: 'visible' }])
-
-    vi.advanceTimersByTime(500)
-
-    expect(logs.value).toHaveLength(1)
-    expect(logs.value[0]).toMatchObject({ payload: 'visible', seq: 2 })
-
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'queued before pause' }])
+    paused = true
+    accumulator.push(
+      Array.from({ length: 10000 }, (_, i) => ({
+        type: LOG_LEVEL.Info,
+        payload: `paused ${i}`,
+      })),
+    )
+    vi.advanceTimersByTime(1000)
+    expect(logs.value.map((log) => log.payload)).toEqual(['visible'])
+    expect(vi.getTimerCount()).toBe(0)
+    logRetentionLimit.value = 2
+    paused = false
+    accumulator.flush()
+    expect(logs.value.map((log) => [log.payload, log.seq])).toEqual([
+      ['paused 9999', 10002],
+      ['paused 9998', 10001],
+    ])
+    logRetentionLimit.value = 0
+    accumulator.flush()
+    expect(logs.value).toEqual([])
     accumulator.dispose()
+  })
+
+  it('clear removes pending logs immediately and disposal cancels future publication', async () => {
+    const { createLogsAccumulator } = await import('@/assembly/logs/accumulator')
+    const logs = ref<LogWithSeq[]>([])
+    let paused = false
+    const accumulator = createLogsAccumulator(logs, () => paused)
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'visible' }])
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'pending' }])
+    logs.value = []
+    vi.advanceTimersByTime(500)
+    expect(logs.value).toEqual([])
+    paused = true
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'paused' }])
+    logs.value = [] // Clear also works when the displayed array is already empty.
+    paused = false
+    accumulator.flush()
+    expect(logs.value).toEqual([])
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'after clear' }])
+    expect(logs.value[0]).toMatchObject({ payload: 'after clear', seq: 4 })
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'pending on disposal' }])
+    accumulator.dispose()
+    accumulator.push([{ type: LOG_LEVEL.Info, payload: 'late callback' }])
+    accumulator.flush()
+    vi.advanceTimersByTime(500)
+    expect(logs.value.map((log) => log.payload)).toEqual(['after clear'])
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

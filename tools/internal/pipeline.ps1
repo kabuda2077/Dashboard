@@ -13,8 +13,10 @@ function Invoke-Checked {
     $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $false
     $global:LASTEXITCODE = 0
+    $elapsed = [Diagnostics.Stopwatch]::StartNew()
     & $Action | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "$Name failed (exit $LASTEXITCODE)." }
+    Write-Host ('Completed {0} in {1:N2}s.' -f $Name, $elapsed.Elapsed.TotalSeconds)
 }
 
 function Prepare-Frontend {
@@ -35,7 +37,7 @@ function Test-DesktopSources {
 
 function Test-FrontendTypes {
     Push-Location (Join-Path $script:RepositoryRoot 'dashboard-src')
-    try { Invoke-Checked 'Frontend types' { Invoke-FrontendNode node_modules/vue-tsc/bin/vue-tsc.js --build --force } }
+    try { Invoke-Checked 'Frontend types' { Invoke-FrontendNode node_modules/vue-tsc/bin/vue-tsc.js --build } }
     finally { Pop-Location }
 }
 
@@ -76,7 +78,7 @@ function Test-StartupBundle {
 }
 
 function Test-Host {
-    param([string]$Configuration, [bool]$IncludeWebViewIntegration, [bool]$IncludeRealCoreIntegration, [bool]$IncludePerformanceIntegration, [bool]$IncludeSlowIntegration)
+    param([string]$Configuration, [bool]$IncludeWebViewIntegration, [bool]$IncludeRealCoreIntegration, [bool]$IncludePerformanceIntegration)
     Push-Location $script:RepositoryRoot
     try {
         Invoke-Checked '.NET restore' { dotnet restore tests/Dashboard.Tests/Dashboard.Tests.csproj --nologo }
@@ -84,7 +86,6 @@ function Test-Host {
         $testArgs = @('test', 'tests/Dashboard.Tests/Dashboard.Tests.csproj', '-c', $Configuration, '--no-restore', '--nologo', '--logger', 'trx;LogFileName=tests.trx', '--results-directory', $reports)
         $filters = @()
         if (-not $IncludeWebViewIntegration) { $filters += 'Category!=WebViewIntegration' }
-        if (-not $IncludeSlowIntegration) { $filters += 'Category!=SlowIntegration' }
         if (-not $IncludeRealCoreIntegration) { $filters += 'Category!=RealCoreIntegration' }
         # Performance gets a separate testhost so unrelated tests do not pollute its heap baseline.
         $filters += 'Category!=PerformanceIntegration'
@@ -95,7 +96,7 @@ function Test-Host {
         Invoke-Checked '.NET tests and bridge fixtures' { & dotnet @testArgs }
         if ($IncludePerformanceIntegration) {
             Invoke-Checked 'Isolated desktop performance workload' {
-                dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj -c $Configuration --no-restore --nologo --filter 'Category=PerformanceIntegration'
+                dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj -c $Configuration --no-build --no-restore --nologo --filter 'Category=PerformanceIntegration'
             }
         }
     }
@@ -116,15 +117,14 @@ function Test-Frontend {
 }
 
 function Invoke-Verification {
-    param([string]$Configuration = 'Release', [bool]$IncludeWebViewIntegration = $false, [bool]$IncludeRealCoreIntegration = $false, [bool]$IncludePerformanceIntegration = $false, [bool]$IncludeSlowIntegration = $false)
-    if ($IncludeSlowIntegration -and -not $IncludeWebViewIntegration) { throw 'IncludeSlowIntegration requires IncludeWebViewIntegration.' }
+    param([string]$Configuration = 'Release', [bool]$IncludeWebViewIntegration = $false, [bool]$IncludeRealCoreIntegration = $false, [bool]$IncludePerformanceIntegration = $false)
     Test-DesktopSources
     Prepare-Frontend
     Test-FrontendTypes
     Build-Frontend
-    Test-Host -Configuration $Configuration -IncludeWebViewIntegration $IncludeWebViewIntegration -IncludeRealCoreIntegration $IncludeRealCoreIntegration -IncludePerformanceIntegration $IncludePerformanceIntegration -IncludeSlowIntegration $IncludeSlowIntegration
+    Test-Host -Configuration $Configuration -IncludeWebViewIntegration $IncludeWebViewIntegration -IncludeRealCoreIntegration $IncludeRealCoreIntegration -IncludePerformanceIntegration $IncludePerformanceIntegration
     Test-Frontend
-    Write-Host "Automated verification passed ($Configuration). WebView: $IncludeWebViewIntegration; isolated real-core tests: $IncludeRealCoreIntegration; performance workload: $IncludePerformanceIntegration; slow lifecycle: $IncludeSlowIntegration. Manual system acceptance is separate." -ForegroundColor Green
+    Write-Host "Automated verification passed ($Configuration). WebView: $IncludeWebViewIntegration; isolated real-core tests: $IncludeRealCoreIntegration; performance workload: $IncludePerformanceIntegration. Manual system acceptance is separate." -ForegroundColor Green
 }
 
 function Publish-Dashboard {

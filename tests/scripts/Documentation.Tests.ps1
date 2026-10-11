@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 # Check current documentation links, not historical ledgers or implementation claims.
-$required = @('docs/maintenance.md', 'docs/upstream-merge.md', 'docs/style.md')
+$required = @('docs/maintenance.md')
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) {
         throw "Missing maintenance document: $relative"
@@ -14,10 +14,26 @@ foreach ($relative in $documents) {
     $text = [IO.File]::ReadAllText($path)
     foreach ($match in [regex]::Matches($text, '\[[^\]]*\]\(([^\s)]+)\)')) {
         $link = $match.Groups[1].Value
-        if ($link -match '^(https?://|mailto:|#)') { continue }
-        $target = [Uri]::UnescapeDataString(($link -split '#', 2)[0])
-        if ($target -and -not (Test-Path -LiteralPath (Join-Path (Split-Path $path) $target))) {
+        if ($link -match '^(https?://|mailto:)') { continue }
+        $parts = $link -split '#', 2
+        $target = [Uri]::UnescapeDataString($parts[0])
+        $targetPath = if ($target) { Join-Path (Split-Path $path) $target } else { $path }
+        if (-not (Test-Path -LiteralPath $targetPath)) {
             throw "Broken current documentation link: $relative -> $link"
+        }
+        if ($parts.Count -eq 2 -and $parts[1] -and [IO.Path]::GetExtension($targetPath) -eq '.md') {
+            $fragment = [Uri]::UnescapeDataString($parts[1])
+            $targetText = [IO.File]::ReadAllText($targetPath)
+            $anchors = @([regex]::Matches($targetText, '<a\s+(?:id|name)=["'']([^"'']+)["'']') | ForEach-Object { $_.Groups[1].Value })
+            $headingIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($heading in [regex]::Matches($targetText, '(?m)^#{1,6}\s+(.+?)\s*#*\s*$')) {
+                $slug = ($heading.Groups[1].Value.ToLowerInvariant() -replace '[^\p{L}\p{N}\p{M}_ \-]', '') -replace ' ', '-'
+                $id = $slug; $suffix = 0
+                while (-not $headingIds.Add($id)) { $suffix++; $id = "$slug-$suffix" }
+            }
+            if ($fragment -cnotin $anchors -and -not $headingIds.Contains($fragment)) {
+                throw "Broken documentation section: $relative -> $link"
+            }
         }
     }
 }

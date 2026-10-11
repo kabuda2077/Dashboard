@@ -3,13 +3,11 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 
 let app: App | undefined
 let root: HTMLDivElement
-let release: () => void
 let scroll: ReturnType<typeof vi.fn>
 let props: { scrollTo: string | null }
 
 beforeEach(async () => {
   vi.resetModules()
-  release = undefined as unknown as () => void
   localStorage.clear()
   root = document.createElement('div')
   document.body.append(root)
@@ -47,32 +45,25 @@ beforeEach(async () => {
     __esModule: true,
     default: () => h('div', { 'data-height': 70 }),
   }))
-  vi.doMock('@/components/settings/connections/ConnectionsSettings.vue', async () => {
-    await new Promise<void>((resolve) => {
-      release = resolve
-    })
-    return { __esModule: true, default: () => h('div', { 'data-height': 400 }) }
-  })
+  vi.doMock('@/components/settings/connections/ConnectionsSettings.vue', () => ({
+    default: () => h('div', { 'data-height': 400 }),
+  }))
   const { default: SettingsContent } = await import('@/components/settings/SettingsContent.vue')
   const { reactive } = await import('vue')
   props = reactive({ scrollTo: 'connectionSettings' })
   app = createApp({ render: () => h(SettingsContent, props) })
   app.config.globalProperties.$t = (key: string) => key
   app.mount(root)
-  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
 })
 
 afterEach(() => {
   app?.unmount()
-  release?.()
   root.remove()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
-it('first navigation waits for lazy settings before balancing columns and scrolling', async () => {
-  expect(scroll).not.toHaveBeenCalled()
-  release()
+it('first navigation balances rendered settings columns before scrolling', async () => {
   await vi.waitFor(() =>
     expect(scroll).toHaveBeenCalledWith('settings-content-connectionSettings', true),
   )
@@ -85,24 +76,20 @@ it('first navigation waits for lazy settings before balancing columns and scroll
   ])
 })
 
-it('collapsing settings cancels a pending lazy navigation', async () => {
+it('collapsing settings cancels a pending navigation', async () => {
+  scroll.mockClear()
   root.querySelector<HTMLButtonElement>('[data-testid=settings-toggle]')!.click()
   await nextTick()
-  release()
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  await nextTick()
   expect(scroll).not.toHaveBeenCalled()
   expect(root.querySelector('[data-key=connectionSettings]')).toBeNull()
 })
 
-it('a backend navigation supersedes the delayed settings target', async () => {
+it('a backend navigation supersedes the pending settings target', async () => {
+  scroll.mockClear()
   props.scrollTo = 'backendSettings'
   await nextTick()
-  await vi.waitFor(() =>
-    expect(scroll).toHaveBeenCalledWith('settings-content-backendSettings', false),
-  )
-  scroll.mockClear()
-  release()
   await nextTick()
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  expect(scroll).not.toHaveBeenCalled()
+  expect(scroll).toHaveBeenCalledWith('settings-content-backendSettings', true)
+  expect(scroll.mock.calls.every(([target]) => target === 'settings-content-backendSettings')).toBe(true)
 })

@@ -3,15 +3,14 @@ param(
     [string]$OutputZip = '',
     [switch]$IncludeWebViewIntegration,
     [switch]$IncludeRealCoreIntegration,
-    [switch]$IncludePerformanceIntegration,
-    [switch]$IncludeSlowIntegration
+    [switch]$IncludePerformanceIntegration
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'internal\pipeline.ps1')
 try {
     # A release invocation verifies its own inputs; it never trusts a previous check or a stale publish folder.
     $source = Get-ReleaseSourceSnapshot -Root $script:RepositoryRoot
-    Invoke-Verification -Configuration Release -IncludeWebViewIntegration ([bool]$IncludeWebViewIntegration) -IncludeRealCoreIntegration ([bool]$IncludeRealCoreIntegration) -IncludePerformanceIntegration ([bool]$IncludePerformanceIntegration) -IncludeSlowIntegration ([bool]$IncludeSlowIntegration)
+    Invoke-Verification -Configuration Release -IncludeWebViewIntegration ([bool]$IncludeWebViewIntegration) -IncludeRealCoreIntegration ([bool]$IncludeRealCoreIntegration) -IncludePerformanceIntegration ([bool]$IncludePerformanceIntegration)
     Assert-ReleaseSourceSnapshot -Root $script:RepositoryRoot -Snapshot $source
     $publish = Publish-Dashboard -Configuration Release
     $project = [xml][IO.File]::ReadAllText((Join-Path $script:RepositoryRoot 'Dashboard.csproj'))
@@ -30,7 +29,6 @@ try {
         automatedChecks = 'passed'; webViewIntegration = [bool]$IncludeWebViewIntegration
         realCoreIntegration = [bool]$IncludeRealCoreIntegration
         performanceIntegration = [bool]$IncludePerformanceIntegration
-        slowIntegration = [bool]$IncludeSlowIntegration
         manualSystemAcceptance = 'not implied by this command'
         schemaVersion = 2; oldSettingsMigration = $false
         webViewResetPolicy = 'application-version'

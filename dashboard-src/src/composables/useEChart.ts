@@ -7,17 +7,7 @@ import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { debounce } from 'lodash'
 import type { ComputedRef, Ref } from 'vue'
-import {
-  nextTick,
-  onActivated,
-  onDeactivated,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  shallowRef,
-  watch,
-} from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
 
 echarts.use([
   BarChart,
@@ -97,7 +87,7 @@ export const useChartTheme = (chartRef: ChartElementRef) => {
   let latencyProbe: HTMLSpanElement | null = null
 
   const update = () => {
-    if (!probe || !latencyProbe) return
+    if (!probe?.isConnected || !latencyProbe) return
 
     const style = getComputedStyle(probe)
     colors.primary30 = style.borderBottomColor
@@ -157,11 +147,15 @@ export const useEChart = (
   const { width, height } = useElementSize(chartRef)
   let removeInitListeners: (() => void) | undefined
   let touchTarget: HTMLElement | null = null
-  let active = true
-  let wasDeactivated = false
 
   const render = () => {
-    if (!active || document.visibilityState === 'hidden' || !chart.value || paused?.value) return
+    if (
+      document.visibilityState === 'hidden' ||
+      !chartRef.value?.isConnected ||
+      !chart.value ||
+      paused?.value
+    )
+      return
 
     if (isEmpty?.value) {
       chart.value.clear()
@@ -172,11 +166,11 @@ export const useEChart = (
   }
 
   const resize = debounce(() => {
-    if (active && document.visibilityState !== 'hidden') chart.value?.resize()
+    if (document.visibilityState !== 'hidden' && chartRef.value?.isConnected) chart.value?.resize()
   }, 100)
   const onVisibility = () => {
     resize.cancel()
-    if (active && document.visibilityState !== 'hidden') {
+    if (document.visibilityState !== 'hidden' && chartRef.value?.isConnected) {
       render()
       chart.value?.resize()
     }
@@ -193,7 +187,7 @@ export const useEChart = (
 
   const syncTouchListener = () => {
     removeTouchListener()
-    if (!active || !isMiddleScreen.value || !chartRef.value) return
+    if (!isMiddleScreen.value || !chartRef.value) return
 
     touchTarget = chartRef.value
     touchTarget.addEventListener('touchend', hideTooltip)
@@ -221,23 +215,6 @@ export const useEChart = (
     render()
   })
 
-  onDeactivated(() => {
-    active = false
-    wasDeactivated = true
-    resize.cancel()
-    removeTouchListener()
-  })
-
-  onActivated(() => {
-    if (!wasDeactivated) return // KeepAlive also calls this on the initial mount.
-    wasDeactivated = false
-    active = true
-    syncTouchListener()
-    render()
-    resize.cancel()
-    if (document.visibilityState !== 'hidden') chart.value?.resize()
-  })
-
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibility)
     resize.cancel()
@@ -252,7 +229,7 @@ export const useEChart = (
     render,
     resize: () => {
       resize.cancel()
-      if (active && document.visibilityState !== 'hidden') chart.value?.resize()
+      if (document.visibilityState !== 'hidden' && chartRef.value?.isConnected) chart.value?.resize()
     },
   }
 }

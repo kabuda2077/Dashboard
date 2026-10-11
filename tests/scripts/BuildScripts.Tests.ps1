@@ -112,4 +112,34 @@ finally {
     }
     finally { Remove-TemporaryTestDirectory $probe }
 }
+# Exercise the public entry: maintenance must not build the application or run twice in All.
+$scopeFixture = New-TemporaryTestDirectory 'check-scope'
+try {
+    $fixtureTools = Join-Path $scopeFixture 'tools'
+    $fixtureTests = Join-Path $scopeFixture 'tests/scripts'
+    New-Item -ItemType Directory -Force (Join-Path $fixtureTools 'internal'), $fixtureTests | Out-Null
+    Copy-Item (Join-Path $PSScriptRoot '../../tools/check.ps1') (Join-Path $fixtureTools 'check.ps1')
+    [IO.File]::WriteAllText((Join-Path $fixtureTools 'internal/pipeline.ps1'), @'
+function Invoke-Checked { param($Name, [scriptblock]$Action) & $Action }
+function Invoke-Verification { 'APPLICATION' }
+'@)
+    foreach ($name in @('BuildScripts', 'ReleaseInputs', 'DevelopmentPaths', 'Documentation', 'UpstreamAudit')) {
+        [IO.File]::WriteAllText((Join-Path $fixtureTests "$name.Tests.ps1"), "`$global:LASTEXITCODE = 19`n'MAINTENANCE:$name'")
+    }
+    foreach ($scope in @('', 'Maintenance', 'All')) {
+        $arguments = @('-NoProfile', '-File', (Join-Path $fixtureTools 'check.ps1'))
+        if ($scope) { $arguments += @('-Scope', $scope) }
+        $output = @(& $engine @arguments)
+        Assert-True ($LASTEXITCODE -eq 0) "Check scope failed: $scope"
+        $applicationCount = @($output | Where-Object { $_ -eq 'APPLICATION' }).Count
+        $maintenanceCount = @($output | Where-Object { $_ -like 'MAINTENANCE:*' }).Count
+        Assert-True ($applicationCount -eq [int]($scope -ne 'Maintenance')) "Incorrect application execution for scope: $scope"
+        Assert-True ($maintenanceCount -eq $(if ($scope) { 5 } else { 0 })) "Incorrect maintenance execution for scope: $scope"
+    }
+    [IO.File]::WriteAllText((Join-Path $fixtureTests 'ReleaseInputs.Tests.ps1'), "throw 'expected maintenance failure'")
+    $output = @(& $engine -NoProfile -File (Join-Path $fixtureTools 'check.ps1') -Scope All 2>&1)
+    Assert-True ($LASTEXITCODE -ne 0 -and 'APPLICATION' -notin $output) 'A maintenance failure did not stop All before application work.'
+    $global:LASTEXITCODE = 0
+}
+finally { Remove-TemporaryTestDirectory $scopeFixture }
 Write-Host 'Build/release pipeline regression tests passed.' -ForegroundColor Green

@@ -56,6 +56,7 @@ afterEach(() => {
   mountedPages.splice(0).forEach(({ app, element }) => { app.unmount(); element.remove() })
   window.dispatchEvent(new Event('pagehide'))
   Reflect.deleteProperty(window, 'chrome')
+  vi.restoreAllMocks()
 })
 it('one application owner rebuilds on epoch changes, not metadata updates or repeated route visits', async () => {
   vi.resetModules()
@@ -68,6 +69,7 @@ it('one application owner rebuilds on epoch changes, not metadata updates or rep
   scope.run(() => startBackendRuntime(route))
   await vi.waitFor(() => expect(calls.connections).toHaveBeenCalledOnce())
   expect(calls.config).toHaveBeenCalledOnce()
+  expect(calls.logs).toHaveBeenCalledOnce()
   for (let i = 0; i < 50; i++) host.runtime({ coreVersion: String(i) })
   expect(calls.config).toHaveBeenCalledOnce()
   route.value = 'logs'
@@ -80,6 +82,7 @@ it('one application owner rebuilds on epoch changes, not metadata updates or rep
   host.runtime({ runtimeEpoch: 2, processId: 2 })
   await vi.waitFor(() => expect(calls.connections).toHaveBeenCalledTimes(2))
   expect(calls.config).toHaveBeenCalledTimes(2)
+  expect(calls.logs).toHaveBeenCalledTimes(2)
   scope.stop()
   const count = calls.config.mock.calls.length
   host.runtime({ runtimeEpoch: 3 })
@@ -107,15 +110,37 @@ const mountRuntime = async (ready = true) => {
   }
 }
 
-it('mounting the real rules page shares the application-owned initial load', async () => {
+it('starts all shared data on Core while hidden without waiting for an animation frame', async () => {
   const { start, route } = await mountRuntime()
+  route.value = 'core'
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+  const frame = vi.spyOn(window, 'requestAnimationFrame')
+  start()
+  await settle()
+  expect(calls.config).toHaveBeenCalledOnce()
+  for (const call of [calls.connections, calls.rules, calls.proxies, calls.statistics, calls.logs])
+    expect(call).toHaveBeenCalledOnce()
+  expect(frame).not.toHaveBeenCalled()
+  route.value = 'overview'
+  await settle()
+  route.value = 'rules'
+  await settle()
+  for (const call of [calls.connections, calls.rules, calls.proxies, calls.statistics, calls.logs])
+    expect(call).toHaveBeenCalledOnce()
+})
+
+it('Overview loads rule hit counts before visiting Rules and shares that initial load', async () => {
+  const { start, route } = await mountRuntime()
+  route.value = 'overview'
+  start()
+  await settle()
+  expect(calls.rules).toHaveBeenCalledOnce()
   route.value = 'rules'
   const RulesPage = (await import('@/views/RulesPage.vue')).default
   const element = document.createElement('div')
   document.body.append(element)
   const app = createApp({ render: () => h(RulesPage) })
   mountedPages.push({ app, element })
-  start()
   app.mount(element)
   await settle()
   expect(calls.rules).toHaveBeenCalledOnce()
@@ -124,7 +149,6 @@ it('mounting the real rules page shares the application-owned initial load', asy
 it('loads proxies once on entry and refreshes on a later visit without restarting streams', async () => {
   const { start, route } = await mountRuntime()
   start()
-  await new Promise(requestAnimationFrame)
   await settle()
   expect(calls.proxies).toHaveBeenCalledOnce()
   route.value = 'core'
@@ -158,11 +182,44 @@ it('reuses an in-flight proxy load across route visits and retries after failure
   expect(calls.proxies).toHaveBeenCalledTimes(2)
 })
 
+it.each(['connections', 'rules', 'proxies', 'statistics', 'logs'] as const)(
+  'retries failed %s on visibility recovery without restarting successful data', async (key) => {
+    const { start, route } = await mountRuntime()
+    route.value = 'core'
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    calls[key].mockRejectedValueOnce(new Error('offline'))
+    start()
+    await settle()
+    document.dispatchEvent(new Event('visibilitychange'))
+    await settle()
+    expect(calls[key]).toHaveBeenCalledOnce()
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await settle()
+    for (const name of ['connections', 'rules', 'proxies', 'statistics', 'logs'] as const)
+      expect(calls[name]).toHaveBeenCalledTimes(name === key ? 2 : 1)
+    expect(calls.config).toHaveBeenCalledOnce()
+  },
+)
+
+it.each(['session stop', 'scope disposal'])(
+  'cancels queued startup work on %s', async (reason) => {
+    const { start, host, scope } = await mountRuntime()
+    start()
+    if (reason === 'session stop') host.runtime({ isRunning: false, apiStatus: 'idle' })
+    else scope.stop()
+    await settle()
+    for (const call of [calls.connections, calls.rules, calls.proxies, calls.statistics, calls.logs])
+      expect(call).not.toHaveBeenCalled()
+  },
+)
+
 it('does not load while stopped and an obsolete request cannot block the new session', async () => {
   const { start, host, route } = await mountRuntime(false)
   start()
-  await new Promise(requestAnimationFrame)
-  expect(calls.proxies).not.toHaveBeenCalled()
+  await settle()
+  for (const call of [calls.config, calls.connections, calls.rules, calls.proxies, calls.statistics, calls.logs])
+    expect(call).not.toHaveBeenCalled()
   route.value = 'core'
   await settle()
   route.value = 'proxies'

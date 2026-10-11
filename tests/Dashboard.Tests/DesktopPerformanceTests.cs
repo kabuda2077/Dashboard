@@ -114,7 +114,7 @@ public sealed class DesktopPerformanceTests
                         foreach (var rows in new[] { 100, 1000, 10000 })
                         { api.Rows = rows; await Task.Delay(1500); phases.Add(await Phase("connections-" + rows)); }
                         phases.Add(await Phase("steady-10000", 20000));
-                        Assert.Equal(3, api.ActiveSockets); // one connections/traffic/memory stream, not one per route
+                        Assert.Equal(4, api.ActiveSockets); // one connections/traffic/memory/logs stream, not one per route
                         await Script("location.hash='#/core'; true");
                         await Until(async () => await Script("!!document.querySelector('#core-api')") == "true");
                         var revision = host.Settings.PreferencesRevision;
@@ -169,7 +169,7 @@ public sealed class DesktopPerformanceTests
             measuredAt = DateTimeOffset.UtcNow, configuration = typeof(MainForm).Assembly.GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "unknown", framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             hostAssemblySha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(typeof(MainForm).Assembly.Location))),
             uiManifestSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(Path.Combine(repository.FullName, "resources", "dashboard", ".vite", "manifest.json")))),
-            scope = "Production host/MainForm in a fresh testhost process, real WebView, isolated real mihomo with deterministic synthetic API data. Host totals include test harness. Working-set sums may double-count shared pages. 25ms polling quantizes readiness; offscreen rendering is not physical display FPS. Cold recreate invokes production disposal directly; the 60-second timer is tested separately.",
+            scope = "Production host/MainForm in a fresh testhost process, real WebView, isolated real mihomo with deterministic synthetic API data. Host totals include test harness. Working-set sums may double-count shared pages. 25ms polling quantizes readiness; offscreen rendering is not physical display FPS. Cold recreate invokes production disposal directly; a separate accelerated real-timer test checks the 60-second production default and idle lifecycle.",
             samples
         }, new JsonSerializerOptions { WriteIndented = true }));
     }

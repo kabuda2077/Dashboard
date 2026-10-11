@@ -1,5 +1,5 @@
 <template>
-  <div class="grid h-full min-h-[232px] w-full grid-rows-4 gap-2">
+  <div class="grid h-full min-h-[232px] w-full grid-cols-1 grid-rows-4 gap-2">
     <template v-if="displayConnections.length">
       <div
         v-for="(connection, index) in displayConnections"
@@ -16,7 +16,7 @@
             <span class="truncate font-medium">
               {{ getDisplayValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.Host) }}
             </span>
-            <span class="text-base-content/40 shrink-0 text-xs">
+            <span class="text-base-content/40 truncate text-xs">
               {{ getDisplayValue(connection, CONNECTIONS_TABLE_ACCESSOR_KEY.Type) }}
             </span>
           </div>

@@ -1,12 +1,12 @@
 // 组装层 · Clash-compatible proxies 门面。
 import { isSingBoxCore } from '@/assembly/version'
 import { NOT_CONNECTED, PROXY_TAB_TYPE, PROXY_TYPE, TEST_URL } from '@/constant'
-import { captureBackendSession } from '@/helper/backendSession'
 import { useStorage } from '@/helper/storage'
 import { groupTestUrls, independentLatencyTest, speedtestUrl } from '@/store/settings'
 import type { Proxy, ProxyProvider } from '@/types'
 import { last } from 'lodash'
 import { computed, ref } from 'vue'
+import { proxyLatencyTest as clashProxyLatencyTest } from './clash'
 
 export const proxiesFilter = ref('')
 export const proxiesTabShow = ref(PROXY_TAB_TYPE.PROXIES)
@@ -142,43 +142,19 @@ export const hasSmartGroup = computed(() => {
 
 // ---------- Clash-compatible 组装动作 ----------
 
-interface ProxiesBackend {
-  fetchProxies: () => Promise<unknown>
-  handlerProxySelect: (proxyGroupName: string, proxyName: string) => Promise<unknown>
-  proxyLatencyTest: (
-    proxyName: string,
-    url?: string,
-    timeout?: number,
-    groupName?: string,
-  ) => Promise<unknown>
-  proxyGroupLatencyTest: (proxyGroupName: string) => Promise<unknown>
-  allProxiesLatencyTest: () => Promise<unknown>
-}
-
-const load = (): Promise<ProxiesBackend> => import('./clash')
-
-const withBackend = async (action: (backend: ProxiesBackend) => Promise<unknown>) => {
-  const session = captureBackendSession()
-  const backend = await load()
-  if (session.isCurrent()) return action(backend)
-}
-
-export const fetchProxies = () => withBackend((backend) => backend.fetchProxies())
-
-export const handlerProxySelect = (proxyGroupName: string, proxyName: string) =>
-  withBackend((backend) => backend.handlerProxySelect(proxyGroupName, proxyName))
+export {
+  allProxiesLatencyTest,
+  fetchProxies,
+  handlerProxySelect,
+  proxyGroupLatencyTest,
+} from './clash'
 
 export const proxyLatencyTest = async (
   proxyName: string,
   url?: string,
   timeout?: number,
-  groupName?: string,
-) => withBackend((backend) => backend.proxyLatencyTest(proxyName, url, timeout, groupName))
-
-export const proxyGroupLatencyTest = (proxyGroupName: string) =>
-  withBackend((backend) => backend.proxyGroupLatencyTest(proxyGroupName))
-
-export const allProxiesLatencyTest = () => withBackend((backend) => backend.allProxiesLatencyTest())
+  _groupName?: string,
+) => clashProxyLatencyTest(proxyName, url, timeout)
 
 let proxyRequest = 0
 let proxyRuntime = 0

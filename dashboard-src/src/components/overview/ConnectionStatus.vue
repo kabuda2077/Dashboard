@@ -68,33 +68,16 @@
 
 <script setup lang="ts">
 import {
-  getBaiduLatencyAPI,
-  getCloudflareLatencyAPI,
-  getGithubLatencyAPI,
-  getYouTubeLatencyAPI,
-} from '@/api/latency'
-import {
-  baiduLatency,
-  cloudflareLatency,
-  githubLatency,
-  youtubeLatency,
+  getLatency,
+  isTestingLatency as isTesting,
+  LATENCY_ROUNDS as ROUNDS,
+  latencyTargets as targets,
 } from '@/composables/overview'
 import { getColorForLatency } from '@/helper'
 import { autoConnectionCheck } from '@/store/settings'
 import { BoltIcon } from '@heroicons/vue/24/outline'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import LatencyChart from './LatencyChart.vue'
-
-const ROUNDS = 10
-
-const targets = [
-  { name: 'Baidu', ref: baiduLatency, api: getBaiduLatencyAPI },
-  { name: 'Cloudflare', ref: cloudflareLatency, api: getCloudflareLatencyAPI },
-  { name: 'GitHub', ref: githubLatency, api: getGithubLatencyAPI },
-  { name: 'YouTube', ref: youtubeLatency, api: getYouTubeLatencyAPI },
-]
-
-const isTesting = ref(false)
 
 const computeStats = (values: number[]) => {
   const ok = values.filter((v) => v > 0).sort((a, b) => a - b)
@@ -113,27 +96,6 @@ const latencyItems = computed(() =>
     stats: computeStats(target.ref.value),
   })),
 )
-
-const getLatency = async () => {
-  if (isTesting.value) return
-  isTesting.value = true
-  targets.forEach((target) => {
-    target.ref.value = []
-  })
-
-  try {
-    await Promise.all(
-      targets.map(async (target) => {
-        for (let i = 0; i < ROUNDS; i++) {
-          const res = await target.api()
-          target.ref.value = [...target.ref.value, Math.round(res)]
-        }
-      }),
-    )
-  } finally {
-    isTesting.value = false
-  }
-}
 
 onMounted(() => {
   if (autoConnectionCheck.value && targets.every((target) => target.ref.value.length === 0)) {

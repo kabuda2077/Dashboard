@@ -20,7 +20,7 @@
           :name="isMiddleScreen ? (route.meta.transition as string) || 'fade' : 'page'"
           :mode="isMiddleScreen ? undefined : 'out-in'"
         >
-          <KeepAlive include="OverviewPage"><Component :is="Component" /></KeepAlive>
+          <Component :is="Component" />
         </Transition>
       </RouterView>
       <div

@@ -5,9 +5,10 @@ import {
 } from '@/assembly/connections/accessor'
 import { connectionAccessor as clashConnectionAccessor } from '@/assembly/connections/clash'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
-import { connectionTableColumns } from '@/store/settings'
+import { connectionTableColumns, sourceIPLabelList } from '@/store/settings'
 import type { Connection } from '@/types'
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 vi.mock('@/api/geoip', () => ({
   getGeoIPInfoSync: vi.fn(() => ({
@@ -78,6 +79,41 @@ describe('connection field accessors', () => {
         proxyChainDirection: PROXY_CHAIN_DIRECTION.REVERSE,
       }),
     ).toBe('Testland / Example ASN')
+  })
+
+  it('shows IPv6 zone labels in connection display and visible search without changing raw addresses', async () => {
+    const previousLabels = sourceIPLabelList.value
+    sourceIPLabelList.value = [{ key: 'fe80::1234%eth0', label: 'laptop' }]
+    await nextTick()
+    const sourceConnection = {
+      metadata: { sourceIP: 'fe80::1234%wlan0' },
+    } as Connection
+    const options = {
+      mode: 'table' as const,
+      showFullProxyChain: true,
+      proxyChainDirection: PROXY_CHAIN_DIRECTION.NORMAL,
+    }
+
+    try {
+      expect(
+        createGetConnectionDisplayValue(clashConnectionAccessor)(
+          sourceConnection,
+          CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP,
+          options,
+        ),
+      ).toBe('laptop')
+      expect(
+        createGetConnectionVisibleSearchValues(clashConnectionAccessor)(
+          sourceConnection,
+          [CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP],
+          options,
+        ),
+      ).toEqual(['laptop'])
+      expect(clashConnectionAccessor.sourceIP(sourceConnection)).toBe('fe80::1234%wlan0')
+    } finally {
+      sourceIPLabelList.value = previousLabels
+      await nextTick()
+    }
   })
 
   it('keeps GeoIP out of the default connection table columns', () => {

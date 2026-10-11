@@ -2,7 +2,7 @@ import TimeSeriesChart from '@/components/charts/TimeSeriesChart.vue'
 import MiniSparkline from '@/components/overview/MiniSparkline.vue'
 import { useEChart } from '@/composables/useEChart'
 import { describe, expect, it, vi } from 'vitest'
-import { computed, createApp, defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
+import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 const mockCharts = vi.hoisted(() => {
   const instances: Array<{
@@ -48,18 +48,92 @@ const flush = async () => {
   await nextTick()
 }
 
-async function scenario(kind: 'sparkline' | 'time-series') {
-  mockCharts.instances.length = 0
-  size.width.value = 0
-  const active = ref(true)
-  const data = ref<[number, number][]>([[1000, 1]])
-  const chartComponent = kind === 'sparkline' ? MiniSparkline : TimeSeriesChart
-  const host = document.createElement('div')
-  document.body.appendChild(host)
-  const app = createApp(
-    defineComponent({
-      setup: () => () =>
-        h(KeepAlive, null, [
+describe('mounted Overview chart lifecycle (mock ECharts)', () => {
+  it('pauses hidden or disconnected charts and cancels pending resize on unmount', async () => {
+    vi.useFakeTimers()
+    mockCharts.instances.length = 0
+    size.width.value = 0
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const value = ref(1)
+    const cleanup = vi.fn()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const Chart = defineComponent({
+      setup() {
+        const chartRef = ref<HTMLElement>()
+        useEChart(
+          chartRef,
+          computed(() => ({ series: [{ data: [value.value] }] })),
+          { onInit: () => cleanup },
+        )
+        return () => h('div', { ref: chartRef })
+      },
+    })
+    const app = createApp(Chart)
+    let unmounted = false
+    try {
+      app.mount(host)
+      await flush()
+      const chart = mockCharts.instances[0]!
+      expect(chart.setOption).toHaveBeenCalledOnce()
+
+      visibility.mockReturnValue('hidden')
+      document.dispatchEvent(new Event('visibilitychange'))
+      value.value = 2
+      size.width.value++
+      await flush()
+      await vi.advanceTimersByTimeAsync(130)
+      expect(chart.setOption).toHaveBeenCalledOnce()
+      expect(chart.resize).not.toHaveBeenCalled()
+
+      visibility.mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(chart.setOption.mock.lastCall?.[0].series[0].data).toEqual([2])
+      expect(chart.resize).toHaveBeenCalledOnce()
+
+      host.remove()
+      value.value = 3
+      size.width.value++
+      await flush()
+      await vi.advanceTimersByTimeAsync(130)
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(chart.setOption).toHaveBeenCalledTimes(2)
+      expect(chart.resize).toHaveBeenCalledOnce()
+
+      document.body.appendChild(host)
+      size.width.value++
+      await flush()
+      app.unmount()
+      unmounted = true
+      await vi.advanceTimersByTimeAsync(130)
+      document.dispatchEvent(new Event('visibilitychange'))
+      value.value = 4
+      await flush()
+      expect(chart.setOption).toHaveBeenCalledTimes(2)
+      expect(chart.resize).toHaveBeenCalledOnce()
+      expect(chart.dispose).toHaveBeenCalledOnce()
+      expect(cleanup).toHaveBeenCalledOnce()
+    } finally {
+      if (!unmounted) app.unmount()
+      host.remove()
+      visibility.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['sparkline', 'time-series'] as const)(
+    '%s disposes on leaving and remounts with current data',
+    async (kind) => {
+      vi.useFakeTimers()
+      mockCharts.instances.length = 0
+      size.width.value = 0
+      const active = ref(true)
+      const data = ref<[number, number][]>([[1000, 1]])
+      const chartComponent = kind === 'sparkline' ? MiniSparkline : TimeSeriesChart
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      const app = createApp({
+        setup: () => () =>
           active.value
             ? h(
                 chartComponent,
@@ -72,115 +146,61 @@ async function scenario(kind: 'sparkline' | 'time-series') {
                     },
               )
             : h('div', 'another route'),
-        ]),
-    }),
-  )
-  app.mount(host)
-  await flush()
-  const chart = mockCharts.instances[0]!
-  const counts = () => [chart.setOption.mock.calls.length, chart.resize.mock.calls.length]
-  const initial = counts()
-  data.value = [[2000, 2]]
-  await flush()
-  const foreground = counts()
-  active.value = false
-  await flush()
-  data.value = [[3000, 3]]
-  await flush()
-  size.width.value++
-  await flush()
-  await new Promise((resolve) => setTimeout(resolve, 130))
-  const inactive = counts()
-  active.value = true
-  await flush()
-  const resumed = counts()
-  size.width.value++
-  await flush()
-  await new Promise((resolve) => setTimeout(resolve, 130))
-  const resized = counts()
-  return { chart, host, app, data, active, initial, foreground, inactive, resumed, resized, counts }
-}
-
-describe('mounted Overview chart lifecycle counts (mock ECharts)', () => {
-  it('direct reactive source and element size while cached', async () => {
-    mockCharts.instances.length = 0
-    size.width.value = 0
-    const active = ref(true)
-    const value = ref(1)
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const Chart = defineComponent({
-      setup() {
-        const chartRef = ref<HTMLElement>()
-        useEChart(
-          chartRef,
-          computed(() => ({ series: [{ data: [value.value] }] })),
-        )
-        return () => h('div', { ref: chartRef })
-      },
-    })
-    const app = createApp(
-      defineComponent({
-        setup: () => () => h(KeepAlive, null, [active.value ? h(Chart) : h('div', 'elsewhere')]),
-      }),
-    )
-    app.mount(host)
-    await flush()
-    const chart = mockCharts.instances[0]!
-    const counts = () => [chart.setOption.mock.calls.length, chart.resize.mock.calls.length]
-    const initial = counts()
-    active.value = false
-    await flush()
-    value.value++
-    size.width.value++
-    await flush()
-    await new Promise((resolve) => setTimeout(resolve, 130))
-    const inactive = counts()
-    active.value = true
-    await flush()
-    const resumed = counts()
-    console.info('direct counts', { initial, inactive, resumed })
-    expect(initial).toEqual([1, 0])
-    expect(inactive).toEqual(initial)
-    expect(resumed).toEqual([2, 1])
-    expect(chart.setOption.mock.lastCall?.[0].series[0].data).toEqual([2])
-    app.unmount()
-    host.remove()
-  })
-  it.each(['sparkline', 'time-series'] as const)('%s activation and deactivation', async (kind) => {
-    const run = await scenario(kind)
-    try {
-      console.info(kind + ' counts', {
-        initial: run.initial,
-        foreground: run.foreground,
-        inactive: run.inactive,
-        resumed: run.resumed,
-        resized: run.resized,
       })
-      expect(run.initial[0]).toBeGreaterThanOrEqual(1)
-      expect(run.foreground).toEqual([run.initial[0] + 1, run.initial[1]])
-      expect(run.inactive).toEqual(run.foreground)
-      expect(run.resumed).toEqual([run.inactive[0] + 1, run.inactive[1] + 1])
-      expect(run.resized).toEqual([run.resumed[0], run.resumed[1] + 1])
-      if (kind === 'time-series') {
-        const button = run.host.querySelector('button')!
-        button.click() // user pause, independent of route deactivation
+      try {
+        app.mount(host)
         await flush()
-        const paused = run.counts()
-        run.active.value = false
+        const first = mockCharts.instances[0]!
+        const initialRenders = first.setOption.mock.calls.length
+        data.value = [[2000, 2]]
         await flush()
-        run.data.value = [[4000, 4]]
+        expect(first.setOption).toHaveBeenCalledTimes(initialRenders + 1)
+        size.width.value++
         await flush()
-        run.active.value = true
+        await vi.advanceTimersByTimeAsync(130)
+        expect(first.resize).toHaveBeenCalledOnce()
+
+        active.value = false
         await flush()
-        expect(run.counts()).toEqual([paused[0], paused[1] + 1])
-        button.click() // resume with latest data
+        expect(first.dispose).toHaveBeenCalledOnce()
+        const rendersAtUnmount = first.setOption.mock.calls.length
+        data.value = [[3000, 3]]
+        size.width.value++
         await flush()
-        expect(run.counts()[0]).toBe(paused[0] + 1)
+        await vi.advanceTimersByTimeAsync(130)
+        expect(first.setOption).toHaveBeenCalledTimes(rendersAtUnmount)
+        expect(first.resize).toHaveBeenCalledOnce()
+        expect(mockCharts.instances).toHaveLength(1)
+
+        active.value = true
+        await flush()
+        expect(mockCharts.instances).toHaveLength(2)
+        const second = mockCharts.instances[1]!
+        expect(second.setOption.mock.lastCall?.[0].series[0].data).toEqual([[3000, 3]])
+        size.width.value++
+        await flush()
+        await vi.advanceTimersByTimeAsync(130)
+        expect(second.resize).toHaveBeenCalledOnce()
+        if (kind === 'time-series') {
+          const button = host.querySelector('button')!
+          button.click()
+          await flush()
+          const pausedRenders = second.setOption.mock.calls.length
+          data.value = [[4000, 4]]
+          await flush()
+          expect(second.setOption).toHaveBeenCalledTimes(pausedRenders)
+          button.click()
+          await flush()
+          expect(second.setOption).toHaveBeenCalledTimes(pausedRenders + 1)
+          expect(second.setOption.mock.lastCall?.[0].series[0].data).toEqual([[4000, 4]])
+        }
+      } finally {
+        app.unmount()
+        host.remove()
+        vi.useRealTimers()
       }
-    } finally {
-      run.app.unmount()
-      run.host.remove()
-    }
-  })
+      expect(mockCharts.instances).toHaveLength(2)
+      for (const chart of mockCharts.instances) expect(chart.dispose).toHaveBeenCalledOnce()
+    },
+  )
 })

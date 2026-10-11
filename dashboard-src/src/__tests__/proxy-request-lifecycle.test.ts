@@ -1,6 +1,11 @@
 import { fetchProxiesAPI, fetchProxyLatencyAPI, selectProxyAPI } from '@/api/clash'
-import { proxyMap, resetProxies } from '@/assembly/proxies'
-import { fetchProxies, handlerProxySelect, proxyGroupLatencyTest } from '@/assembly/proxies/clash'
+import {
+  fetchProxies,
+  handlerProxySelect,
+  proxyGroupLatencyTest,
+  proxyMap,
+  resetProxies,
+} from '@/assembly/proxies'
 import { beforeEach, expect, it, vi } from 'vitest'
 const epoch = vi.hoisted(() => ({ value: 1 }))
 vi.mock('@/helper/backendSession', () => ({

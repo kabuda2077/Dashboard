@@ -2,6 +2,7 @@ import { backendSessionReady, captureBackendSession } from '@/helper/backendSess
 import { activeUuid } from '@/store/setup'
 import type { Config } from '@/types'
 import { ref } from 'vue'
+import * as backend from './clash'
 
 const newDefaultConfig = (): Config => ({
   port: 0,
@@ -93,8 +94,6 @@ export const fetchConfigs = (force = false): Promise<Config | undefined> => {
   isConfigLoading.value = true
   const promise = (async () => {
     try {
-      const backend = await import('./clash')
-      if (!current()) return
       const result = await backend.fetchConfigs(controller.signal)
       if (!current()) return
       configs.value = result
@@ -129,8 +128,6 @@ export const updateConfigs = async (value: Record<string, string | boolean | obj
   const session = captureBackendSession()
   // Never satisfy a post-write refresh with a GET started before the write.
   invalidate()
-  const backend = await import('./clash')
-  if (!session.isCurrent()) return
   await backend.updateConfigs(value)
   if (session.isCurrent()) await fetchConfigs(true)
 }

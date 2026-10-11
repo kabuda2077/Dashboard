@@ -15,10 +15,11 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Dashboard.csproj"))) repository = repository.Parent;
         Assert.NotNull(repository);
-        // Test-only switches let the same workload capture an extracted D0 dashboard.
+        // Comparison capture reuses this host; the default run keeps representative evidence.
         var dashboardDirectory = Environment.GetEnvironmentVariable("DASHBOARD_UPSTREAM_UI_RESOURCES")
             ?? Path.Combine(repository.FullName, "resources", "dashboard");
         var baselineEvidence = Environment.GetEnvironmentVariable("DASHBOARD_UPSTREAM_UI_BASELINE") == "1";
+        var fullComparison = baselineEvidence || Environment.GetEnvironmentVariable("DASHBOARD_UI_VISUAL_COMPARISON") == "1";
         var root = TestRoot;
         Directory.CreateDirectory(root);
         var initial = new SettingsStore(root);
@@ -75,10 +76,16 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
             form.Location = new System.Drawing.Point(-15000, -15000);
             form.Shown += async (_, _) =>
             {
+                WebView2? View() => form.Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<WebView2>()).SingleOrDefault();
+                async Task<string> Script(string code) => View()?.CoreWebView2 is { } core ? await core.ExecuteScriptAsync(code) : "null";
+                async Task CaptureScreenshot(string path, bool representative = false)
+                {
+                    if (!fullComparison && !representative) return;
+                    await using var image = File.Create(path);
+                    await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                }
                 try
                 {
-                    WebView2? View() => form.Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<WebView2>()).SingleOrDefault();
-                    async Task<string> Script(string code) => View()?.CoreWebView2 is { } core ? await core.ExecuteScriptAsync(code) : "null";
                     async Task Until(Func<Task<bool>> condition)
                     {
                         var deadline = DateTime.UtcNow.AddSeconds(20);
@@ -87,12 +94,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             if (DateTime.UtcNow > deadline)
                             {
                                 var failureDirectory = TestDirectory.ReportDirectory("core-layout");
-                                await File.WriteAllTextAsync(Path.Combine(failureDirectory, $"failure-{language}.json"), await Script("JSON.stringify({route:location.hash,titles:[...document.querySelectorAll('.ctrls-bar [title]')].map(e=>({tag:e.tagName,title:e.title})),controls:[...document.querySelectorAll('.ctrls-bar [role=combobox]')].map(e=>e.textContent),animations:document.getAnimations().map(a=>({state:a.playState,iterations:a.effect?.getComputedTiming().iterations,target:a.effect?.target?.className}))})"));
-                                if (View()?.CoreWebView2 is { } failedView)
-                                {
-                                    await using var image = File.Create(Path.Combine(failureDirectory, $"failure-{language}.png"));
-                                    await failedView.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
-                                }
+                                await File.WriteAllTextAsync(Path.Combine(failureDirectory, $"failure-{language}.json"), await Script("JSON.stringify({route:location.hash,downloads:document.querySelector('#core-settings-backendSettings .grid-rows-4')?.outerHTML,titles:[...document.querySelectorAll('.ctrls-bar [title]')].map(e=>({tag:e.tagName,title:e.title})),controls:[...document.querySelectorAll('.ctrls-bar [role=combobox]')].map(e=>e.textContent),animations:document.getAnimations().map(a=>({state:a.playState,iterations:a.effect?.getComputedTiming().iterations,target:a.effect?.target?.className}))})"));
                                 throw new TimeoutException("Core layout did not settle; see failure-* layout evidence.");
                             }
                             await Task.Delay(50);
@@ -127,8 +129,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         var before = await Script(Measure);
                         // Persist evidence before asserting so CI also retains the failing layout.
                         await File.WriteAllTextAsync(Path.Combine(evidence, name + "-before.json"), before);
-                        await using (var beforeImage = File.Create(Path.Combine(evidence, name + "-before.png")))
-                            await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, beforeImage);
+                        await CaptureScreenshot(Path.Combine(evidence, name + "-before.png"));
                         using (var metrics = JsonDocument.Parse(before))
                         {
                             Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, before);
@@ -163,8 +164,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         }
                         View()!.CoreWebView2.PostWebMessageAsJson(HostBridgeJson.Serialize(HostOutboundMessage.Runtime(host.BuildRuntimeState(false))));
                         await Until(async () => await Script("!document.querySelector('.core-status-pid')") == "true");
-                        await using var screenshot = File.Create(Path.Combine(evidence, name + ".png"));
-                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, screenshot);
+                        await CaptureScreenshot(Path.Combine(evidence, name + ".png"), representative: collapsed && width is 2200 or 640);
                         await Script("document.querySelector('.core-content').parentElement.scrollTop = 250; true");
                         Assert.Equal("true", await Script("Math.abs(document.querySelector('.core-toolbar').getBoundingClientRect().top - 12) < 2"));
                         await Script("document.querySelector('.core-content').parentElement.scrollTop = 0; true");
@@ -191,8 +191,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                                     Assert.Equal(confirm ? "C:/remote-target.exe" : "C:/unsaved-target.exe", JsonSerializer.Deserialize<string>(await Script("document.querySelector('#core-switch-exe').value")));
                                 }
                             }
-                            await using var switchImage = File.Create(Path.Combine(evidence, name + "-switch.png"));
-                            await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, switchImage);
+                            await CaptureScreenshot(Path.Combine(evidence, name + "-switch.png"));
                             await Script("document.querySelector('[data-testid=switch-core-dialog] .modal-action .dashboard-action-btn').click(); true");
                             await Until(async () => await Script("!document.querySelector('[data-testid=switch-core-dialog]')") == "true");
                         }
@@ -225,8 +224,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         var controls = await Script("JSON.stringify([...document.querySelectorAll('.ctrls-bar [role=combobox]')].map(e=>({height:e.getBoundingClientRect().height,radius:parseFloat(getComputedStyle(e).borderRadius)})))");
                         var json = JsonSerializer.Deserialize<string>(controls)!;
                         await File.WriteAllTextAsync(Path.Combine(evidence, $"toolbar-{route}-{language}.json"), json);
-                        await using (var image = File.Create(Path.Combine(evidence, $"toolbar-{route}-{language}.png")))
-                            await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                        await CaptureScreenshot(Path.Combine(evidence, $"toolbar-{route}-{language}.png"));
                         using var measured = JsonDocument.Parse(json);
                         Assert.Equal(route == "logs" ? 2 : 1, measured.RootElement.GetArrayLength());
                         foreach (var control in measured.RootElement.EnumerateArray())
@@ -262,8 +260,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         await Until(async () => await Script("!document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
                         var json = await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'); return {text:root.innerText,controls:[...root.querySelectorAll('input[type=checkbox]')].map(e=>({label:e.getAttribute('aria-label'),checked:e.checked,disabled:e.disabled}))} })()");
                         await File.WriteAllTextAsync(Path.Combine(evidence, $"backend-{name}-{language}.json"), json);
-                        await using var image = File.Create(Path.Combine(evidence, $"backend-{name}-{language}.png"));
-                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                        await CaptureScreenshot(Path.Combine(evidence, $"backend-{name}-{language}.png"));
                     }
                     api.ConfigStatusCode = 404; // permanent read failure; no background retry races
                     api.ConfigResponse = new { message = "fixture API denied <img src=x>" };
@@ -279,6 +276,69 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     Assert.True(api.Requests.GetValueOrDefault("/configs") > readsBeforeRetry);
                     Assert.Equal("true", await Script("[...document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]')].every(e=>!e.checked&&!e.disabled)"));
                     await RecordBackendState("recovered");
+                    if (language == "en-US")
+                    {
+                        // Feed real connection frames through each core's session; measure the
+                        // speed and text boxes, since a clipped ancestor can hide overflow.
+                        var downloadLayouts = new List<string>();
+                        foreach (var kind in Enum.GetValues<CoreKind>())
+                        {
+                            var coreName = kind == CoreKind.SingBox ? "sing-box" : "mihomo";
+                            var longName = string.Concat(Enumerable.Repeat("long-routing-group-", 20));
+                            api.ConnectionsResponse = tick => Enumerable.Range(0, 4).Select(i => (object)new
+                            {
+                                id = $"download-{coreName}-{i}", upload = 0L, download = (long)tick * (i + 1) * 8 * 1024 * 1024,
+                                start = "2026-09-01T00:00:00Z",
+                                chains = new[] { coreName + "-node-" + longName, "selector-" + longName, "fallback-" + longName },
+                                rule = "DomainSuffix", rulePayload = longName + ".example",
+                                metadata = new { network = "tcp", type = coreName + "-" + longName,
+                                    sourceIP = "192.0.2.1", sourcePort = "10000", destinationIP = "198.51.100.1",
+                                    destinationPort = "443", host = coreName + "-" + longName + ".example", process = "fixture.exe" }
+                            }).ToArray();
+                            SendBackendState(kind == CoreKind.SingBox ? false : null);
+                            await Until(async () => await Script("(() => { const card=document.querySelector('#core-settings-backendSettings .grid-rows-4'); return card?.children.length===4 && [...card.children].every(row=>row.innerText.includes(" + JsonSerializer.Serialize(coreName + "-") + ") && row.lastElementChild.textContent.includes('MB')); })()") == "true");
+                            foreach (var width in new[] { 640, 1500 })
+                            {
+                                form.Size = new System.Drawing.Size(width, 1000);
+                                await Until(async () => await Script($"innerWidth==={width}") == "true");
+                                await Script("document.querySelector('#core-settings-backendSettings .grid-rows-4').scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+                                var measurement = JsonSerializer.Deserialize<string>(await Script("""
+                                    (() => {
+                                      const card=document.querySelector('#core-settings-backendSettings .grid-rows-4');
+                                      const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,client:e.clientWidth,scroll:e.scrollWidth}};
+                                      const rows=[...card.children].map(row=>{
+                                        const speed=row.lastElementChild, text=row.children[1], style=getComputedStyle(row);
+                                        const spans=[...text.querySelectorAll('span')].filter(e=>e.textContent!=='->');
+                                        const r=box(row), s=box(speed), c=box(card);
+                                        return {row:r,speed:s,text:box(text),paddingLeft:parseFloat(style.paddingLeft),paddingRight:parseFloat(style.paddingRight),
+                                          fields:spans.map(e=>({text:e.textContent.trim(),...box(e),overflow:getComputedStyle(e).overflowX,textOverflow:getComputedStyle(e).textOverflow})),
+                                          bounded:r.left>=c.left-1 && r.right<=c.right+1 && row.scrollWidth<=row.clientWidth+1 && s.width>0 && s.left>=r.left+parseFloat(style.paddingLeft)-1 && s.right<=r.right-parseFloat(style.paddingRight)+1};
+                                      });
+                                      return JSON.stringify({viewport:innerWidth,card:box(card),rows});
+                                    })()
+                                    """))!;
+                                await File.WriteAllTextAsync(Path.Combine(evidence, $"downloads-{coreName}-{width}.json"), measurement);
+                                await CaptureScreenshot(Path.Combine(evidence, $"downloads-{coreName}-{width}.png"), representative: true);
+                                downloadLayouts.Add(measurement);
+                            }
+                        }
+                        api.ConnectionsResponse = null;
+                        form.ClientSize = new System.Drawing.Size(1360, 1000);
+                        foreach (var measurement in downloadLayouts)
+                        {
+                            using var layout = JsonDocument.Parse(measurement);
+                            foreach (var row in layout.RootElement.GetProperty("rows").EnumerateArray())
+                            {
+                                Assert.True(row.GetProperty("bounded").GetBoolean(), "Current downloads overflow: " + measurement);
+                                foreach (var field in row.GetProperty("fields").EnumerateArray())
+                                {
+                                    Assert.True(field.GetProperty("width").GetDouble() > 0, "Download text disappeared: " + measurement);
+                                    Assert.True(field.GetProperty("scroll").GetDouble() > field.GetProperty("client").GetDouble(), "Long download text was not constrained: " + measurement);
+                                    Assert.Equal("ellipsis", field.GetProperty("textOverflow").GetString());
+                                }
+                            }
+                        }
+                    }
                     api.ConfigResponse = new { tun = new { } };
                     SendBackendState();
                     var unknownLabel = language == "zh-CN" ? "状态未知" : "Unknown state";
@@ -305,192 +365,141 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         await Until(async () => await Script("document.querySelector('#core-settings-backendSettings [role=alert]')?.textContent.includes(" + JsonSerializer.Serialize(message) + ")") == "true");
                         await RecordBackendState(status);
                     }
-                    // Populated pilot evidence uses the built DOM and the same isolated session.
-                    // D0 collection skips adopted-feature checks, while retaining data/sort assertions.
-                    api.ConfigStatusCode = 200;
-                    api.ConfigResponse = null;
-                    // Earlier cases intentionally leave unsaved drafts; reset only this test's
-                    // document so the preference flush below can acknowledge a clean view.
-                    await Script("window.__pilotReloadPending=true; true");
-                    View()!.CoreWebView2.Reload();
-                    await Until(async () => await Script("!window.__pilotReloadPending && !!document.querySelector('#core-exe')") == "true");
-                    await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
-                    var pilotEvidence = Path.Combine(TestDirectory.ReportDirectory("upstream-ui"), baselineEvidence ? "d0" : "d1");
-                    Directory.CreateDirectory(pilotEvidence);
-                    await Script("""
-                        (() => {
-                          for (const [key,value] of Object.entries({
-                            'config/is-sidebar-collapsed':'true',
-                            'config/connection-display-style':'table',
-                            'config/connection-table-columns':'["host","type"]',
-                            'config/search-hidden-columns':'false',
-                            'config/rule-display-style':'table',
-                            'config/log-display-style':'table',
-                            'config/logs-table-sorting':'[]',
-                            'config/rules-table-sorting':'[]'
-                          })) {
-                            const oldValue=localStorage.getItem(key);
-                            localStorage.setItem(key,value);
-                            window.dispatchEvent(new StorageEvent('storage',{key,oldValue,newValue:value,storageArea:localStorage}));
-                          }
-                          return true;
-                        })()
-                        """);
-                    async Task RestorePilotSessionAfterPreferenceSave()
+                    // Sorting/search semantics live in frontend tests; exercise browser geometry and host saves once.
+                    if (fullComparison || language == "en-US")
                     {
-                        // Both the settings event and command reply carry the real stopped
-                        // host runtime. Await their acknowledgement before restoring our fixture.
-                        Assert.True(await form.FlushPreferencesAsync());
-                        SendBackendState();
-                    }
-                    await RestorePilotSessionAfterPreferenceSave();
-                    await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2") == "true");
-                    async Task<string> RecordPilot(string name, string measurement = PilotTableMeasure)
-                    {
-                        await Until(async () => await Script("!document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
-                        var json = await Script(measurement);
-                        var file = Path.Combine(pilotEvidence, $"{language}-{theme}-{name}");
-                        await File.WriteAllTextAsync(file + ".json", json);
-                        await using var image = File.Create(file + ".png");
-                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
-                        return json;
-                    }
-                    async Task Pointer(string selector, bool click = true)
-                    {
-                        await Until(async () => await Script($$"""
-                            (() => { const e=document.querySelector({{JsonSerializer.Serialize(selector)}}); if (!e) return false;
-                              const r=e.getBoundingClientRect();
-                              return r.width>0 && r.height>0 && e.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2))
-                                && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity); })()
-                            """) == "true");
-                        using var point = JsonDocument.Parse(await Script($$"""
-                            (() => { const e=document.querySelector({{JsonSerializer.Serialize(selector)}}), r=e.getBoundingClientRect();
-                              const x=r.left+r.width/2,y=r.top+r.height/2;
-                              return {x,y,reachable:e.contains(document.elementFromPoint(x,y))}; })()
-                            """));
-                        Assert.True(point.RootElement.GetProperty("reachable").GetBoolean(), point.RootElement.ToString());
-                        var x = point.RootElement.GetProperty("x").GetDouble();
-                        var y = point.RootElement.GetProperty("y").GetDouble();
-                        await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type = "mouseMoved", x, y }));
-                        if (!click) return;
-                        foreach (var type in new[] { "mousePressed", "mouseReleased" })
-                            await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = "left", clickCount = 1 }));
-                    }
-                    async Task SetConnectionSearch(string value)
-                    {
-                        await Script($$"""
-                            (() => { const input=document.querySelector('.ctrls-bar input[placeholder*="Regex"]');
-                              input.value={{JsonSerializer.Serialize(value)}}; input.dispatchEvent(new Event('input',{bubbles:true})); return true; })()
+                        api.ConfigStatusCode = 200;
+                        api.ConfigResponse = null;
+                        // Earlier cases leave unsaved drafts; reload so the host can acknowledge preference saves.
+                        await Script("window.__pilotReloadPending=true; true");
+                        View()!.CoreWebView2.Reload();
+                        await Until(async () => await Script("!window.__pilotReloadPending && !!document.querySelector('#core-exe')") == "true");
+                        await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
+                        var pilotEvidence = Path.Combine(TestDirectory.ReportDirectory("upstream-ui"), baselineEvidence ? "d0" : "d1");
+                        Directory.CreateDirectory(pilotEvidence);
+                        await Script("""
+                            (() => {
+                              for (const [key,value] of Object.entries({
+                                'config/is-sidebar-collapsed':'true',
+                                'config/connection-display-style':'table',
+                                'config/connection-table-columns':'["host","type"]',
+                                'config/search-hidden-columns':'false',
+                                'config/rule-display-style':'table',
+                                'config/log-display-style':'table',
+                                'config/logs-table-sorting':'[]',
+                                'config/rules-table-sorting':'[]',
+                                'config/overview-card-order':'[{"card":"RuleHitCountCard","visible":true}]'
+                              })) {
+                                const oldValue=localStorage.getItem(key);
+                                localStorage.setItem(key,value);
+                                window.dispatchEvent(new StorageEvent('storage',{key,oldValue,newValue:value,storageArea:localStorage}));
+                              }
+                              return true;
+                            })()
                             """);
-                    }
-                    // First collect both comparison tables, including on a baseline without the funnel.
-                    await Script("location.hash='#/logs'; true");
-                    await Until(async () => await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.textContent.includes('pilot-log')).length>=3 && document.querySelector('table').textContent.includes('long payload') && document.querySelector('table').textContent.includes('failed to resolve')") == "true");
-                    var logMetrics = new List<string>();
-                    foreach (var width in new[] { 1500, 640 })
-                    {
-                        form.ClientSize = new System.Drawing.Size(width, 1000);
-                        await Until(async () => await Script(width == 1500 ? "innerWidth>1400" : "innerWidth<700") == "true");
-                        var json = await RecordPilot($"logs-{width}-populated");
-                        using (var metrics = JsonDocument.Parse(json))
+                        async Task RestorePilotSessionAfterPreferenceSave()
                         {
+                            // Settings events and replies carry the stopped host runtime; restore only after acknowledgement.
+                            Assert.True(await form.FlushPreferencesAsync());
+                            SendBackendState();
+                        }
+                        await RestorePilotSessionAfterPreferenceSave();
+                        await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2") == "true");
+                        async Task<string> RecordPilot(string name, string measurement = PilotTableMeasure, bool representative = false)
+                        {
+                            await Until(async () => await Script("!document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
+                            var json = await Script(measurement);
+                            var file = Path.Combine(pilotEvidence, $"{language}-{theme}-{name}");
+                            await File.WriteAllTextAsync(file + ".json", json);
+                            await CaptureScreenshot(file + ".png", representative);
+                            return json;
+                        }
+                        async Task Pointer(string selector, bool click = true)
+                        {
+                            await Until(async () => await Script($$"""
+                                (() => { const e=document.querySelector({{JsonSerializer.Serialize(selector)}}); if (!e) return false;
+                                  const r=e.getBoundingClientRect();
+                                  return r.width>0 && r.height>0 && e.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2))
+                                    && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity); })()
+                                """) == "true");
+                            using var point = JsonDocument.Parse(await Script($$"""
+                                (() => { const e=document.querySelector({{JsonSerializer.Serialize(selector)}}), r=e.getBoundingClientRect();
+                                  const x=r.left+r.width/2,y=r.top+r.height/2;
+                                  return {x,y,reachable:e.contains(document.elementFromPoint(x,y))}; })()
+                                """));
+                            Assert.True(point.RootElement.GetProperty("reachable").GetBoolean(), point.RootElement.ToString());
+                            var x = point.RootElement.GetProperty("x").GetDouble();
+                            var y = point.RootElement.GetProperty("y").GetDouble();
+                            await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type = "mouseMoved", x, y }));
+                            if (!click) return;
+                            foreach (var type in new[] { "mousePressed", "mouseReleased" })
+                                await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = "left", clickCount = 1 }));
+                        }
+                        async Task SetConnectionSearch(string value)
+                        {
+                            await Script($$"""
+                                (() => { const input=document.querySelector('.ctrls-bar input[placeholder*="Regex"]');
+                                  input.value={{JsonSerializer.Serialize(value)}}; input.dispatchEvent(new Event('input',{bubbles:true})); return true; })()
+                                """);
+                        }
+                        // Observe native canvas painting before Overview mounts, without first populating rules on /rules.
+                        await Script("""
+                            (() => {
+                              const paint=window.__ruleChartPaint={labels:[],fills:0,colors:[],errors:[]};
+                              const canvas=CanvasRenderingContext2D.prototype, gradient=CanvasGradient.prototype;
+                              const fillText=canvas.fillText, fill=canvas.fill, addColorStop=gradient.addColorStop;
+                              canvas.fillText=function(...args) { const result=fillText.apply(this,args); paint.labels.push(String(args[0])); return result; };
+                              canvas.fill=function(...args) { const result=fill.apply(this,args); paint.fills++; return result; };
+                              gradient.addColorStop=function(...args) {
+                                paint.colors.push(args[1]);
+                                try { return addColorStop.apply(this,args); }
+                                catch(error) { paint.errors.push(String(error)); throw error; }
+                              };
+                              window.addEventListener('error',event=>paint.errors.push(event.message));
+                              window.addEventListener('unhandledrejection',event=>paint.errors.push(String(event.reason)));
+                              return true;
+                            })()
+                            """);
+                        form.ClientSize = new System.Drawing.Size(1500, 1000);
+                        await Script("location.hash='#/overview'; true");
+                        const string ruleChartMeasure = """
+                            (() => ({...window.__ruleChartPaint,route:location.hash,text:document.querySelector('.home-page')?.innerText,
+                              canvases:[...document.querySelectorAll('canvas')].map(canvas=>({width:canvas.width,height:canvas.height,
+                                visibleWidth:canvas.getBoundingClientRect().width,visibleHeight:canvas.getBoundingClientRect().height}))}))()
+                            """;
+                        string chartJson;
+                        try
+                        {
+                            await Until(async () => await Script("['2','10','1234567'].every(value=>window.__ruleChartPaint.labels.includes(value))") == "true");
+                        }
+                        finally
+                        {
+                            await Script($"window.__ruleChartPaint.rulesRequests={api.Requests.GetValueOrDefault("/rules")}; true");
+                            chartJson = await RecordPilot("overview-rule-hit-first-visit", ruleChartMeasure, representative: true);
+                        }
+                        using (var chart = JsonDocument.Parse(chartJson))
+                        {
+                            Assert.True(api.Requests.GetValueOrDefault("/rules") > 0, chartJson);
+                            Assert.True(chart.RootElement.GetProperty("errors").GetArrayLength() == 0, chartJson);
+                            Assert.True(chart.RootElement.GetProperty("fills").GetInt32() > 0, chartJson);
+                            var canvas = Assert.Single(chart.RootElement.GetProperty("canvases").EnumerateArray());
+                            foreach (var dimension in new[] { "width", "height", "visibleWidth", "visibleHeight" })
+                                Assert.True(canvas.GetProperty(dimension).GetDouble() > 0, chartJson);
+                        }
+                        // Both widths retain real fixed-column and clipping checks, including narrow overflow.
+                        await Script("location.hash='#/logs'; true");
+                        await Until(async () => await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.textContent.includes('pilot-log')).length>=3 && document.querySelector('table').textContent.includes('long payload') && document.querySelector('table').textContent.includes('failed to resolve')") == "true");
+                        foreach (var width in new[] { 1500, 640 })
+                        {
+                            form.ClientSize = new System.Drawing.Size(width, 1000);
+                            await Until(async () => await Script(width == 1500 ? "innerWidth>1400" : "innerWidth<700") == "true");
+                            var json = await RecordPilot($"logs-{width}-populated", representative: width == 640);
+                            using var metrics = JsonDocument.Parse(json);
                             Assert.Equal(4, metrics.RootElement.GetProperty("headers").GetArrayLength());
                             Assert.True(metrics.RootElement.GetProperty("rows").GetArrayLength() >= 3, json);
                             Assert.All(metrics.RootElement.GetProperty("rows").EnumerateArray(), row =>
                                 Assert.Matches(@"\d{2}:\d{2}:\d{2}", row.GetProperty("cells")[1].GetProperty("text").GetString()!));
-                        }
-                        logMetrics.Add(json);
-                    }
-                    form.ClientSize = new System.Drawing.Size(1500, 1000);
-                    await Script("location.hash='#/rules'; true");
-                    await Until(async () => await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.textContent.includes('pilot-')).length===3") == "true");
-                    var hitLabel = language == "zh-CN" ? "命中" : "Hits";
-                    var missLabel = language == "zh-CN" ? "未命中" : "Misses";
-                    var ruleMetrics = await RecordPilot("rules-1500-populated");
-                    using (var metrics = JsonDocument.Parse(ruleMetrics))
-                    {
-                        var headers = metrics.RootElement.GetProperty("headers").EnumerateArray().Select(h => h.GetProperty("text").GetString()).ToArray();
-                        Assert.Equal(1, headers.Count(h => h == hitLabel));
-                        Assert.Equal(1, headers.Count(h => h == missLabel));
-                        Assert.True(Array.IndexOf(headers, hitLabel) < Array.IndexOf(headers, missLabel), ruleMetrics);
-                    }
-                    Assert.Equal("true", await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.textContent.includes('pilot-')).every(r=>r.cells[5].textContent.includes('01-02 03:04') && r.cells[5].querySelector('.text-xs')?.getBoundingClientRect().width>0)"));
-                    async Task SortRules(string label, string expectedOrder, string name)
-                    {
-                        var index = await Script($"[...document.querySelectorAll('table th')].findIndex(h=>h.textContent.trim()==={JsonSerializer.Serialize(label)})");
-                        var selector = $"table th:nth-child({int.Parse(index) + 1})";
-                        var id = label == hitLabel ? "hitCount" : "missCount";
-                        await Pointer(selector);
-                        await Until(async () => await Script($"JSON.parse(localStorage.getItem('config/rules-table-sorting')||'[]').some(s=>s.id==='{id}')") == "true");
-                        await RestorePilotSessionAfterPreferenceSave();
-                        await Until(async () => await Script("document.querySelector('table tbody')?.textContent.includes('pilot-large.example')") == "true");
-                        // TanStack's first numeric sort is descending; choose ascending explicitly.
-                        if (await Script("JSON.parse(localStorage.getItem('config/rules-table-sorting'))[0].desc") == "true")
-                        {
-                            await Pointer(selector);
-                            await RestorePilotSessionAfterPreferenceSave();
-                        }
-                        await Until(async () => await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.cells.length>1).map(r=>r.cells[0].textContent.trim()).join('|')") == JsonSerializer.Serialize(expectedOrder));
-                        await RecordPilot(name);
-                    }
-                    // 2 versus 10 catches lexicographic sorting of formatted counts.
-                    await SortRules(hitLabel, "4|1|2|3", "rules-1500-hits-ascending");
-                    await SortRules(missLabel, "4|2|1|3", "rules-1500-misses-ascending");
-                    form.ClientSize = new System.Drawing.Size(640, 1000);
-                    await Until(async () => await Script("innerWidth<700") == "true");
-                    await RecordPilot("rules-640-populated");
-
-                    await Script("location.hash='#/connections'; true");
-                    await Until(async () => await Script("!!document.querySelector('.ctrls-bar input[placeholder*=Regex]') && !!document.querySelector('table tbody') && document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
-                    foreach (var width in new[] { 1500, 640 })
-                    {
-                        form.ClientSize = new System.Drawing.Size(width, 1000);
-                        await Until(async () => await Script(width == 1500 ? "innerWidth>1400 && !!document.querySelector('.ctrls-search')" : "innerWidth<700 && !document.querySelector('.ctrls-search')") == "true");
-                        var searchMetrics = await RecordPilot($"connections-{width}-visible-scope", PilotSearchMeasure);
-                        if (baselineEvidence) continue;
-                        using (var metrics = JsonDocument.Parse(searchMetrics))
-                            Assert.Equal(0, metrics.RootElement.GetProperty("errors").GetArrayLength());
-                        Assert.Equal("false", JsonSerializer.Deserialize<string>(await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-pressed')")));
-                        var visibleLabel = await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-label')");
-                        await SetConnectionSearch("fixture.exe"); // Process is deliberately absent from visible columns.
-                        await Until(async () => await Script("!document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
-                        await RecordPilot($"connections-{width}-hidden-process-excluded", PilotSearchMeasure);
-                        await Pointer(".ctrls-bar button[aria-pressed]");
-                        await Until(async () => await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-pressed')==='true' && localStorage.getItem('config/search-hidden-columns')==='true'") == "true");
-                        Assert.NotEqual(visibleLabel, await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-label')"));
-                        await RestorePilotSessionAfterPreferenceSave();
-                        await Until(async () => await Script("document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
-                        Assert.Equal("true", host.Preferences["config/search-hidden-columns"]);
-                        var enabledMetrics = await RecordPilot($"connections-{width}-hidden-process-included", PilotSearchMeasure);
-                        using (var metrics = JsonDocument.Parse(enabledMetrics))
-                            Assert.Equal(0, metrics.RootElement.GetProperty("errors").GetArrayLength());
-                        // A route remount must retain both the button state and the chosen scope.
-                        await Script("location.hash='#/logs'; true");
-                        await Until(async () => await Script("document.querySelector('table')?.textContent.includes('pilot-log')") == "true");
-                        await Script("location.hash='#/connections'; true");
-                        await Until(async () => await Script("document.querySelector('.ctrls-bar button[aria-pressed]')?.getAttribute('aria-pressed')==='true' && document.querySelector('table tbody')?.textContent.includes('fixture.example')") == "true");
-                        await Pointer(".ctrls-bar button[aria-pressed]");
-                        await Until(async () => await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-pressed')==='false' && localStorage.getItem('config/search-hidden-columns')==='false'") == "true");
-                        await RestorePilotSessionAfterPreferenceSave();
-                        await Until(async () => await Script("!document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
-                        Assert.Equal("false", host.Preferences["config/search-hidden-columns"]);
-                        await SetConnectionSearch("");
-                        await Until(async () => await Script("document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
-                    }
-                    if (!baselineEvidence)
-                    {
-                        form.ClientSize = new System.Drawing.Size(1500, 1000);
-                        await Until(async () => await Script("innerWidth>1400") == "true");
-                        await Pointer(".ctrls-bar button[role=combobox]");
-                        await Until(async () => await Script("!!document.querySelector('[role=listbox] [role=option]')") == "true");
-                        var stackMetrics = await RecordPilot("connections-1500-source-popover", PilotStackMeasure);
-                        using (var metrics = JsonDocument.Parse(stackMetrics))
-                            Assert.True(metrics.RootElement.GetProperty("aboveHeader").GetBoolean(), stackMetrics);
-                        await Pointer(".ctrls-bar button[role=combobox]");
-                        await Until(async () => await Script("!document.querySelector('[role=listbox]')") == "true");
-                        foreach (var json in logMetrics)
-                        {
-                            using var metrics = JsonDocument.Parse(json);
+                            if (baselineEvidence) continue;
                             Assert.Equal("fixed", metrics.RootElement.GetProperty("tableLayout").GetString());
                             var headers = metrics.RootElement.GetProperty("headers").EnumerateArray().ToArray();
                             Assert.InRange(headers[0].GetProperty("rect").GetProperty("width").GetDouble(), 63, 65);
@@ -499,14 +508,87 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             Assert.True(headers[3].GetProperty("rect").GetProperty("width").GetDouble() > 200, json);
                             Assert.True(metrics.RootElement.GetProperty("rows").EnumerateArray().Any(r => r.GetProperty("cells")[3].GetProperty("clipped").GetBoolean()), json);
                         }
+                        form.ClientSize = new System.Drawing.Size(1500, 1000);
                         await Script("location.hash='#/rules'; true");
-                        await Until(async () => await Script("document.querySelector('table tbody')?.textContent.includes('pilot-large.example')") == "true");
-                        await Script("[...document.querySelectorAll('table tbody tr')].find(r=>r.textContent.includes('pilot-large.example')).cells[5].firstElementChild.setAttribute('data-pilot-hit',''); true");
-                        await Pointer("[data-pilot-hit]", click: false);
-                        await Until(async () => await Script("[...document.querySelectorAll('[role=tooltip]')].some(e=>getComputedStyle(e).visibility==='visible' && e.textContent.includes('2025-01-02 03:04:05'))") == "true");
-                        var tooltipMetrics = await RecordPilot("rules-1500-numeric-tooltip");
-                        Assert.Equal("true", await Script("(() => { const td=document.querySelector('[data-pilot-hit]').closest('td'), tip=[...document.querySelectorAll('[role=tooltip]')].find(e=>getComputedStyle(e).visibility==='visible'); return !td.hasAttribute('title') && tip.textContent.includes('1234567') && tip.textContent.includes('987654') && tip.textContent.includes('2025-02-03 04:05:06') && !tip.querySelector('table') && tip.getBoundingClientRect().width>0; })()"));
-                        Assert.Contains("2025-01-02 03:04:05", tooltipMetrics);
+                        await Until(async () => await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.textContent.includes('pilot-')).length===3") == "true");
+                        var hitLabel = language == "zh-CN" ? "命中" : "Hits";
+                        var missLabel = language == "zh-CN" ? "未命中" : "Misses";
+                        var ruleMetrics = await RecordPilot("rules-1500-populated");
+                        using (var metrics = JsonDocument.Parse(ruleMetrics))
+                        {
+                            var headers = metrics.RootElement.GetProperty("headers").EnumerateArray().Select(h => h.GetProperty("text").GetString()).ToArray();
+                            Assert.Equal(1, headers.Count(h => h == hitLabel));
+                            Assert.Equal(1, headers.Count(h => h == missLabel));
+                            Assert.True(Array.IndexOf(headers, hitLabel) < Array.IndexOf(headers, missLabel), ruleMetrics);
+                        }
+                        Assert.Equal("true", await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.textContent.includes('pilot-')).every(r=>r.cells[5].textContent.includes('01-02 03:04') && r.cells[5].querySelector('.text-xs')?.getBoundingClientRect().width>0)"));
+                        if (!baselineEvidence)
+                        {
+                            await Script("[...document.querySelectorAll('table tbody tr')].find(r=>r.textContent.includes('pilot-large.example')).cells[5].firstElementChild.setAttribute('data-pilot-hit',''); true");
+                            await Pointer("[data-pilot-hit]", click: false);
+                            await Until(async () => await Script("[...document.querySelectorAll('[role=tooltip]')].some(e=>getComputedStyle(e).visibility==='visible' && e.textContent.includes('2025-01-02 03:04:05'))") == "true");
+                            await RecordPilot("rules-1500-numeric-tooltip", representative: true);
+                            Assert.Equal("true", await Script("(() => { const td=document.querySelector('[data-pilot-hit]').closest('td'), tip=[...document.querySelectorAll('[role=tooltip]')].find(e=>getComputedStyle(e).visibility==='visible'); return !td.hasAttribute('title') && tip.getBoundingClientRect().width>0; })()"));
+                            await Pointer(".ctrls-bar", click: false);
+                        }
+                        if (fullComparison)
+                        {
+                            form.ClientSize = new System.Drawing.Size(640, 1000);
+                            await Until(async () => await Script("innerWidth<700") == "true");
+                            await RecordPilot("rules-640-populated");
+                        }
+
+                        await Script("location.hash='#/connections'; true");
+                        await Until(async () => await Script("!!document.querySelector('.ctrls-bar input[placeholder*=Regex]') && !!document.querySelector('table tbody') && document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
+                        foreach (var width in new[] { 1500, 640 })
+                        {
+                            form.ClientSize = new System.Drawing.Size(width, 1000);
+                            await Until(async () => await Script(width == 1500 ? "innerWidth>1400 && !!document.querySelector('.ctrls-search')" : "innerWidth<700 && !document.querySelector('.ctrls-search')") == "true");
+                            var searchMetrics = await RecordPilot($"connections-{width}-visible-scope", PilotSearchMeasure);
+                            if (baselineEvidence) continue;
+                            using (var metrics = JsonDocument.Parse(searchMetrics))
+                                Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, searchMetrics);
+                            // Narrow geometry still hit-tests the funnel; repeat its save/remount sequence only for comparison.
+                            if (width == 640 && !fullComparison) continue;
+                            Assert.Equal("false", JsonSerializer.Deserialize<string>(await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-pressed')")));
+                            var visibleLabel = await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-label')");
+                            await SetConnectionSearch("fixture.exe"); // Process is deliberately absent from visible columns.
+                            await Until(async () => await Script("!document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
+                            if (fullComparison) await RecordPilot($"connections-{width}-hidden-process-excluded", PilotSearchMeasure);
+                            await Pointer(".ctrls-bar button[aria-pressed]");
+                            await Until(async () => await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-pressed')==='true' && localStorage.getItem('config/search-hidden-columns')==='true'") == "true");
+                            Assert.NotEqual(visibleLabel, await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-label')"));
+                            await RestorePilotSessionAfterPreferenceSave();
+                            await Until(async () => await Script("document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
+                            Assert.Equal("true", host.Preferences["config/search-hidden-columns"]);
+                            var enabledMetrics = await RecordPilot($"connections-{width}-hidden-process-included", PilotSearchMeasure, representative: width == 1500);
+                            using (var metrics = JsonDocument.Parse(enabledMetrics))
+                                Assert.True(metrics.RootElement.GetProperty("errors").GetArrayLength() == 0, enabledMetrics);
+                            // A route remount must retain both the button state and the chosen scope.
+                            await Script("location.hash='#/logs'; true");
+                            await Until(async () => await Script("document.querySelector('table')?.textContent.includes('pilot-log')") == "true");
+                            await Script("location.hash='#/connections'; true");
+                            await Until(async () => await Script("document.querySelector('.ctrls-bar button[aria-pressed]')?.getAttribute('aria-pressed')==='true' && document.querySelector('table tbody')?.textContent.includes('fixture.example')") == "true");
+                            await Pointer(".ctrls-bar button[aria-pressed]");
+                            await Until(async () => await Script("document.querySelector('.ctrls-bar button[aria-pressed]').getAttribute('aria-pressed')==='false' && localStorage.getItem('config/search-hidden-columns')==='false'") == "true");
+                            await RestorePilotSessionAfterPreferenceSave();
+                            await Until(async () => await Script("!document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
+                            Assert.Equal("false", host.Preferences["config/search-hidden-columns"]);
+                            await SetConnectionSearch("");
+                            await Until(async () => await Script("document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
+                        }
+                        if (!baselineEvidence)
+                        {
+                            form.ClientSize = new System.Drawing.Size(1500, 1000);
+                            await Until(async () => await Script("innerWidth>1400") == "true");
+                            await Pointer(".ctrls-bar button[role=combobox]");
+                            await Until(async () => await Script("!!document.querySelector('[role=listbox] [role=option]')") == "true");
+                            var stackMetrics = await RecordPilot("connections-1500-source-popover", PilotStackMeasure, representative: true);
+                            using (var metrics = JsonDocument.Parse(stackMetrics))
+                                Assert.True(metrics.RootElement.GetProperty("aboveHeader").GetBoolean(), stackMetrics);
+                            await Pointer(".ctrls-bar button[role=combobox]");
+                            await Until(async () => await Script("!document.querySelector('[role=listbox]')") == "true");
+                        }
                     }
                     Assert.Empty(api.Errors);
                     Assert.False(host.IsRunning);
@@ -514,7 +596,18 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     await TestBrowser.DisposeAsync(form);
                     completion.TrySetResult();
                 }
-                catch (Exception error) { completion.TrySetException(error); }
+                catch (Exception error)
+                {
+                    try
+                    {
+                        var failureDirectory = TestDirectory.ReportDirectory("core-layout");
+                        await File.WriteAllTextAsync(Path.Combine(failureDirectory, $"failure-{language}.txt"), error.ToString());
+                        if (View()?.CoreWebView2 is not null)
+                            await CaptureScreenshot(Path.Combine(failureDirectory, $"failure-{language}.png"), representative: true);
+                    }
+                    catch { /* Keep the test failure if WebView diagnostics are unavailable. */ }
+                    completion.TrySetException(error);
+                }
                 finally
                 {
                     try { await host.ShutdownAsync(); await TestBrowser.DisposeAsync(form); }

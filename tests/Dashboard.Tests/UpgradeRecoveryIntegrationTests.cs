@@ -79,10 +79,22 @@ public sealed class UpgradeRecoveryIntegrationTests : TemporaryDirectoryTest
             var handler = new ReleaseHandler(bytes.ToArray());
             using var client = new HttpClient(handler);
             await using var fixture = await IsolatedCore.CreateAsync(CoreKind.SingBox, client);
+            Assert.Equal((TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(500)),
+                fixture.Controller.ProbeTiming);
             var original = SHA256.HashData(await File.ReadAllBytesAsync(fixture.Executable));
             Assert.Equal("completed", (await fixture.Controller.ExecuteAsync(new() { Type = "start", CoreType = fixture.Kind })).Status);
             await fixture.ReadyAsync();
             var epoch = fixture.Controller.Epoch;
+            int? neverReadyPid = null;
+            if (exitCode == -2)
+            {
+                fixture.Controller.ProbeTiming = (TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(50));
+                fixture.Controller.Changed += (_, _) =>
+                {
+                    if (fixture.Controller.IsUpgradeInProgress && fixture.Controller.ApiStatus == "unreachable" && fixture.Process.IsRunning)
+                        neverReadyPid = fixture.Process.ProcessId;
+                };
+            }
             var result = await fixture.Controller.ExecuteAsync(new() { Type = "upgradeCore", CoreType = fixture.Kind });
             var success = exitCode == -1;
             Assert.Equal(success ? "completed" : "failed", result.Status);
@@ -95,6 +107,12 @@ public sealed class UpgradeRecoveryIntegrationTests : TemporaryDirectoryTest
             Assert.True(fixture.Controller.Epoch > epoch);
             Assert.Equal("idle", fixture.Controller.Operation);
             Assert.True(fixture.Process.IsRunning);
+            if (exitCode == -2)
+            {
+                Assert.NotNull(neverReadyPid); // readiness expired while the candidate was still alive
+                Assert.NotEqual(neverReadyPid, fixture.Process.ProcessId);
+                Assert.Contains("API 未就绪", result.Message);
+            }
             using var versionClient = new HttpClient();
             Assert.Contains("version", await versionClient.GetStringAsync(fixture.Store.Current.ActiveProfile.ApiUrl + "/version"));
             if (exitCode >= 0) Assert.Contains("intentional candidate failure", fixture.Process.GetLogTail(16000));

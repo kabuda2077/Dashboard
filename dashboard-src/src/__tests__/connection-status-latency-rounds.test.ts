@@ -2,12 +2,14 @@ import ConnectionStatus from '@/components/overview/ConnectionStatus.vue'
 import {
   baiduLatency,
   cloudflareLatency,
+  getLatency,
   githubLatency,
+  isTestingLatency,
   youtubeLatency,
 } from '@/composables/overview'
 import { autoConnectionCheck } from '@/store/settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, nextTick, type App } from 'vue'
 
 const latencyAPIs = vi.hoisted(() => ({
   baidu: vi.fn<() => Promise<number>>(),
@@ -104,6 +106,54 @@ describe('mounted ConnectionStatus latency rounds', () => {
     host?.remove()
     app = undefined
     host = undefined
+  })
+
+  it('shares a running task across remounts before the first reply and keeps exactly 10 rounds', async () => {
+    host!.querySelector('button')!.click()
+    await expectCallCount(1)
+    app!.unmount()
+    autoConnectionCheck.value = true
+    app = createApp(ConnectionStatus)
+    app.config.globalProperties.$t = (key: string) => key
+    app.mount(host!)
+    expect(host!.querySelector('button')!.disabled).toBe(true)
+    host!.querySelector('button')!.click()
+    await getLatency()
+    await expectCallCount(1)
+    app.unmount()
+    app = undefined
+    const values = Object.fromEntries(
+      targets.map((target) => [target, Array(10).fill(42)]),
+    ) as Record<Target, number[]>
+    for (let round = 0; round < 10; round++) {
+      await resolveRound(values, round)
+      if (round < 9) await expectCallCount(round + 2)
+    }
+    await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
+    app = createApp(ConnectionStatus)
+    app.config.globalProperties.$t = (key: string) => key
+    app.mount(host!)
+    expect(host!.querySelector('button')!.disabled).toBe(false)
+    expect(rowText('Baidu')).toBe('Baidu42msmin42msmax42ms')
+    await expectCallCount(10)
+    expect(targets.map((target) => targetState[target].value.length)).toEqual([10, 10, 10, 10])
+  })
+
+  it('records rejected rounds as failures and stays busy until all targets finish', async () => {
+    latencyAPIs.baidu.mockRejectedValue(new Error('offline'))
+    host!.querySelector('button')!.click()
+    await vi.waitFor(() => expect(baiduLatency.value).toHaveLength(10))
+    expect(isTestingLatency.value).toBe(true)
+    await getLatency()
+    expect(latencyAPIs.cloudflare).toHaveBeenCalledTimes(1)
+    for (let round = 0; round < 10; round++) {
+      for (const target of targets.filter((target) => target !== 'baidu'))
+        pending[target].shift()!(25)
+      await nextTick()
+    }
+    await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
+    expect(baiduLatency.value).toEqual(Array(10).fill(0))
+    await expectCallCount(10)
   })
 
   it('waits for all 10 samples before averaging each target, reports ranges, and resets safely', async () => {

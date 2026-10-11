@@ -24,6 +24,7 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
     public object? ConfigResponse { get; set; }
     public object? RulesResponse { get; set; }
     public Func<int, object>? LogResponse { get; set; }
+    public Func<int, object[]>? ConnectionsResponse { get; set; }
     public int UpgradeStatusCode { get; set; } = 200;
     public readonly ConcurrentDictionary<string, int> Requests = new();
     public readonly ConcurrentQueue<string> Errors = new();
@@ -107,7 +108,7 @@ internal sealed class SyntheticClashApi : IAsyncDisposable
         "/traffic" => new { up = tick * 1024L, down = tick * 2048L },
         "/memory" => new { inuse = 32 * 1024 * 1024 },
         "/logs" => LogResponse?.Invoke(tick) ?? new { type = "info", payload = "isolated workload " + tick },
-        "/connections" => new { uploadTotal = tick * 1024L * Rows, downloadTotal = tick * 2048L * Rows, memory = 32 * 1024 * 1024, connections = Connections(tick) },
+        "/connections" => new { uploadTotal = tick * 1024L * Rows, downloadTotal = tick * 2048L * Rows, memory = 32 * 1024 * 1024, connections = ConnectionsResponse?.Invoke(tick) ?? Connections(tick) },
         _ => new { }
     };
     private Dictionary<string, object> Proxies()

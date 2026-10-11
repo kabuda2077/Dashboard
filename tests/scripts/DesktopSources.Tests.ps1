@@ -12,7 +12,10 @@ foreach ($file in @('index.html', 'src/main.ts', 'src/appEntry.ts', 'src/composa
 }
 . (Join-Path $PSScriptRoot '..\..\tools\internal\fork-policy.ps1')
 $repository = [IO.Path]::GetFullPath((Join-Path $SourceRoot '..'))
+if (Test-Path -LiteralPath (Join-Path $repository 'docs/upstream/local-changes.json')) {
+    throw 'Retired local-changes.json reappeared; ownership.json must remain the sole upstream register.'
+}
 $policy = Read-ForkPolicy -Root $repository
 Test-ForkMirrors -Root $repository -Policy $policy
-Write-Host "Fork policy/mirrors passed; $(@($policy.pending).Count) decisions and $(@($policy.knownGaps).Count) known gaps remain (not a conformance pass)."
+Write-Host "Ownership contracts/mirrors passed; $(@($policy.pending).Count) decisions and $(@($policy.knownGaps).Count) known gaps remain (not a conformance pass)."
 Write-Host 'Desktop packaging source boundaries passed. Runtime behavior is covered by the unit/integration suites.'

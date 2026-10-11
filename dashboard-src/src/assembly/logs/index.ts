@@ -3,7 +3,7 @@ import { LOG_LEVEL } from '@/constant'
 import { captureBackendSession } from '@/helper/backendSession'
 import { useStorage } from '@/helper/storage'
 import type { LogWithSeq } from '@/types'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { createLogsAccumulator } from './accumulator'
 import * as clash from './clash'
 
@@ -32,7 +32,12 @@ export const initLogs = () => {
     if (session.isCurrent()) accumulator.push(log)
   })
 
+  const stopPauseWatch = watch(isPaused, () => accumulator.flush(), { flush: 'sync' })
+  const visible = () => accumulator.flush()
+  document.addEventListener('visibilitychange', visible)
   cancel = () => {
+    stopPauseWatch()
+    document.removeEventListener('visibilitychange', visible)
     accumulator.dispose()
     subscription.close()
   }

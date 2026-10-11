@@ -32,6 +32,8 @@ internal sealed class CoreLifecycleController : IDisposable
     public bool IsUpgradeInProgress => Operation == "upgradeCore";
     public bool IsSwitchInProgress => Operation == "switchCore";
     public bool IsBusy => Operation != "idle";
+    internal (TimeSpan RequestTimeout, TimeSpan TotalTimeout, TimeSpan RetryDelay) ProbeTiming { get; set; }
+        = (TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(500));
     public CoreProfile Connection { get { lock (_sync) return _core.IsRunning ? _connection ?? _settings.Current.ActiveProfile : _settings.Current.ActiveProfile; } }
     public CoreKind Kind => _core.IsRunning && Running is { } running ? running.Kind : _settings.Current.ActiveCoreKind;
     public bool RequiresRestart => _core.IsRunning && Running is { } running
@@ -315,13 +317,14 @@ internal sealed class CoreLifecycleController : IDisposable
             _probe = probe;
         }
         Publish();
+        var timing = ProbeTiming;
         return _tasks.Run(async _ =>
         {
             try
             {
                 var result = profile.SecretDecryptionFailed ? new CoreApiStatus("unauthorized", "")
                     : await CoreApiProbe.ProbeAsync(ApiClient, profile.ApiUrl, profile.Secret,
-                        TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(500), probe.Token).ConfigureAwait(false);
+                        timing.RequestTimeout, timing.TotalTimeout, timing.RetryDelay, probe.Token).ConfigureAwait(false);
                 lock (_sync)
                 {
                     if (_closing || epoch != _epoch || probe.IsCancellationRequested || !_core.IsRunning) return;

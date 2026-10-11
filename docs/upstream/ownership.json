@@ -1,0 +1,454 @@
+{
+  "schemaVersion": 2,
+  "upstream": {
+    "repository": "https://github.com/Zephyruso/zashboard.git",
+    "tag": "v3.27.0",
+    "revision": "98aa6e00a2217af141196f4439b91e184a55df23",
+    "localPrefix": "dashboard-src/"
+  },
+  "historicalReference": {
+    "tag": "v1.3.2",
+    "revision": "3089aca1c8075b751842347bd8c8637cc13a89b6"
+  },
+  "forkOwnedPaths": [
+    "src/*",
+    "tests/*",
+    "tools/*",
+    "docs/*",
+    ".github/*",
+    "resources/*",
+    ".gitattributes",
+    ".gitignore",
+    ".node-version",
+    "Dashboard.csproj",
+    "LICENSE",
+    "README.md",
+    "README.en.md",
+    "app.manifest",
+    "global.json",
+    "dashboard-src/bench/latency.bench.test.ts",
+    "dashboard-src/bench/report.ts",
+    "dashboard-src/bench/top-downloads.bench.test.ts",
+    "dashboard-src/bench/vitest.config.ts",
+    "dashboard-src/src/__tests__/*",
+    "dashboard-src/src/appEntry.ts",
+    "dashboard-src/src/assets/images/sing-box.svg",
+    "dashboard-src/src/assets/styles/dashboard-desktop.css",
+    "dashboard-src/src/components/common/WindowControls.vue",
+    "dashboard-src/src/components/overview/MiniSparkline.vue",
+    "dashboard-src/src/components/settings/backend/EditBackendModal.vue",
+    "dashboard-src/src/components/settings/backend/TopDownloadConnections.vue",
+    "dashboard-src/src/components/settings/CoreProfileFields.vue",
+    "dashboard-src/src/components/settings/general/AboutDashboardSettings.vue",
+    "dashboard-src/src/components/settings/general/appUpdateFeedback.ts",
+    "dashboard-src/src/components/settings/SettingsContent.vue",
+    "dashboard-src/src/composables/coreHostActions.ts",
+    "dashboard-src/src/composables/hostBridge.ts",
+    "dashboard-src/src/composables/useBackendRuntimeConfig.ts",
+    "dashboard-src/src/constant/routeIcons.ts",
+    "dashboard-src/src/helper/appStartup.ts",
+    "dashboard-src/src/helper/backendRuntime.ts",
+    "dashboard-src/src/helper/backendSession.ts",
+    "dashboard-src/src/helper/backgroundUpdates.ts",
+    "dashboard-src/src/helper/clipboard.ts",
+    "dashboard-src/src/helper/connectionFields.ts",
+    "dashboard-src/src/helper/dashboardSettingsSync.ts",
+    "dashboard-src/src/helper/dashboardStartup.ts",
+    "dashboard-src/src/helper/hostDraft.ts",
+    "dashboard-src/src/helper/hostNotice.ts",
+    "dashboard-src/src/helper/persistenceBarrier.ts",
+    "dashboard-src/src/helper/preferenceValues.ts",
+    "dashboard-src/src/helper/settingsChanges.ts",
+    "dashboard-src/src/helper/topConnections.ts",
+    "dashboard-src/src/hostBootstrap.ts",
+    "dashboard-src/src/i18n/desktop.ts",
+    "dashboard-src/src/router/pageLoaders.ts",
+    "dashboard-src/src/shims/net.ts",
+    "dashboard-src/src/views/CorePage.vue"
+  ],
+  "mirrors": [
+    {
+      "path": "dashboard-src/src/components/common/SelectInput.vue",
+      "sha256": "beadc0c986166834a3188b0bdaae212919d11ae25e8dc9afc4d73ac504789b27"
+    },
+    {
+      "path": "dashboard-src/src/assets/styles/base/elements.css",
+      "sha256": "253c18873afa7189e195a6dcb90df48d686f6d376e92042a860ad4d8221bbf79"
+    },
+    {
+      "path": "dashboard-src/src/assets/styles/components/tooltip.css",
+      "sha256": "020cd7ff2bdcc0424b55ab224c6c479fb2bbb8a7b75138b313647642c655b557"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "desktop-shell",
+      "paths": [
+        "dashboard-src/src/views/CorePage.vue",
+        "dashboard-src/src/components/settings/CoreProfileFields.vue",
+        "dashboard-src/src/components/settings/SettingsContent.vue",
+        "dashboard-src/src/components/settings/backend/*",
+        "dashboard-src/src/components/sidebar/*",
+        "dashboard-src/src/router/*"
+      ],
+      "watch": [
+        "dashboard-src/src/components/common/CtrlsBar.vue",
+        "dashboard-src/src/composables/paddingViews.ts",
+        "dashboard-src/src/assets/styles/*",
+        "dashboard-src/package.json",
+        "dashboard-src/pnpm-lock.yaml"
+      ],
+      "checks": [
+        "tests/Dashboard.Tests/CoreLayoutTests.cs",
+        "tests/Dashboard.Tests/CoreSetupLayoutTests.cs",
+        "dashboard-src/src/__tests__/core-operation-controls.test.ts",
+        "dashboard-src/src/__tests__/core-draft.test.ts",
+        "dashboard-src/src/__tests__/core-profile-fields.test.ts",
+        "dashboard-src/src/__tests__/settings-async-layout.test.ts"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#desktop-shell"
+    },
+    {
+      "id": "desktop-visuals",
+      "paths": [
+        "dashboard-src/src/assets/styles/*",
+        "dashboard-src/src/assets/main.css",
+        "dashboard-src/src/assets/images/sing-box.svg",
+        "dashboard-src/src/composables/useAppearanceVars.ts",
+        "dashboard-src/src/composables/useThemeColor.ts",
+        "dashboard-src/src/helper/theme.ts",
+        "dashboard-src/src/components/common/CtrlsBar.vue",
+        "dashboard-src/src/components/common/WindowControls.vue",
+        "dashboard-src/src/composables/paddingViews.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/components/common/*",
+        "dashboard-src/src/components/controls/*",
+        "dashboard-src/tailwind.config.ts",
+        "dashboard-src/postcss.config.js",
+        "dashboard-src/package.json",
+        "dashboard-src/pnpm-lock.yaml"
+      ],
+      "checks": [
+        "tests/Dashboard.Tests/CoreLayoutTests.cs"
+      ],
+      "risk": "medium",
+      "rule": "docs/maintenance.md#desktop-visuals"
+    },
+    {
+      "id": "shared-controls",
+      "paths": [
+        "dashboard-src/src/components/common/*",
+        "dashboard-src/src/components/controls/*",
+        "dashboard-src/src/composables/floatingMenu.ts",
+        "dashboard-src/src/composables/keyboard.ts",
+        "dashboard-src/src/composables/swipe.ts",
+        "dashboard-src/src/composables/dialog.ts",
+        "dashboard-src/src/composables/pageTransition.ts",
+        "dashboard-src/src/helper/clipboard.ts",
+        "dashboard-src/src/helper/confirmDialog.ts",
+        "dashboard-src/src/helper/tooltip.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/assets/styles/*",
+        "dashboard-src/package.json",
+        "dashboard-src/pnpm-lock.yaml"
+      ],
+      "checks": [
+        "dashboard-src/src/__tests__/segmented-control.test.ts",
+        "dashboard-src/src/__tests__/clipboard.test.ts",
+        "dashboard-src/src/__tests__/confirm-dialog.test.ts",
+        "dashboard-src/src/__tests__/tooltip-text.test.ts"
+      ],
+      "risk": "medium",
+      "rule": "docs/maintenance.md#shared-controls"
+    },
+    {
+      "id": "host-session",
+      "paths": [
+        "src/*",
+        "dashboard-src/src/App.vue",
+        "dashboard-src/src/main.ts",
+        "dashboard-src/src/appEntry.ts",
+        "dashboard-src/src/hostBootstrap.ts",
+        "dashboard-src/src/views/HomePage.vue",
+        "dashboard-src/src/views/SetupPage.vue",
+        "dashboard-src/src/composables/hostBridge.ts",
+        "dashboard-src/src/composables/coreHostActions.ts",
+        "dashboard-src/src/helper/appStartup.ts",
+        "dashboard-src/src/helper/connectivity.ts",
+        "dashboard-src/src/composables/useBackendRuntimeConfig.ts",
+        "dashboard-src/src/api/*",
+        "dashboard-src/src/assembly/*",
+        "dashboard-src/src/helper/backend*",
+        "dashboard-src/src/helper/host*",
+        "dashboard-src/src/store/setup.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/views/*",
+        "dashboard-src/src/components/settings/backend/*",
+        "dashboard-src/src/helper/requestError.ts",
+        "dashboard-src/src/constant/*"
+      ],
+      "checks": [
+        "tests/Dashboard.Tests/HostMessageRouterTests.cs",
+        "tests/Dashboard.Tests/CoreLifecycleBoundaryTests.cs",
+        "tests/Dashboard.Tests/CoreLayoutTests.cs",
+        "dashboard-src/src/__tests__/backend-session.test.ts",
+        "dashboard-src/src/__tests__/home-session.test.ts",
+        "dashboard-src/src/__tests__/stream-lifecycle.test.ts",
+        "tests/Dashboard.Tests/RealCoreIntegrationTests.cs",
+        "dashboard-src/src/__tests__/backend-state-ui.test.ts",
+        "dashboard-src/src/__tests__/core-draft.test.ts",
+        "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#host-session"
+    },
+    {
+      "id": "preferences",
+      "paths": [
+        "dashboard-src/src/components/settings/*",
+        "dashboard-src/src/helper/dashboard*",
+        "dashboard-src/src/helper/storage.ts",
+        "dashboard-src/src/helper/settings*",
+        "dashboard-src/src/helper/preference*",
+        "dashboard-src/src/helper/persistenceBarrier.ts",
+        "dashboard-src/src/helper/backgroundUpdates.ts",
+        "dashboard-src/src/helper/indexeddb.ts",
+        "dashboard-src/src/helper/autoImportSettings.ts",
+        "dashboard-src/src/composables/settings.ts",
+        "dashboard-src/src/composables/settingsSection.ts",
+        "dashboard-src/src/helper/utils.ts",
+        "dashboard-src/src/store/settings.ts",
+        "dashboard-src/src/i18n/*",
+        "dashboard-src/src/config/*"
+      ],
+      "watch": [
+        "dashboard-src/src/components/common/SelectInput.vue",
+        "dashboard-src/src/components/settings/SettingItem.vue",
+        "dashboard-src/src/composables/hostBridge.ts",
+        "dashboard-src/src/constant/*"
+      ],
+      "checks": [
+        "tests/Dashboard.Tests/SettingsSchemaTests.cs",
+        "tests/Dashboard.Tests/WebViewDataMaintenanceTests.cs",
+        "dashboard-src/src/__tests__/preference-transaction.test.ts",
+        "dashboard-src/src/__tests__/suspend-preferences-race.test.ts",
+        "dashboard-src/src/__tests__/settings-observer.test.ts"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#preferences"
+    },
+    {
+      "id": "notifications",
+      "paths": [
+        "dashboard-src/src/helper/notification.ts",
+        "dashboard-src/src/helper/requestError.ts",
+        "dashboard-src/src/helper/hostNotice.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/api/*",
+        "dashboard-src/src/assets/styles/components/toast.css",
+        "dashboard-src/src/i18n/*"
+      ],
+      "checks": [
+        "dashboard-src/src/__tests__/notification-text.test.ts",
+        "dashboard-src/src/__tests__/http-error-notification.test.ts"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#notifications"
+    },
+    {
+      "id": "proxy-experience",
+      "paths": [
+        "dashboard-src/src/views/ProxiesPage.vue",
+        "dashboard-src/src/components/proxies/*",
+        "dashboard-src/src/composables/renderProxies.ts",
+        "dashboard-src/src/composables/proxies*",
+        "dashboard-src/src/composables/proxyGroupChain.ts",
+        "dashboard-src/src/store/smart.ts",
+        "dashboard-src/src/store/proxy*",
+        "dashboard-src/src/helper/proxy*"
+      ],
+      "watch": [
+        "dashboard-src/src/assembly/proxies/*",
+        "dashboard-src/src/components/common/Virtual*",
+        "dashboard-src/src/assets/styles/*"
+      ],
+      "checks": [
+        "dashboard-src/src/__tests__/proxy-folders.test.ts",
+        "dashboard-src/src/__tests__/provider-latency.test.ts",
+        "dashboard-src/src/__tests__/proxy-request-lifecycle.test.ts"
+      ],
+      "risk": "medium",
+      "rule": "docs/maintenance.md#proxy-experience"
+    },
+    {
+      "id": "tables-history",
+      "paths": [
+        "dashboard-src/src/views/ConnectionsPage.vue",
+        "dashboard-src/src/views/LogsPage.vue",
+        "dashboard-src/src/views/RulesPage.vue",
+        "dashboard-src/src/components/connections/*",
+        "dashboard-src/src/components/logs/*",
+        "dashboard-src/src/components/rules/*",
+        "dashboard-src/src/components/overview/ConnectionHistory.vue",
+        "dashboard-src/src/composables/connection*",
+        "dashboard-src/src/composables/rules*",
+        "dashboard-src/src/store/connections.ts",
+        "dashboard-src/src/store/connHistory.ts",
+        "dashboard-src/src/store/logs.ts",
+        "dashboard-src/src/helper/connection*",
+        "dashboard-src/src/helper/sourceip.ts",
+        "dashboard-src/src/helper/ansi.ts",
+        "dashboard-src/src/helper/topConnections.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/components/common/VirtualTable.vue",
+        "dashboard-src/src/assembly/connections/*",
+        "dashboard-src/src/assembly/logs/*",
+        "dashboard-src/src/assembly/rules/*",
+        "dashboard-src/src/helper/indexeddb.ts"
+      ],
+      "checks": [
+        "dashboard-src/src/__tests__/connection-presentation.test.ts",
+        "dashboard-src/src/__tests__/connection-history.test.ts",
+        "dashboard-src/src/__tests__/rules-request-lifecycle.test.ts",
+        "dashboard-src/src/__tests__/logs-accumulator.test.ts",
+        "dashboard-src/src/__tests__/stream-lifecycle.test.ts",
+        "dashboard-src/src/__tests__/connection-search-scope.test.ts",
+        "dashboard-src/src/__tests__/rules-table-tooltip.test.ts",
+        "dashboard-src/src/__tests__/rules-controls.test.ts",
+        "dashboard-src/src/__tests__/history-save-recovery.test.ts",
+        "dashboard-src/src/__tests__/connection-history-domains.test.ts",
+        "dashboard-src/src/__tests__/source-ip-labels.test.ts"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#tables-history"
+    },
+    {
+      "id": "overview-charts",
+      "paths": [
+        "dashboard-src/src/views/OverviewPage.vue",
+        "dashboard-src/src/components/overview/*",
+        "dashboard-src/src/components/charts/*",
+        "dashboard-src/src/composables/useEChart.ts",
+        "dashboard-src/src/composables/overview.ts",
+        "dashboard-src/src/store/overview.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/assembly/overview/*",
+        "dashboard-src/src/assets/styles/*",
+        "dashboard-src/package.json",
+        "dashboard-src/pnpm-lock.yaml"
+      ],
+      "checks": [
+        "dashboard-src/src/__tests__/overview-chart-lifecycle.test.ts",
+        "dashboard-src/src/__tests__/use-echart.test.ts",
+        "dashboard-src/src/__tests__/ip-check.test.ts",
+        "dashboard-src/src/__tests__/connection-status-latency-rounds.test.ts"
+      ],
+      "risk": "medium",
+      "rule": "docs/maintenance.md#overview-charts"
+    },
+    {
+      "id": "excluded-product-scope",
+      "paths": [
+        "dashboard-src/src/views/SettingsPage.vue",
+        "dashboard-src/src/views/Tools*.vue",
+        "dashboard-src/src/views/Terminal*.vue",
+        "dashboard-src/src/views/Dns*.vue",
+        "dashboard-src/src/views/Earth*.vue",
+        "dashboard-src/src/views/Honk*.vue",
+        "dashboard-src/src/components/tools/*",
+        "dashboard-src/src/components/dns/*",
+        "dashboard-src/src/components/overview/Earth*",
+        "dashboard-src/src/components/overview/Honk*",
+        "dashboard-src/src/api/singbox*",
+        "dashboard-src/src/types/singbox*",
+        "dashboard-src/src/proto/*",
+        "dashboard-src/src/assets/images/earth/*",
+        "dashboard-src/src/assets/images/honk.svg",
+        "dashboard-src/src/composables/backendActions.ts",
+        "dashboard-src/src/composables/backendListProbe.ts",
+        "dashboard-src/src/composables/backendReachability.ts",
+        "dashboard-src/src/composables/terminalConfig.ts",
+        "dashboard-src/src/helper/reverseDns.ts"
+      ],
+      "watch": [
+        "dashboard-src/src/router/*",
+        "dashboard-src/src/constant/*",
+        "dashboard-src/package.json",
+        "dashboard-src/pnpm-lock.yaml"
+      ],
+      "checks": [
+        "tests/scripts/DesktopSources.Tests.ps1",
+        "dashboard-src/src/__tests__/product-routes.test.ts"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#excluded-product-scope"
+    },
+    {
+      "id": "local-tooling",
+      "paths": [
+        "dashboard-src/src/__tests__/*",
+        "dashboard-src/scripts/gen-icon.mjs",
+        "dashboard-src/bench/*",
+        "dashboard-src/package.json",
+        "dashboard-src/pnpm-*.yaml",
+        "dashboard-src/tsconfig*.json",
+        "dashboard-src/vite.config.ts",
+        "dashboard-src/tailwind.config.ts",
+        "dashboard-src/postcss.config.js",
+        "dashboard-src/eslint.config.js",
+        "dashboard-src/env.d.ts",
+        "dashboard-src/index.html",
+        "dashboard-src/README*",
+        "dashboard-src/LICENSE",
+        "dashboard-src/CHANGELOG.md",
+        "dashboard-src/Caddyfile",
+        "dashboard-src/Dockerfile",
+        "dashboard-src/docs/*",
+        "dashboard-src/test/*",
+        "dashboard-src/.*",
+        "dashboard-src/public/*",
+        "dashboard-src/src/types/*",
+        "dashboard-src/src/shims/*",
+        "dashboard-src/src/constant/*",
+        "dashboard-src/src/helper/index.ts",
+        "Dashboard.csproj",
+        "tools/*",
+        "tests/*"
+      ],
+      "watch": [],
+      "checks": [
+        "tools/check.ps1"
+      ],
+      "risk": "high",
+      "rule": "docs/maintenance.md#local-tooling"
+    }
+  ],
+  "pending": [
+    {
+      "id": "upstream-327-brand-icon",
+      "contract": "local-tooling",
+      "question": "v3.27.0 replaces the cube logo with a new block design and colors. Keep the current favicon/app/tray icons until an explicit visual comparison is accepted; see docs/maintenance.md#desktop-visuals."
+    },
+    {
+      "id": "upstream-327-mobile-overlay",
+      "contract": "proxy-experience",
+      "question": "Keep current proxy overlay transitions and browser theme-color behavior. The v3.27.0 mobile overlay/status-bar synchronization requires mobile-browser comparison before adoption; desktop WebView evidence does not establish equivalence."
+    }
+  ],
+  "knownGaps": [
+    {
+      "id": "system-acceptance-boundary",
+      "contract": "desktop-shell",
+      "expected": "Real UAC, logon tasks, cross-account credentials, physical DPI/touch and TUN sleep recovery are checked in an isolated system environment.",
+      "observed": "Automated tests cover injected OS boundaries and isolated real WebView/core processes; no dedicated system environment was available for these manual scenarios.",
+      "coverage": "Do not infer these system results from passing unit, WebView, real-core or performance suites. Follow docs/maintenance.md."
+    }
+  ]
+}

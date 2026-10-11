@@ -4,7 +4,7 @@
 
 基于 [zashboard](https://github.com/Zephyruso/zashboard) 的 Windows 桌面代理管理面板。WinForms + WebView2 承载本地 UI，宿主管理 mihomo / sing-box、窗口、托盘、自启、凭证和升级；面板通过 Clash-compatible API 读取数据。
 
-## 2.0 配置格式
+## 2.x 配置格式
 
 **2.0 是不兼容升级，使用 schemaVersion=2 的 settings.json 和独立的 `resources/webview-data-v2/`。不迁移旧 Dashboard 设置、历史、图片、旧明文凭证或旧启动项。**
 
@@ -69,9 +69,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\create-release.ps1
 
 项目自己创建的测试目录统一在 `.tmp/tests/<运行标识>/<用例标识>/`，临时调查和验证副本放 `.tmp/experiments/`，日志、截图、wire fixture 等放 `.tmp/reports/`。测试目录由共享辅助类管理，先释放自建浏览器/进程，再有限重试清理；清理失败会记录路径并报告错误。生产程序的系统 TEMP、核心同盘替换暂存和备份策略不在此规则内，也不修改全局 TEMP/TMP。
 
-日常修改先运行相关测试；手动运行前端命令时先选择 `.node-version` 对应的 Node。需要前端 wire fixture 时先运行宿主测试。UI 修改加跑相关 WebView 测试即可；定稿后再执行一次 Release。构建工具和文档修改运行 `pwsh -NoProfile -File .\tools\check-maintenance.ps1`；CI 同时运行此入口和普通 Check，应用构建不重复执行这些维护检查。
+日常修改先运行相关测试；手动运行前端命令时先选择 `.node-version` 对应的 Node。需要前端 wire fixture 时先运行宿主测试。UI 修改加跑相关 WebView 测试即可；定稿后再执行一次 Release。`check.ps1` 默认 `-Scope Application`；文档/工具修改运行 `pwsh -NoProfile -File .\tools\check.ps1 -Scope Maintenance`，需要两类检查时用 `-Scope All`。CI 分别选择应用与维护范围，普通应用检查不重复维护检查。
 
-`check.ps1 -IncludeWebViewIntegration` 增加真实 WebView/生产窗口测试，不包含真实等待60秒的空闲回收测试。增加 `-IncludeSlowIntegration` 才运行该慢测试（必须同时启用 WebView）。真实核心验证需显式准备只用于测试的核心：
+`check.ps1 -IncludeWebViewIntegration` 增加真实 WebView/生产窗口测试，包含闲置回收、取消和重新打开：测试核对生产默认60秒，再加速真实定时器验证，不实际等待一分钟。真实核心验证需显式准备只用于测试的核心：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\PrepareValidationCores.ps1
@@ -79,7 +79,7 @@ $env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/tests/fixtures/validation-cor
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
 ```
 
-上述检查用于专项验证；最终交付时直接把同样的参数传给 `create-release.ps1`，需要完整生命周期验收时另加 `-IncludeSlowIntegration`，无需先再跑一次 Check。
+正式候选直接运行 `create-release.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration`，复用上述测试核心；无需先再跑一次 Check，也不再需要 `-IncludeSlowIntegration`。同一入口完成构建、回归和打包，并输出各阶段耗时。
 
 准备脚本仅下载并校验 GitHub 发布摘要，不更改系统配置。真实核心测试使用临时目录、无 TUN/代理监听的最小配置，不接管用户核心。
 
@@ -87,13 +87,15 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewI
 
 内部构建/图标/资源工具在 `tools/internal/`，无需手工拼接执行。前端资源从 `dashboard-src/dist/` 生成到 `resources/dashboard/`，不入 Git；没有 UI 资源时 .NET 构建会明确失败。前端 wire 测试读取本次 .NET 测试生成的 `.tmp/reports/bridge-fixtures-v2/`，不要用旧 fixture 冒充当前协议验证。
 
-自动检查和 ZIP 成功不等于手工系统场景全部通过；仍需补齐的验收边界见[维护说明](docs/maintenance.md)。项目版本、InformationalVersion 和正式 Release tag 必须一致。
+自动检查和 ZIP 成功不等于手工系统场景全部通过；验收边界见[系统验证边界](docs/maintenance.md#system-boundaries)。项目版本、InformationalVersion 和正式 Release tag 必须一致。
 
 ## 维护文档
 
-- [维护说明](docs/maintenance.md)：当前配置约定、验证与产物规则、剩余验收事项；不维护实施流水账。
-- [上游跟进指南](docs/upstream-merge.md)：唯一正式跟进入口，保护产品保证，允许有证据地替换实现。
-- [样式规则](docs/style.md)：视觉原则与当前默认，不冻结类名/组件内部实现。
-- [上游基线](docs/upstream/v3.27.0.md)：下次合并所需的确切版本与保留取舍。
+长期规则统一在[维护约定](docs/maintenance.md)。上游跟进使用同一个 `tools/review-upstream.ps1` 入口形成计划、核对实施结果与基线推进；准确基线、路径和持续待办在唯一登记 `docs/upstream/ownership.json`。完成记录校验不等于实际验证通过或授权发布。
+
+- [产品与 Core 工作流](docs/maintenance.md#desktop-shell)、[配置与持久化](docs/maintenance.md#preferences)。
+- [视觉与已接受的 UI 选择](docs/maintenance.md#desktop-visuals)。
+- [当前上游取舍与跟进流程](docs/maintenance.md#local-tooling)。
+- [验证与产物](docs/maintenance.md#verification)、[系统验证边界](docs/maintenance.md#system-boundaries)。
 
 MIT License；内置前端原版权见 `dashboard-src/LICENSE`。

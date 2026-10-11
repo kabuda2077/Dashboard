@@ -1,6 +1,5 @@
 import { fetchRulesAPI } from '@/api/clash'
-import { resetRules, rules } from '@/assembly/rules'
-import { fetchRules } from '@/assembly/rules/clash'
+import { fetchRules, resetRules, rules } from '@/assembly/rules'
 import { expect, it, vi } from 'vitest'
 vi.mock('@/api/clash', () => ({
   fetchRulesAPI: vi.fn(),

@@ -25,7 +25,6 @@ export const resetBackendRuntime = () => {
 export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
   const started = new Set<string>()
   const pending = new Map<string, Promise<unknown>>()
-  let frame = 0
   const ensure = (key: string, action: () => unknown) => {
     if (!backendSessionReady.value || started.has(key) || pending.has(key)) return
     started.add(key)
@@ -47,44 +46,22 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
       })
     pending.set(key, task)
   }
-  const routeData = () => {
-    switch (toValue(route)) {
-      case 'rules':
-        ensure('rules', fetchRules)
-        break
-      case 'logs':
-        ensure('logs', initLogs)
-        break
-      case 'proxies':
-        ensure('proxies', fetchProxies)
-        break
-      case 'overview':
-        ensure('proxies', fetchProxies)
-        ensure('statistics', initSatistic)
-        break
-    }
-  }
-  const deferred = () => {
-    cancelAnimationFrame(frame)
-    frame = requestAnimationFrame(() => {
-      if (document.visibilityState !== 'hidden') {
-        ensure('proxies', fetchProxies)
-        ensure('statistics', initSatistic)
-      }
-    })
+  const ensureSessionData = () => {
+    ensure('connections', initConnections)
+    ensure('rules', fetchRules)
+    ensure('proxies', fetchProxies)
+    ensure('statistics', initSatistic)
+    ensure('logs', initLogs)
   }
   const stopSession = watch(
     [backendSessionGeneration, backendSessionReady],
     () => {
-      cancelAnimationFrame(frame)
       started.clear()
       pending.clear()
       resetBackendRuntime()
       if (!backendSessionReady.value) return
       startConfigRuntime()
-      ensure('connections', initConnections)
-      routeData()
-      deferred()
+      ensureSessionData()
     },
     { immediate: true, flush: 'sync' },
   )
@@ -92,15 +69,15 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
     () => toValue(route),
     (name, previous) => {
       // Re-entering proxies refreshes the snapshot, but reuses any in-flight load.
-      if (name === 'proxies' && previous !== undefined && !pending.has('proxies'))
-        started.delete('proxies')
-      routeData()
+      if (name === 'proxies') {
+        if (previous !== undefined && !pending.has('proxies')) started.delete('proxies')
+        ensure('proxies', fetchProxies)
+      }
     },
   )
   const visible = () => {
     if (document.visibilityState !== 'hidden' && backendSessionReady.value) {
-      routeData()
-      deferred()
+      ensureSessionData()
     }
   }
   document.addEventListener('visibilitychange', visible)
@@ -108,7 +85,6 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
     stopSession()
     stopRoute()
     pending.clear()
-    cancelAnimationFrame(frame)
     document.removeEventListener('visibilitychange', visible)
     stopConfigRuntime()
     stopConnections()

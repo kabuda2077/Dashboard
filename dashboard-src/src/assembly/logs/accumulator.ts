@@ -11,6 +11,7 @@ import { watch, type Ref } from 'vue'
 export interface LogsAccumulator {
   // 后端产出的一批原始日志(已是 { type, payload } 形态)投递入表。
   push: (batch: Log[]) => void
+  flush: () => void
   dispose: () => void
 }
 
@@ -20,11 +21,35 @@ export const createLogsAccumulator = (
 ): LogsAccumulator => {
   let idx = 1
   let logsTemp: LogWithSeq[] = []
-
-  const flush = throttle(() => {
-    logs.value = logsTemp.concat(logs.value).slice(0, logRetentionLimit.value)
+  let disposed = false
+  const retentionLimit = () =>
+    Math.max(0, Math.min(9999, Math.trunc(Number(logRetentionLimit.value) || 0)))
+  const publish = () => {
+    if (disposed || isPaused()) return
+    const limit = retentionLimit()
+    if (!logsTemp.length && logs.value.length <= limit) return
+    const snapshot = logsTemp.concat(logs.value).slice(0, limit)
     logsTemp = []
-  }, 500)
+    logs.value = snapshot
+  }
+  const flush = throttle(publish, 500)
+  // The clear control replaces the public array, including while display is paused.
+  const stopClearWatch = watch(
+    logs,
+    (value) => {
+      if (value.length) return
+      logsTemp = []
+      flush.cancel()
+    },
+    { flush: 'sync' },
+  )
+  const stopLimitWatch = watch(
+    logRetentionLimit,
+    () => {
+      logsTemp.length = Math.min(logsTemp.length, retentionLimit())
+    },
+    { flush: 'sync' },
+  )
 
   // source-ip 标签替换规则,随 sourceIPLabelList / 当前后端变化重建。
   const ipSourceMatchs: [RegExp, string][] = []
@@ -51,13 +76,9 @@ export const createLogsAccumulator = (
   )
 
   const push = (batch: Log[]) => {
+    if (disposed) return
+    const limit = retentionLimit()
     for (const data of batch) {
-      // 暂停时丢弃该条但仍推进 seq,与既有行为一致。
-      if (isPaused()) {
-        idx++
-        continue
-      }
-
       let payload = data.payload
       for (const [regex, label] of ipSourceMatchs) {
         payload = payload.replace(regex, label)
@@ -69,16 +90,25 @@ export const createLogsAccumulator = (
         time: dayjs().format('HH:mm:ss'),
         seq: idx++,
       })
+      if (logsTemp.length > limit) logsTemp.length = limit
     }
 
-    flush()
+    if (!isPaused()) flush()
   }
 
   return {
     push,
-    dispose: () => {
-      stopWatch()
+    flush: () => {
       flush.cancel()
+      publish()
+    },
+    dispose: () => {
+      disposed = true
+      stopWatch()
+      stopClearWatch()
+      stopLimitWatch()
+      flush.cancel()
+      logsTemp = []
     },
   }
 }

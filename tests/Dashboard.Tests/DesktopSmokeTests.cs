@@ -84,7 +84,7 @@ public sealed class DesktopSmokeTests : TemporaryDirectoryTest
                         Assert.True(form.Visible);
                         Assert.NotEqual(FormWindowState.Minimized, form.WindowState);
                     }
-                    // Cold restoration is checked here; the real idle timer has its own slow lifecycle test.
+                    // Cold restoration is checked here; the real idle timer has its own accelerated lifecycle test.
                     typeof(MainForm).GetMethod("DisposeDashboardView", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(form, null);
                     var init = (Task)typeof(MainForm).GetMethod("EnsureDashboardInitializedAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(form, new object[] { "integration-cold-restore" })!;
                     await init;

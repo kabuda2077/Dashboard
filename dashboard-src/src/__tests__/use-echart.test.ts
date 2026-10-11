@@ -1,4 +1,4 @@
-import { useEChart } from '@/composables/useEChart'
+import { useChartTheme, useEChart } from '@/composables/useEChart'
 import type { EChartsCoreOption } from 'echarts/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
@@ -71,5 +71,92 @@ describe('useEChart', () => {
     app.unmount()
     expect(mocks.chart.dispose).toHaveBeenCalledOnce()
     host.remove()
+  })
+
+  it('mounts late rule data with connected theme colors and refreshes them after remount', async () => {
+    // Chromium returns empty computed colors for detached elements.
+    let themeColor = 'rgb(39, 39, 42)'
+    const getStyle = globalThis.getComputedStyle
+    const styleSpy = vi.spyOn(globalThis, 'getComputedStyle').mockImplementation(
+      (element) =>
+        new Proxy(getStyle(element), {
+          get(target, property) {
+            if (property === 'borderBottomColor' || property === 'borderTopColor') {
+              return element.isConnected ? themeColor : ''
+            }
+            return Reflect.get(target, property, target)
+          },
+        }),
+    )
+    const active = ref(true)
+    const hasRules = ref(false)
+    const value = ref(10)
+    const Chart = defineComponent({
+      setup() {
+        const chartRef = ref<HTMLElement>()
+        const { colors } = useChartTheme(chartRef)
+        useEChart(
+          chartRef,
+          computed(() => ({
+            series: [{ data: [value.value], itemStyle: { color: colors.primary30 } }],
+          })),
+        )
+        return () => h('div', [h('div', { ref: chartRef })])
+      },
+    })
+    const Overview = defineComponent({
+      setup: () => () => (hasRules.value ? h(Chart) : null),
+    })
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = createApp({
+      setup: () => () => (active.value ? h(Overview) : h('div', 'Rules')),
+    })
+
+    try {
+      app.mount(host)
+      active.value = false
+      await nextTick()
+      hasRules.value = true
+      await nextTick()
+      expect(mocks.init).not.toHaveBeenCalled()
+      expect(mocks.chart.setOption).not.toHaveBeenCalled()
+
+      active.value = true
+      await nextTick()
+      await nextTick()
+      expect(mocks.init).toHaveBeenCalledOnce()
+      expect(mocks.chart.setOption.mock.lastCall?.[0].series[0]).toEqual({
+        data: [10],
+        itemStyle: { color: themeColor },
+      })
+
+      active.value = false
+      await nextTick()
+      expect(mocks.chart.dispose).toHaveBeenCalledOnce()
+      const rendersBeforeRemount = mocks.chart.setOption.mock.calls.length
+      themeColor = 'rgb(240, 240, 245)'
+      value.value = 20
+      await nextTick()
+      expect(mocks.chart.setOption).toHaveBeenCalledTimes(rendersBeforeRemount)
+
+      active.value = true
+      await nextTick()
+      await nextTick()
+      expect(mocks.init).toHaveBeenCalledTimes(2)
+      expect(mocks.chart.setOption.mock.lastCall?.[0].series[0]).toEqual({
+        data: [20],
+        itemStyle: { color: themeColor },
+      })
+      expect(
+        mocks.chart.setOption.mock.calls.every(
+          ([option]) => option.series[0].itemStyle.color !== '',
+        ),
+      ).toBe(true)
+    } finally {
+      app.unmount()
+      host.remove()
+      styleSpy.mockRestore()
+    }
   })
 })

@@ -36,11 +36,7 @@
       </button>
     </div>
 
-    <Suspense
-      v-if="settingsExpanded"
-      @pending="settingsReady = false"
-      @resolve="onSettingsReady"
-    >
+    <template v-if="settingsExpanded">
       <div>
         <template v-if="twoColumnsAvailable">
           <div
@@ -92,15 +88,7 @@
           </div>
         </div>
       </div>
-      <template #fallback
-        ><div
-          class="p-4"
-          role="status"
-        >
-          <span class="loading loading-spinner loading-sm" /> {{ $t('loading') }}
-        </div></template
-      >
-    </Suspense>
+    </template>
   </div>
 </template>
 
@@ -111,23 +99,12 @@ import { SETTINGS_MENU_KEY } from '@/constant'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { useElementSize } from '@vueuse/core'
 import type { Component } from 'vue'
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-
-const ConnectionsSettings = defineAsyncComponent(
-  () => import('@/components/settings/connections/ConnectionsSettings.vue'),
-)
-const AboutDashboardSettings = defineAsyncComponent(
-  () => import('@/components/settings/general/AboutDashboardSettings.vue'),
-)
-const ZashboardSettings = defineAsyncComponent(
-  () => import('@/components/settings/general/ZashboardSettings.vue'),
-)
-const OverviewSettings = defineAsyncComponent(
-  () => import('@/components/settings/overview/OverviewSettings.vue'),
-)
-const ProxiesSettings = defineAsyncComponent(
-  () => import('@/components/settings/proxies/ProxiesSettings.vue'),
-)
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import ConnectionsSettings from '@/components/settings/connections/ConnectionsSettings.vue'
+import AboutDashboardSettings from '@/components/settings/general/AboutDashboardSettings.vue'
+import ZashboardSettings from '@/components/settings/general/ZashboardSettings.vue'
+import OverviewSettings from '@/components/settings/overview/OverviewSettings.vue'
+import ProxiesSettings from '@/components/settings/proxies/ProxiesSettings.vue'
 
 type MenuItem = {
   key: string
@@ -189,7 +166,6 @@ const menuItems = computed<MenuItem[]>(() => {
 })
 
 const settingsExpanded = ref(false)
-const settingsReady = ref(false)
 const pendingScroll = ref<string | null>(null)
 let mounted = true
 onBeforeUnmount(() => {
@@ -203,7 +179,7 @@ const shouldExpandForKey = (key: string | null | undefined) => {
 }
 
 const rebalanceColumns = async () => {
-  if (!settingsExpanded.value || !settingsReady.value) {
+  if (!settingsExpanded.value) {
     return
   }
 
@@ -225,31 +201,31 @@ watch(menuItems, () => {
 
 watch(twoColumnsAvailable, rebalanceColumns, { immediate: true })
 
-watch(settingsExpanded, (expanded) => {
+watch(settingsExpanded, async (expanded) => {
   if (!expanded) {
-    settingsReady.value = false
     pendingScroll.value = null
+    return
   }
+  await rebalanceColumns()
+  await scrollWhenReady()
 })
 
 const scrollWhenReady = async () => {
   const target = pendingScroll.value
-  if (!target || (shouldExpandForKey(target) && !settingsReady.value)) return
+  if (!target || (shouldExpandForKey(target) && !settingsExpanded.value)) return
   await nextTick()
   if (!mounted || pendingScroll.value !== target) return
   pendingScroll.value = null
   document.getElementById(itemId(target))?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
-const onSettingsReady = async () => {
-  settingsReady.value = true
-  await rebalanceColumns()
-  await scrollWhenReady()
-}
 watch(
   () => props.scrollTo,
   (target) => {
     pendingScroll.value = target ?? null
-    if (shouldExpandForKey(target)) settingsExpanded.value = true
+    if (shouldExpandForKey(target) && !settingsExpanded.value) {
+      settingsExpanded.value = true
+      return // The expansion watcher scrolls after the columns are measured.
+    }
     void scrollWhenReady()
   },
   { immediate: true },

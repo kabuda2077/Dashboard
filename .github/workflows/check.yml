@@ -28,13 +28,9 @@ jobs:
         with:
           package_json_file: dashboard-src/package.json
 
-      - name: Check build tooling and documentation
+      - name: Check application, tooling and documentation
         shell: pwsh
-        run: .\tools\check-maintenance.ps1
-
-      - name: Run checks
-        shell: pwsh
-        run: .\tools\check.ps1 -Configuration Release
+        run: .\tools\check.ps1 -Scope All -Configuration Release
 
       # Use the already-built production UI with an isolated host/port/profile.
       # These checks need WebView2, but do not start a core or alter TUN/autostart.
