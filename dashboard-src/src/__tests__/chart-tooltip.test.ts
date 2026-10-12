@@ -3,7 +3,7 @@ import {
   escapeChartHtml,
   formatHistoryTooltipParam,
   formatTimeSeriesTooltipParam,
-} from '@/components/charts/chartTooltip'
+} from '@/components/charts/chart-tooltip'
 import { describe, expect, it } from 'vitest'
 
 describe('chart tooltip formatting', () => {

@@ -94,11 +94,11 @@
 </template>
 
 <script setup lang="ts">
-import { escapeChartHtml } from '@/components/charts/chartTooltip'
-import { useChartTheme, useEChart, type EChartOption } from '@/composables/useEChart'
+import { escapeChartHtml } from '@/components/charts/chart-tooltip'
+import { useChartTheme, useEChart, type EChartOption } from '@/composables/use-echart'
 import { getConnectionChains, getConnectionRule, getConnectionSourceIP } from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
-import { getIPLabelFromMap } from '@/helper/sourceip'
+import { getIPLabelFromMap } from '@/helper/source-ip'
 import { isMiddleScreen } from '@/helper/utils'
 import { activeConnections, filteredActiveConnections } from '@/store/connections'
 import {
@@ -127,33 +127,15 @@ const { width: windowWidth, height: windowHeight } = useWindowSize()
 const { colors, fontFamily } = useChartTheme(chartRef)
 
 const isPaused = computed(() => isManuallyPaused.value || isTooltipVisible.value)
-const shouldRotate = computed(
-  () => isFullScreen.value && isMiddleScreen.value && windowHeight.value > windowWidth.value,
+const chartSurfaceStyle = computed<CSSProperties>(() =>
+  isFullScreen.value
+    ? {
+        backdropFilter: `blur(${blurIntensity.value}px)`,
+        height: '100%',
+        width: '100%',
+      }
+    : {},
 )
-
-const chartSurfaceStyle = computed<CSSProperties>(() => {
-  if (!isFullScreen.value) return {}
-
-  const style: CSSProperties = {
-    backdropFilter: `blur(${blurIntensity.value}px)`,
-    height: '100%',
-    width: '100%',
-  }
-
-  if (!shouldRotate.value) return style
-
-  return {
-    ...style,
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: '100vh',
-    height: '100vw',
-    marginTop: '-50vw',
-    marginLeft: '-50vh',
-    transform: 'rotate(90deg)',
-  }
-})
 
 const topologyData = computed(() =>
   buildTopologyData(
@@ -285,7 +267,7 @@ const { resize } = useEChart(chartRef, options, {
   },
 })
 
-watch([isFullScreen, shouldRotate, windowWidth, windowHeight], () => {
+watch([isFullScreen, windowWidth, windowHeight], () => {
   nextTick(resize)
 })
 </script>

@@ -77,7 +77,7 @@ import {
 } from '@/store/settings'
 import { AdjustmentsHorizontalIcon, ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { onUnmounted, ref, watch } from 'vue'
-import { notifyRequestError } from '@/helper/requestError'
+import { notifyRequestError } from '@/helper/request-error'
 import { useI18n } from 'vue-i18n'
 import TextInput from '../../common/TextInput.vue'
 

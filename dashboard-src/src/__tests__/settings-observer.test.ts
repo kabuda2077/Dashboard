@@ -16,7 +16,7 @@ afterEach(() => {
 it('keeps defaults absent, observes real writes/imports/cross-document changes, and stops listening', async () => {
   const host = await startMockHost()
   host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
-  const { useDashboardStorage } = await import('@/helper/storage')
+  const { useDashboardStorage } = await import('@/composables/use-storage')
   const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
   const scope = effectScope()
   const value = scope.run(() => useDashboardStorage('config/test', 'default'))!
@@ -55,7 +55,7 @@ it('keeps defaults absent, observes real writes/imports/cross-document changes, 
 it('reactive keys and explicit non-preference defaults retain their distinct semantics', async () => {
   const host = await startMockHost()
   host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
-  const { useDashboardStorage } = await import('@/helper/storage')
+  const { useDashboardStorage } = await import('@/composables/use-storage')
   const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
   const scope = effectScope()
   const key = ref('config/first')
@@ -85,7 +85,7 @@ it.each([
 ])('serializes a burst once using the native storage adapter: %s', async (key, initial, next) => {
   const host = await startMockHost()
   host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
-  const { useDashboardStorage } = await import('@/helper/storage')
+  const { useDashboardStorage } = await import('@/composables/use-storage')
   const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
   const scope = effectScope()
   const value = scope.run(() => useDashboardStorage<unknown>(key as string, initial))!

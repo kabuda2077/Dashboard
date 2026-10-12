@@ -5,7 +5,7 @@ export type ThemeColorScheme = 'dark' | 'light'
 
 export const themeColorScheme = computed<ThemeColorScheme>(() => {
   void theme.value
-  const colorScheme = getComputedStyle(document.body).getPropertyValue('color-scheme').trim()
+  const colorScheme = getComputedStyle(document.documentElement).getPropertyValue('color-scheme').trim()
 
   return colorScheme.split(/\s+/).includes('dark') ? 'dark' : 'light'
 })

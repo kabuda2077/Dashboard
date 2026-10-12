@@ -139,8 +139,8 @@
 import { ConnectionHistoryType } from '@/helper/indexeddb'
 import SelectInput from '@/components/common/SelectInput.vue'
 import { showNotification } from '@/helper/notification'
-import { getIPLabelFromMap } from '@/helper/sourceip'
-import { useStorage } from '@/helper/storage'
+import { getIPLabelFromMap } from '@/helper/source-ip'
+import { useStorage } from '@/composables/use-storage'
 import { useTooltip } from '@/helper/tooltip'
 import { prettyBytesHelper } from '@/helper/utils'
 import VirtualTable from '@/components/common/VirtualTable.vue'
@@ -149,7 +149,7 @@ import {
   aggregatedDataMap,
   clearConnectionHistory,
   mergeAggregatedData,
-} from '@/store/connHistory'
+} from '@/store/conn-history'
 import { activeConnections } from '@/store/connections'
 import { QuestionMarkCircleIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import type { ColumnDef } from '@tanstack/vue-table'

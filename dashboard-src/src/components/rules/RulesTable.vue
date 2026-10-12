@@ -46,7 +46,7 @@
 
 <script setup lang="ts">
 import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession } from '@/helper/requestError'
+import { notifyRequestErrorForSession } from '@/helper/request-error'
 import { proxyGroupList } from '@/assembly/proxies'
 import {
   fetchRules,
@@ -65,12 +65,13 @@ import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
 import {
   EMPTY_CELL,
   formatRuleHitCount,
+  formatRuleHitTime,
   getRuleSize,
   isRuleDisabled,
   isUpdateableRuleSet,
   toggleRuleDisabledWithSideEffects,
   useRuleHitTooltip,
-} from '@/composables/rules'
+} from '@/helper/rules'
 import { RULE_TAB_TYPE } from '@/constant'
 import { fromNow } from '@/helper/utils'
 import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
@@ -224,8 +225,14 @@ const ruleColumns: ColumnDef<Rule>[] = [
     header: () => t('hitCount'),
     id: 'hitCount',
     accessorFn: (rule) => rule.extra?.hitCount ?? 0,
-    cell: ({ row }) =>
-      h(
+    cell: ({ row }) => {
+      const time = formatRuleHitTime(
+        row.original.extra?.hitCount,
+        row.original.extra?.hitAt,
+        'MM-DD HH:mm',
+      )
+
+      return h(
         'span',
         {
           class: 'tabular-nums',
@@ -237,15 +244,10 @@ const ruleColumns: ColumnDef<Rule>[] = [
             { class: row.original.extra?.hitCount ? '' : 'opacity-40' },
             formatRuleHitCount(row.original.extra?.hitCount),
           ),
-          row.original.extra?.hitAt
-            ? h(
-                'span',
-                { class: 'ml-1 text-xs opacity-40' },
-                dayjs(row.original.extra.hitAt).format('MM-DD HH:mm'),
-              )
-            : null,
+          time ? h('span', { class: 'ml-1 text-xs opacity-40' }, time) : null,
         ],
-      ),
+      )
+    },
     meta: { cellClass: 'w-40 text-right', headerClass: 'text-right', noCellTitle: true },
   },
   {

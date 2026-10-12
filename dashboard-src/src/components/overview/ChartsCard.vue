@@ -55,7 +55,6 @@
           class="text-base-content/60 flex items-center gap-2 text-xs font-semibold tracking-wider uppercase"
         >
           {{ $t('connections') }}
-          <span class="bg-success inline-block h-1.5 w-1.5 rounded-full" />
         </div>
         <div class="text-3xl font-extralight tabular-nums">
           {{ connectionCount }}
@@ -70,7 +69,9 @@
             :tooltip-formatter="connTooltipFormatter"
           />
         </div>
-        <div class="text-base-content/50 text-xs">{{ $t('memoryUsage') }} {{ memoryStr }}</div>
+        <div class="text-base-content/50 flex items-center justify-between gap-2 text-xs">
+          <span>{{ $t('memoryUsage') }} {{ memoryStr }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -80,8 +81,8 @@
 import {
   formatHistoryTooltipParam,
   formatTimeSeriesTooltipParam,
-} from '@/components/charts/chartTooltip'
-import type { ChartTooltipParam } from '@/components/charts/chartTypes'
+} from '@/components/charts/chart-tooltip'
+import type { ChartTooltipParam } from '@/components/charts/chart-types'
 import MiniSparkline from '@/components/overview/MiniSparkline.vue'
 import { prettyBytesHelper } from '@/helper/utils'
 import { activeConnections, downloadTotal, uploadTotal } from '@/store/connections'

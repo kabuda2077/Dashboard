@@ -6,7 +6,7 @@ import {
   githubLatency,
   isTestingLatency,
   youtubeLatency,
-} from '@/composables/overview'
+} from '@/helper/overview'
 import { autoConnectionCheck } from '@/store/settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'

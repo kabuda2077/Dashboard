@@ -23,7 +23,7 @@ let loadPromise: Promise<void> | undefined
 const loadLookup = () => {
   if (lookup.value || loadPromise) return
 
-  const currentLoad = import('./connectionGeoipDatabase')
+  const currentLoad = import('./connection-geoip-database')
     .then((module) => {
       lookup.value = module.getConnectionGeoIPInfoSync
     })

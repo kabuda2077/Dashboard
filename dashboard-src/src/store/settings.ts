@@ -1,3 +1,4 @@
+import { useDashboardStorage as useStorage } from '@/composables/use-storage'
 import {
   ALL_THEME,
   CONNECTIONS_TABLE_ACCESSOR_KEY,
@@ -10,7 +11,6 @@ import {
   GEOIP_COUNTRY_DATABASE_URL,
   GLOBAL,
   IP_INFO_API,
-  IS_APPLE_DEVICE,
   LANG,
   LIST_DISPLAY_STYLE,
   OVERVIEW_CARD,
@@ -26,7 +26,6 @@ import {
   type THEME,
 } from '@/constant'
 import { normalizeConnectionCardLines, normalizeConnectionFields } from '@/helper/connectionFields'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
 import { getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
 import { computed, watch } from 'vue'
@@ -82,10 +81,7 @@ export const font = computed({
     fontConfig.value = val
   },
 })
-export const emoji = useStorage<EMOJIS>(
-  'config/emoji',
-  IS_APPLE_DEVICE ? EMOJIS.TWEMOJI : EMOJIS.NOTO_COLOR_EMOJI,
-)
+export const emoji = useStorage<EMOJIS>('config/emoji', EMOJIS.NOTO_COLOR_EMOJI)
 export const customBackgroundURL = useStorage('config/custom-background-image', '')
 export const customCSS = useStorage('config/custom-css', '')
 export const dashboardTransparent = useStorage('config/dashboard-transparent', 90)
@@ -93,7 +89,6 @@ export const checkUpgradeCore = useStorage('config/check-upgrade-core', true)
 export const autoUpgradeCore = useStorage('config/auto-upgrade-core', false)
 export const swipeInPages = useStorage('config/swipe-in-pages', true)
 export const swipeInTabs = useStorage('config/swipe-in-tabs', false)
-export const disablePullToRefresh = useStorage('config/disable-pull-to-refresh', true)
 export const displayAllFeatures = useStorage('config/display-all-features', false)
 export const blurIntensity = useStorage('config/blur-intensity', 10)
 export const scrollAnimationEffect = useStorage('config/scroll-animation-effect', true)
@@ -120,7 +115,7 @@ export const showStatisticsWhenSidebarCollapsed = useStorage(
 )
 export const numberOfChartsInSidebar = useStorage<1 | 2 | 3>(
   'config/number-of-charts-in-sidebar',
-  2,
+  1,
 )
 const defaultOverviewCardOrder: { card: OVERVIEW_CARD; visible: boolean }[] = [
   {
@@ -248,6 +243,7 @@ export const groupTestUrls = useStorage<
 >('config/group-test-urls', [])
 
 // connections
+export const showClosedOnly = useStorage<boolean>('config/connection-show-closed-only', false)
 export const connectionDisplayStyle = useStorage<CONNECTION_DISPLAY_STYLE>(
   'config/connection-display-style',
   CONNECTION_DISPLAY_STYLE.AUTO,
@@ -309,6 +305,7 @@ watch(
 )
 
 export const sourceIPLabelList = useStorage<SourceIPLabel[]>('config/source-ip-label-list', [])
+export const resolveClientHostname = useStorage('config/resolve-client-hostname', false)
 
 // rules
 export const displayNowNodeInRule = useStorage('config/display-now-node-in-rule', true)

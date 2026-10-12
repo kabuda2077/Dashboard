@@ -150,6 +150,9 @@ const zh: LANG_MESSAGE = {
   upgradeToAlpha: '升级到 Alpha',
   updateGeoDatabase: '更新GEO',
   tunMode: 'Tun 模式',
+  tunStack: 'TUN 协议栈',
+  tunStackHelp: '切换协议栈会重建 TUN，可能中断连接。',
+  tunStackUpdateFailed: 'TUN 协议栈切换未获确认，请检查当前状态和核心日志。',
   truncateProxyName: '截断节点名称',
   disableProxiesPageTextSelect: '禁用代理页文字选中',
   sourceIPLabels: '源IP标签',
@@ -288,9 +291,6 @@ const zh: LANG_MESSAGE = {
   moreSettings: '更多设置',
   customIcon: '自定义图标',
   dropOrClickUpload: '拖拽图片或输入 URL',
-  disablePullToRefresh: '禁用下拉刷新',
-  disablePullToRefreshTip:
-    '下拉刷新和虚拟滚动的组件有时会有冲突，如果你在上下滚动的时候经常卡顿或者误触发下拉刷新，可以尝试禁用下拉刷新',
   keyboardShortcuts: '快捷键设置',
   keyboardShortcutsTip:
     '点击输入框后可直接按单键或组合键设置快捷键，按 Backspace 或 Delete 可清空。',
@@ -346,6 +346,17 @@ const zh: LANG_MESSAGE = {
   manageBackends: '管理后端',
   noBackendYet: '还没有后端',
   backendConnectionFailed: '后端连接失败，请检查配置信息',
+  diagnosisUnauthorized: '鉴权失败（HTTP 401），请检查 API 密钥（Secret）',
+  diagnosisTimeout: '后端没有在规定时间内响应',
+  diagnosisBadEndpoint: '地址能连上，但对面不是这个 API，或者路径写错了',
+  diagnosisOffline: '浏览器当前处于离线状态，请检查网络连接',
+  diagnosisCorsBlocked:
+    '后端能连上，但浏览器无法读取响应。请检查后端是否放行当前来源（CORS），在内核配置里设置 external-controller-cors',
+  diagnosisMixedContent:
+    '浏览器拦下了这次请求：HTTPS 页面不能访问 HTTP 后端。请用 HTTP 打开面板，或者给 API 配上 HTTPS',
+  diagnosisMixedContentOrUnreachable:
+    '后端连不上 —— 也可能后端是好的，只是浏览器不允许 HTTPS 页面访问 HTTP 后端；可以试着用 HTTP 打开面板',
+  diagnosisUnreachable: '后端连不上，请检查地址与端口是否正确、内核是否在运行',
   backendConfigSaved: '后端配置保存成功',
   saveFailed: '保存失败',
   checking: '检查中...',

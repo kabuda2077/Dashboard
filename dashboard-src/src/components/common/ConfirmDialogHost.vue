@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { confirmDialogState, resolveConfirmDialog } from '@/helper/confirmDialog'
+import { confirmDialogState, resolveConfirmDialog } from '@/helper/confirm-dialog'
 import { onMounted, ref, watch } from 'vue'
 import DialogWrapper from './DialogWrapper.vue'
 

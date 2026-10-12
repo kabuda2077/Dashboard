@@ -1,11 +1,13 @@
 <template>
   <div
-    class="base-container scrollbar-hidden flex-2 overflow-y-auto text-sm"
-    :class="classNameMap[numberOfChartsInSidebar]"
+    class="sidebar-chart-group base-container flex min-h-0 flex-2 flex-col"
+    :data-rows="numberOfChartsInSidebar"
   >
-    <SpeedCharts class="h-28 shrink-0" />
-    <MemoryCharts class="h-28 shrink-0" />
-    <ConnectionsCharts class="h-28 shrink-0" />
+    <div class="scrollbar-hidden flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <SpeedCharts class="sidebar-chart-row h-(--sidebar-chart-row) shrink-0" />
+      <MemoryCharts class="sidebar-chart-row h-(--sidebar-chart-row) shrink-0" />
+      <ConnectionsCharts class="sidebar-chart-row h-(--sidebar-chart-row) shrink-0" />
+    </div>
   </div>
 </template>
 
@@ -14,10 +16,24 @@ import ConnectionsCharts from '@/components/overview/ConnectionsCharts.vue'
 import MemoryCharts from '@/components/overview/MemoryCharts.vue'
 import SpeedCharts from '@/components/overview/SpeedCharts.vue'
 import { numberOfChartsInSidebar } from '@/store/settings'
-
-const classNameMap = {
-  1: 'max-h-28',
-  2: 'max-h-56',
-  3: 'max-h-84',
-}
 </script>
+
+<style scoped>
+.sidebar-chart-group {
+  --sidebar-chart-row: 7.5rem;
+}
+
+.sidebar-chart-group[data-rows='1'] {
+  max-height: var(--sidebar-chart-row);
+}
+.sidebar-chart-group[data-rows='2'] {
+  max-height: calc(var(--sidebar-chart-row) * 2);
+}
+.sidebar-chart-group[data-rows='3'] {
+  max-height: calc(var(--sidebar-chart-row) * 3);
+}
+
+.sidebar-chart-row + .sidebar-chart-row {
+  border-top: 1px solid var(--color-base-border);
+}
+</style>

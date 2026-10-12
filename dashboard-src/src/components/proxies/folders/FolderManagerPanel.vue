@@ -22,7 +22,7 @@
 
 <script setup lang="ts">
 import { isMiddleScreen } from '@/helper/utils'
-import { folderManagerOpen } from '@/store/proxyFolders'
+import { folderManagerOpen } from '@/store/proxy-folders'
 import DialogWrapper from '../../common/DialogWrapper.vue'
 import FolderManagerContent from './FolderManagerContent.vue'
 </script>

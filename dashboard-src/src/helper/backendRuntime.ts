@@ -2,7 +2,7 @@ import { resetConfigs, startConfigRuntime, stopConfigRuntime } from '@/assembly/
 import { initLogs, resetLogs, stopLogs } from '@/assembly/logs'
 import { fetchProxies, resetProxies } from '@/assembly/proxies'
 import { fetchRules, resetRules } from '@/assembly/rules'
-import { closeProxyGroupChain } from '@/composables/proxyGroupChain'
+import { closeProxyGroupChain } from '@/helper/proxy-group-chain'
 import { initConnections, resetConnections, stopConnections } from '@/store/connections'
 import { initSatistic, resetStatistics, stopSatistic } from '@/store/overview'
 import { smartOrderMap, smartWeightsMap } from '@/store/smart'

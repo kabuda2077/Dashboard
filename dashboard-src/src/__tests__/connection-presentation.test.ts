@@ -1,5 +1,7 @@
 import { expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref } from 'vue'
+import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { connectionTabShow, showClosedOnly } from '@/store/connections'
+import { CONNECTION_TAB_TYPE } from '@/constant'
 import { createI18n } from 'vue-i18n'
 import Card from '@/components/connections/ConnectionCard'
 import Details from '@/components/connections/ConnectionDetails.vue'
@@ -12,16 +14,16 @@ vi.mock('@/assembly/connections', () => ({
 }))
 vi.mock('@/assembly/proxies', () => ({ proxyMap: ref({}) }))
 vi.mock('@/api/geoip', () => ({ getIPInfo: vi.fn() }))
-vi.mock('@/helper/requestError', () => ({ runManualRequest: vi.fn() }))
-vi.mock('@/composables/bouncein', () => ({ useBounceOnVisible: vi.fn() }))
-vi.mock('@/composables/connections', () => ({ useConnections: () => ({
+vi.mock('@/helper/request-error', () => ({ runManualRequest: vi.fn() }))
+vi.mock('@/composables/use-bounce-on-visible', () => ({ useBounceOnVisible: vi.fn() }))
+vi.mock('@/composables/use-connections', () => ({ useConnections: () => ({
   handlerInfo: vi.fn(), infoConn: ref({id:'fixture',chains:['Node','Middle','Group']}), connectionDetailModalShow:ref(true),
 }) }))
 vi.mock('@/helper', () => ({
   getConnectionChains: (conn: {chains:string[]}) => conn.chains,
   getConnectionSmartBlock: vi.fn(), getConnectionSourceIP: () => '', getDestinationFromConnection: () => undefined,
 }))
-vi.mock('@/store/connections', () => ({ connectionFilter:ref(''), connectionTabShow:ref('active'), isClosedConnection:()=>false }))
+vi.mock('@/store/connections', () => ({ connectionFilter:ref(''), connectionTabShow:ref('active'), showClosedOnly:ref(false), isClosedConnection:(conn: {id:string})=>conn.id === 'closed' }))
 vi.mock('@/store/settings', () => ({ connectionCardLines:ref([['host']]), proxyChainDirection:ref('normal'), showFullProxyChain:ref(false) }))
 vi.mock('@/components/common/DialogWrapper.vue', () => ({ default: defineComponent({setup:(_, {slots})=>()=>h('div',slots.default?.())}) }))
 vi.mock('@/components/common/ProxyChainPath.vue', () => ({ default:{render:()=>null} }))
@@ -40,6 +42,19 @@ it('a card computes only selected fields, not unused GeoIP and action builders',
     expect(vi.mocked(getConnectionDisplayValue).mock.calls[0][1]).toBe('host')
     expect(getConnectionSmartBlock).not.toHaveBeenCalled()
   } finally {app.unmount()}
+})
+it('dims historical cards only in mixed All view, never in closed-only view', async () => {
+  const root = document.createElement('div')
+  connectionTabShow.value = CONNECTION_TAB_TYPE.ALL
+  showClosedOnly.value = false
+  const app = createApp(Card, { conn: { id: 'closed', chains: [] } as never })
+  app.mount(root)
+  try {
+    expect(root.querySelector('.opacity-60')).not.toBeNull()
+    showClosedOnly.value = true
+    await nextTick()
+    expect(root.querySelector('.opacity-60')).toBeNull()
+  } finally { app.unmount(); showClosedOnly.value = false; connectionTabShow.value = CONNECTION_TAB_TYPE.ACTIVE }
 })
 it('details always show the full chain even when the list setting hides middle nodes', () => {
   const root=document.createElement('div');root.id='app-content';document.body.append(root)

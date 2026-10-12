@@ -1,5 +1,6 @@
 import { postHostMessage } from '@/composables/hostBridge'
 import { captureBackendSession } from '@/helper/backendSession'
+import { getBackendProbeUrl, throwIfProbeAborted, type ProbeResult } from '@/helper/connectivity'
 import { getUrlFromBackend } from '@/helper/utils'
 import { activeBackend } from '@/store/setup'
 import type { Backend, Config, NodeRank, Proxy, ProxyProvider, Rule, RuleProvider } from '@/types'
@@ -9,6 +10,13 @@ import ReconnectingWebSocket from 'reconnectingwebsocket'
 import { shallowRef } from 'vue'
 
 export const fetchClashVersion = () => axios.get<{ version: string }>('/version')
+
+export const queryDNSAPI = (params: { name: string; type: string }, signal?: AbortSignal) =>
+  axios.get<{ Answer?: { type: number; data: string }[] }>('/dns/query', {
+    params,
+    signal,
+    timeout: 5000,
+  })
 
 export const fetchProxiesAPI = () => {
   return axios.get<{ proxies: Record<string, Proxy> }>('/proxies')
@@ -235,21 +243,38 @@ export const createClashWebSocket = <T>(url: string, searchParams?: Record<strin
   }
 }
 
-export const probeClashChannel = async (backend: Backend, timeout: number) => {
+export type ClashProbeResult = ProbeResult
+
+export const probeClashChannel = async (
+  backend: Backend,
+  timeout: number,
+  signal?: AbortSignal,
+): Promise<ClashProbeResult> => {
+  throwIfProbeAborted(signal)
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
+  const onAbort = () => controller.abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
   try {
-    const res = await fetch(`${getUrlFromBackend(backend)}/version`, {
+    const res = await fetch(getBackendProbeUrl(backend), {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${backend.password}`,
-      },
+      headers: backend.password ? { Authorization: `Bearer ${backend.password}` } : {},
+      credentials: 'omit',
       signal: controller.signal,
     })
+    throwIfProbeAborted(signal)
     return res.ok
+      ? { ok: true }
+      : {
+          ok: false,
+          kind: res.status === 401 ? 'unauthorized' : 'http',
+          message: `HTTP ${res.status}`,
+        }
   } catch {
-    return false
+    throwIfProbeAborted(signal)
+    return { ok: false, kind: controller.signal.aborted ? 'timeout' : 'network' }
   } finally {
     clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', onAbort)
   }
 }

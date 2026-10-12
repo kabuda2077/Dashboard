@@ -1,7 +1,7 @@
 // 组装层 · Clash-compatible proxies 门面。
 import { isSingBoxCore } from '@/assembly/version'
 import { NOT_CONNECTED, PROXY_TAB_TYPE, PROXY_TYPE, TEST_URL } from '@/constant'
-import { useStorage } from '@/helper/storage'
+import { useStorage } from '@/composables/use-storage'
 import { groupTestUrls, independentLatencyTest, speedtestUrl } from '@/store/settings'
 import type { Proxy, ProxyProvider } from '@/types'
 import { last } from 'lodash'

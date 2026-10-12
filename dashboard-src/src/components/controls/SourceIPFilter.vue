@@ -8,7 +8,7 @@
 
 <script setup lang="ts">
 import DropdownSelect from '@/components/common/SelectInput.vue'
-import { getIPLabelFromMap } from '@/helper/sourceip'
+import { getIPLabelFromMap } from '@/helper/source-ip'
 import { getConnectionSourceIP } from '@/helper'
 import { connections, sourceIPFilter } from '@/store/connections'
 import { useI18n } from 'vue-i18n'

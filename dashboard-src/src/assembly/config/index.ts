@@ -1,3 +1,4 @@
+import { queryDNSAPI } from '@/api/clash'
 import { backendSessionReady, captureBackendSession } from '@/helper/backendSession'
 import { activeUuid } from '@/store/setup'
 import type { Config } from '@/types'
@@ -38,6 +39,9 @@ let pending:
     }
   | undefined
 export const getConfigsGeneration = () => generation
+
+export const queryDNS = async (params: { name: string; type: string }, signal?: AbortSignal) =>
+  (await queryDNSAPI(params, signal)).data
 
 const invalidate = () => {
   generation++

@@ -1,6 +1,6 @@
 import { hasHostBridge } from '@/composables/hostBridge'
 import { ROUTE_NAME } from '@/constant'
-import { renderRoutes } from '@/helper'
+import { resolvePageTransition } from '@/helper/page-transition'
 import { i18n } from '@/i18n'
 import { language } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
@@ -78,23 +78,14 @@ const setTitleByName = (name: string | symbol | undefined) => {
 
 router.beforeEach((to, from) => {
   if (hasHostBridge && to.name === ROUTE_NAME.setup) return { name: ROUTE_NAME.core }
-  const toIndex = renderRoutes.value.findIndex((item) => item === to.name)
-  const fromIndex = renderRoutes.value.findIndex((item) => item === from.name)
-
-  if (toIndex === 0 && fromIndex === renderRoutes.value.length - 1) {
-    to.meta.transition = 'slide-left'
-  } else if (toIndex === renderRoutes.value.length - 1 && fromIndex === 0) {
-    to.meta.transition = 'slide-right'
-  } else if (toIndex !== fromIndex) {
-    to.meta.transition = toIndex < fromIndex ? 'slide-right' : 'slide-left'
-  }
-
   if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)) {
     return { name: hasHostBridge ? ROUTE_NAME.core : ROUTE_NAME.setup }
   }
 })
 
-router.afterEach((to) => {
+router.afterEach((to, from, failure) => {
+  if (failure) return
+  resolvePageTransition(to, from)
   setTitleByName(to.name)
 })
 

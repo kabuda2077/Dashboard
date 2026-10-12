@@ -9,7 +9,7 @@ import {
 } from '@/store/settings'
 import { smartOrderMap } from '@/store/smart'
 import { computed, type ComputedRef } from 'vue'
-import { isProxyNodeSearchMode, matchProxySearchKeyword, proxySearchKeyword } from './proxySearch'
+import { isProxyNodeSearchMode, matchProxySearchKeyword, proxySearchKeyword } from '../helper/proxy-search'
 
 type LatencyMap = Map<string, number>
 

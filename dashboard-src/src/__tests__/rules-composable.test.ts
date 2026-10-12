@@ -1,5 +1,5 @@
 import { ruleProviderList, toggleRuleDisabled } from '@/assembly/rules'
-import { getRuleSize, isRuleDisabled, isUpdateableRuleSet } from '@/composables/rules'
+import { getRuleSize, isRuleDisabled, isUpdateableRuleSet } from '@/helper/rules'
 import type { Rule, RuleProvider } from '@/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

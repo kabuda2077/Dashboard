@@ -111,14 +111,16 @@
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable } from '@/assembly/backend'
+import { probeBackend } from '@/assembly/backend'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import { showNotification } from '@/helper/notification'
+import { describeProbeFailure, getBackendProbeUrl } from '@/helper/connectivity'
+import { backendSessionGeneration } from '@/helper/backendSession'
 import { getLabelFromBackend } from '@/helper/utils'
 import { activeBackend, backendList, updateBackend } from '@/store/setup'
 import type { Backend } from '@/types'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 interface Props {
@@ -143,6 +145,12 @@ const isVisible = computed({
 const editForm = ref<Omit<Backend, 'uuid'> | null>(null)
 const selectedBackendUuid = ref('')
 const isSaving = ref(false)
+let disposed = false
+let pendingProbe: AbortController | undefined
+onBeforeUnmount(() => {
+  disposed = true
+  pendingProbe?.abort()
+})
 
 const selectedBackend = computed(
   () => backendList.value.find((backend) => backend.uuid === selectedBackendUuid.value) || null,
@@ -193,30 +201,60 @@ const handleSave = async () => {
   isSaving.value = true
   const target = selectedBackend.value.uuid
   const draft = editForm.value
+  const composed: Omit<Backend, 'uuid'> = { ...draft }
+  const testBackend: Backend = { uuid: target, ...composed }
+  const controller = new AbortController()
+  pendingProbe = controller
+  const stopWatching = watch(
+    [
+      () => props.modelValue,
+      selectedBackendUuid,
+      editForm,
+      activeBackend,
+      backendSessionGeneration,
+    ],
+    () => controller.abort(),
+    { deep: true, flush: 'sync' },
+  )
+  const isCurrent = () =>
+    !disposed &&
+    !controller.signal.aborted &&
+    props.modelValue &&
+    selectedBackendUuid.value === target &&
+    editForm.value === draft &&
+    !Object.keys(composed).some(
+      (key) => composed[key as keyof typeof composed] !== draft[key as keyof typeof draft],
+    )
 
   try {
-    const composed: Omit<Backend, 'uuid'> = { ...draft }
-    const testBackend: Backend = { uuid: target, ...composed }
-    const available = await isBackendAvailable(testBackend, 10000)
-    if (!props.modelValue || selectedBackendUuid.value !== target || editForm.value !== draft
-      || Object.keys(composed).some((key) => composed[key as keyof typeof composed] !== draft[key as keyof typeof draft])) return
+    const result = await probeBackend(testBackend, 10000, controller.signal)
+    if (!isCurrent()) return
 
-    if (!available) {
-      showNotification({ content: t('backendConnectionFailed'), type: 'alert-error' })
+    if (!result.ok) {
+      const content = await describeProbeFailure(
+        result,
+        getBackendProbeUrl(testBackend),
+        controller.signal,
+      )
+      if (isCurrent()) showNotification({ content, type: 'alert-error' })
       return
     }
 
+    stopWatching()
     updateBackend(target, composed)
     showNotification({ content: t('backendConfigSaved'), type: 'alert-success' })
     isVisible.value = false
     reset()
     emit('saved')
   } catch (error) {
-    showNotification({
-      content: `${t('saveFailed')}: ${error}`,
-      type: 'alert-error',
-    })
+    if (isCurrent())
+      showNotification({
+        content: `${t('saveFailed')}: ${error}`,
+        type: 'alert-error',
+      })
   } finally {
+    stopWatching()
+    if (pendingProbe === controller) pendingProbe = undefined
     isSaving.value = false
   }
 }

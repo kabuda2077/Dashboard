@@ -139,15 +139,6 @@ export const applyCustomThemes = () => {
   })
 }
 
-export const applyKsuTheme = () => {
-  if (window.ksu) {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = 'https://mui.kernelsu.org/internal/colors.css'
-    document.head.appendChild(link)
-  }
-}
-
 export const isHiddenGroup = (group: string) => {
   if (Reflect.has(hiddenGroupMap.value, group)) {
     return hiddenGroupMap.value[group]

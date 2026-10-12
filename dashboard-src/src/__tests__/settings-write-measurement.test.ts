@@ -13,7 +13,7 @@ it('one hundred edits yield one preference commit; metadata and idle time create
   const host = await startMockHost()
   host.post.mockImplementation((message) => queueMicrotask(() => host.ack(message.requestId)))
   const { installDashboardSettingsSync } = await import('@/helper/dashboardSettingsSync')
-  const { useDashboardStorage } = await import('@/helper/storage')
+  const { useDashboardStorage } = await import('@/composables/use-storage')
   const stop = installDashboardSettingsSync()
   for (let i = 0; i < 100; i++) {
     host.setState(makeHostSnapshot({ latestCoreVersion: String(i) }))

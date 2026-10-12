@@ -1,6 +1,6 @@
 import { getIPFromIpipnetAPI, getIPInfo } from '@/api/geoip'
 import IPCheck from '@/components/overview/IPCheck.vue'
-import { getIPs, ipForChina, ipForGlobal, isCheckingIPs } from '@/composables/overview'
+import { getIPs, ipForChina, ipForGlobal, isCheckingIPs } from '@/helper/overview'
 import { i18n } from '@/i18n'
 import { IPInfoAPI } from '@/store/settings'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'

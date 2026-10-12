@@ -76,7 +76,7 @@ it('preserves valid custom folders, extension fields and unknown preferences', a
   }
   applyDashboardSettingsToStorage(parseSettingsDocument({ schemaVersion: 2, preferences }))
   expect(getDashboardSettingsFromStorage()).toEqual(preferences)
-  const { folderState } = await import('@/store/proxyFolders')
+  const { folderState } = await import('@/store/proxy-folders')
   expect(folderState.value).toEqual(extended)
 })
 
@@ -93,7 +93,7 @@ it.each([JSON.stringify(malformed[0]), JSON.stringify(malformed[1]), '{broken-js
     })
     await restore
     const { proxyGroupList, proxyMap } = await import('@/assembly/proxies')
-    const folders = await import('@/store/proxyFolders')
+    const folders = await import('@/store/proxy-folders')
     proxyGroupList.value = ['NodeGroup']
     proxyMap.value = {
       NodeGroup: {

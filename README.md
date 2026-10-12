@@ -2,100 +2,40 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-基于 [zashboard](https://github.com/Zephyruso/zashboard) 的 Windows 桌面代理管理面板。WinForms + WebView2 承载本地 UI，宿主管理 mihomo / sing-box、窗口、托盘、自启、凭证和升级；面板通过 Clash-compatible API 读取数据。
+基于 [zashboard](https://github.com/Zephyruso/zashboard) 的 Windows 桌面代理管理面板，支持 mihomo 和提供 Clash API 的 sing-box。
 
-## 2.x 配置格式
+## 功能
 
-**2.0 是不兼容升级，使用 schemaVersion=2 的 settings.json 和独立的 `resources/webview-data-v2/`。不迁移旧 Dashboard 设置、历史、图片、旧明文凭证或旧启动项。**
+- 管理两套独立核心配置，启动、停止、重启和切换当前核心。
+- 选择代理、测速，查看连接、流量、规则和日志。
+- 自定义主题、背景和连接标签，导入导出界面偏好。
+- 托盘、开机自启、关闭到托盘和轻量模式；轻量模式隐藏一分钟后释放界面，重新打开时恢复。
+- 可选来源 IP 主机名解析，默认关闭；手动标签优先，不支持解析时显示原 IP。
 
-首次使用建议解压到一个新目录，重新选择核心和配置。旧文件不会自动删除或覆盖；遇到旧格式/损坏设置时程序明确报错。已存在的 v2 文件必须保留完整的根字段、两个 profile 和桌面选项字段，缺失不会被静默补成默认值。请保留原目录，不要删除唯一的数据副本。
+## 安装与使用
 
-同版本的窗口重建、应用重启或前端资源替换保留浏览器数据。应用版本变化或缺少有效版本标记时，在 WebView 启动前删除 v2 自己的 `resources/webview-data-v2/EBWebView`，成功后保存纯版本号；不删除 1.x 的 `resources/EBWebView`。连接历史、上传的本地背景图片等浏览器数据会清空；`settings.json`、核心、配置、icon-cache 和日志保留，已提交的界面偏好从宿主恢复。清理失败不继续启动、不标记完成；首次从旧缓存策略切换也会重置一次。
+需要 Windows x64、[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) 和 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
-Secret 由 Windows 当前用户 DPAPI 保护；换用户后无法解密时必须在 Core 页面明确替换，即使新值为空。普通设置保存不会覆盖无法解密的密文。
+1. 从 [Releases](https://github.com/kabuda2077/Dashboard/releases) 下载压缩包，解压后运行 `Dashboard.exe`。
+2. 自备 mihomo 或启用 Clash API 的 sing-box，以及对应配置文件。发布包不包含核心和配置。
+3. 在 Core 页面选择核心，填写可执行文件、配置文件、API 地址和 Secret，保存后启动。需要管理员权限时会请求 UAC。
 
-## 运行条件
+mihomo 使用 `external-controller`，sing-box 使用 `experimental.clash_api.external_controller`。例如 API 地址为 `http://127.0.0.1:9090`，Secret 应与核心配置一致。启动后仍无法连接时，检查 API 地址和 Secret。
 
-- Windows x64、[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)。
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
-- 自备配置好的 mihomo 或包含 Clash API 的 sing-box。发布包不包含核心和用户配置。
+设置位于 Core 页面。连接页面可切换活跃／全部连接；再次点击“全部”可选择仅已关闭。
 
-示例目录：
+## 更新与注意事项
 
-```text
-Dashboard/
-  Dashboard.exe
-  mihomo/mihomo.exe
-  mihomo/config.yaml
-  sing-box/sing-box.exe
-  sing-box/config.json
-```
+- **从 1.x 升级到 2.x 请解压到新目录并重新配置。** 旧设置、历史、背景图片和启动项不会自动迁移；保留旧目录作为备份。
+- 更新 2.x 时，完全退出程序后覆盖应用文件，保留 `settings.json`、核心和配置文件。
+- 应用版本变化会清空连接历史、本地背景图片等浏览器数据；已保存的界面偏好会恢复。旧缓存首次切换到当前策略时也会重置一次。
+- Secret 受 Windows 当前用户保护。换用户后无法解密时，在 Core 页面重新填写并保存。
+- Dashboard 更新会打开下载页，由你手动替换。mihomo 可通过核心接口升级；sing-box 内置升级使用 **reF1nd Windows amd64v3** 构建，其他版本可自行升级。
+- sing-box 通过 Clash API 管理，桌面 TUN 栈只读；不支持 native API、Tools 或 Terminal。TUN 睡眠唤醒后的自动恢复尚未验证。
+- 本地界面使用端口 `33291`，被占用时无法启动。自启任务存在归属冲突时不会覆盖，请检查已有任务。
 
-在 Core 页面选择要编辑的核心槽，填写 exe/config/API/Secret 并保存。两套草稿独立；Windows 开关不会顺带保存未提交核心字段。文件选择只回填草稿。启动或重启需要提权时会请求 UAC。
+遇到问题可查看 `resources/logs`；需要详细日志时，以 `Dashboard.exe --diagnostic-log` 启动。
 
-mihomo 必须配置 `external-controller`；sing-box 使用 `experimental.clash_api.external_controller`。例如 API 地址为 `http://127.0.0.1:9090`，Secret 与内核配置一致。进程启动与 API 就绪是不同状态；API 未就绪时可修正地址/凭证并重试。
+开发与维护说明见[维护约定](docs/maintenance.md)。
 
-## 功能和边界
-
-- 一个活动内核、两份独立 profile，支持启动、停止、重启、切换、PID/输出日志。
-- Core 内嵌设置；代理、连接、概览、规则、日志、主题、标签、测速、当前格式的背景/历史和偏好导入导出。
-- 托盘、窗口拖拽/缩放/最大化，关闭到托盘；轻量模式默认隐藏 60 秒后释放 WebView，提前重开取消释放。
-- view 挂起/释放前等待偏好、历史及图片读取/解码/提交；退出未确认保存时给出反馈，不把发送消息当成已经落盘。提权前先完成保存/退出确认，失败或取消不关闭旧宿主。
-- 当前用户计划任务 `\Dashboard\Autostart` 登录后约 5 秒静默启动。写入/删除前核对用户、exe 和工作目录；同名任务属于其他用户/目录或无法确认归属时拒绝操作，不强制覆盖，也不迁移旧注册表 Run 项。退出会等待已接受的自启变更完成并保存结果，因此系统任务处理较慢时退出也会延后。
-- mihomo 升级通过运行中核心的 `/upgrade`；sing-box 内置升级仅选择 reF1nd Windows amd64v3 构建。官方版/其他 fork 用户如不希望替换为该构建，应自行升级。
-- sing-box 有有效发布摘要时验证 SHA256；没有摘要时在执行候选/替换前要求明确确认。下载、解压、版本验证、备份/原子替换有边界。运行中 sing-box 升级后须在有界探测内确认新进程 API 就绪才报告成功；启动或探测失败时恢复原文件并尝试重启原内核。
-- Dashboard 应用更新只检查 Release 并打开下载页，不自动替换 Dashboard.exe。
-- 未经可靠验证的旧 TUN 睡眠唤醒自动重启逻辑已撤下；自动恢复需另行实现和验证，目前不宣称已解决。
-- 当前桌面版没有 sing-box native API / Tools / Terminal 等功能。浏览器 Clash 预览仍可用，但不具备本机宿主权限。
-- UI 保持 `http://127.0.0.1:33291/`，端口占用明确报错。HTTPS 虚拟主机映射会阻止现有明文远端 API，本版本未通过关闭浏览器安全来规避它。
-
-同格式覆盖更新：完全退出，覆盖应用包文件后重开，不删除整个目录。包不包含 settings.json、profile、核心、日志。基础日志在 `resources/logs`；可用 `--diagnostic-log` 开启详细诊断，日志队列和文件轮转均有界。
-
-## 开发与验证
-
-需要 **PowerShell 7**（`pwsh`）、.NET 9 SDK 和可用的 pnpm 启动器。Node **24** 的确切版本由根目录 `.node-version` 声明，pnpm **11.20.0** 由 `dashboard-src/package.json` 的 `packageManager` 声明。脚本在前端目录检查并使用这些版本；当前 Node 不匹配时，通过 pnpm 的共享 runtime 缓存解析对应版本，不改全局 Node 或额外创建项目工具链副本。安装保留 `--frozen-lockfile`，store/cache 遵循 pnpm 的正常配置，不覆盖为项目路径。脚本会显示实际工具路径、版本和 store。
-
-构建和测试脚本只支持 PowerShell 7；运行打包后的 Dashboard 不需要 PowerShell。两个应用入口按目的二选一，不要先完整 Check 再重复 Release：
-
-```powershell
-# 安装依赖、类型检查、构建、宿主测试及真实 JSON fixture、前端测试
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1
-
-# 对本次输入重新检查，再发布、核对资源与 ZIP；不信任旧产物
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\create-release.ps1
-```
-
-发布目录 `artifacts/releases/` 只放 ZIP；每个包的输入清单与验证摘要放在 `artifacts/verification/<包名>/`，不需要复制到安装目录。相同包名可直接重新生成，不再为每次试编译创建新名称。历史候选可归档到 `artifacts/archive/`。
-
-项目自己创建的测试目录统一在 `.tmp/tests/<运行标识>/<用例标识>/`，临时调查和验证副本放 `.tmp/experiments/`，日志、截图、wire fixture 等放 `.tmp/reports/`。测试目录由共享辅助类管理，先释放自建浏览器/进程，再有限重试清理；清理失败会记录路径并报告错误。生产程序的系统 TEMP、核心同盘替换暂存和备份策略不在此规则内，也不修改全局 TEMP/TMP。
-
-日常修改先运行相关测试；手动运行前端命令时先选择 `.node-version` 对应的 Node。需要前端 wire fixture 时先运行宿主测试。UI 修改加跑相关 WebView 测试即可；定稿后再执行一次 Release。`check.ps1` 默认 `-Scope Application`；文档/工具修改运行 `pwsh -NoProfile -File .\tools\check.ps1 -Scope Maintenance`，需要两类检查时用 `-Scope All`。CI 分别选择应用与维护范围，普通应用检查不重复维护检查。
-
-`check.ps1 -IncludeWebViewIntegration` 增加真实 WebView/生产窗口测试，包含闲置回收、取消和重新打开：测试核对生产默认60秒，再加速真实定时器验证，不实际等待一分钟。真实核心验证需显式准备只用于测试的核心：
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\PrepareValidationCores.ps1
-$env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/tests/fixtures/validation-cores).Path
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
-```
-
-正式候选直接运行 `create-release.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration`，复用上述测试核心；无需先再跑一次 Check，也不再需要 `-IncludeSlowIntegration`。同一入口完成构建、回归和打包，并输出各阶段耗时。
-
-准备脚本仅下载并校验 GitHub 发布摘要，不更改系统配置。真实核心测试使用临时目录、无 TUN/代理监听的最小配置，不接管用户核心。
-
-在上面的完整检查命令中增加 `-IncludePerformanceIntegration`，可运行独立测试宿主中的真实 WebView 固定负载测量（3 轮，100/1000/10000 条合成连接）。报告写入 `.tmp/reports/performance-v2/desktop.json`；它包含测试宿主开销，不是物理显示器帧率或纯 Dashboard.exe 内存。局部计算基准可在 `dashboard-src/` 下运行 `node.exe node_modules/vitest/vitest.mjs run --config bench/vitest.config.ts`。
-
-内部构建/图标/资源工具在 `tools/internal/`，无需手工拼接执行。前端资源从 `dashboard-src/dist/` 生成到 `resources/dashboard/`，不入 Git；没有 UI 资源时 .NET 构建会明确失败。前端 wire 测试读取本次 .NET 测试生成的 `.tmp/reports/bridge-fixtures-v2/`，不要用旧 fixture 冒充当前协议验证。
-
-自动检查和 ZIP 成功不等于手工系统场景全部通过；验收边界见[系统验证边界](docs/maintenance.md#system-boundaries)。项目版本、InformationalVersion 和正式 Release tag 必须一致。
-
-## 维护文档
-
-长期规则统一在[维护约定](docs/maintenance.md)。上游跟进使用同一个 `tools/review-upstream.ps1` 入口形成计划、核对实施结果与基线推进；准确基线、路径和持续待办在唯一登记 `docs/upstream/ownership.json`。完成记录校验不等于实际验证通过或授权发布。
-
-- [产品与 Core 工作流](docs/maintenance.md#desktop-shell)、[配置与持久化](docs/maintenance.md#preferences)。
-- [视觉与已接受的 UI 选择](docs/maintenance.md#desktop-visuals)。
-- [当前上游取舍与跟进流程](docs/maintenance.md#local-tooling)。
-- [验证与产物](docs/maintenance.md#verification)、[系统验证边界](docs/maintenance.md#system-boundaries)。
-
-MIT License；内置前端原版权见 `dashboard-src/LICENSE`。
+MIT License；上游前端版权见 [dashboard-src/LICENSE](dashboard-src/LICENSE)。

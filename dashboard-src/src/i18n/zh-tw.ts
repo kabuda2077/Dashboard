@@ -150,6 +150,9 @@ const zhTW: LANG_MESSAGE = {
   upgradeToAlpha: '升級到 Alpha',
   updateGeoDatabase: '更新GEO',
   tunMode: 'Tun 模式',
+  tunStack: 'TUN 協定堆疊',
+  tunStackHelp: '切換協定堆疊會重建 TUN，可能中斷連線。',
+  tunStackUpdateFailed: 'TUN 協定堆疊切換未獲確認，請檢查目前狀態與核心日誌。',
   truncateProxyName: '截斷節點名稱',
   disableProxiesPageTextSelect: '禁用代理頁文字選取',
   sourceIPLabels: '源IP標籤',
@@ -288,9 +291,6 @@ const zhTW: LANG_MESSAGE = {
   moreSettings: '更多設定',
   customIcon: '自訂圖示',
   dropOrClickUpload: '拖曳圖片或輸入 URL',
-  disablePullToRefresh: '禁用下拉重新整理',
-  disablePullToRefreshTip:
-    '下拉重新整理和虛擬滾動的組件有時會有衝突，如果你在上下滾動的時候經常卡頓或者誤觸發下拉重新整理，可以嘗試禁用下拉重新整理',
   keyboardShortcuts: '快捷鍵設定',
   keyboardShortcutsTip:
     '點擊輸入框後可直接按單鍵或組合鍵設定快捷鍵，按 Backspace 或 Delete 可清空。',
@@ -346,6 +346,17 @@ const zhTW: LANG_MESSAGE = {
   manageBackends: '管理後端',
   noBackendYet: '還沒有後端',
   backendConnectionFailed: '後端連接失敗，請檢查配置資訊',
+  diagnosisUnauthorized: '驗證失敗（HTTP 401），請檢查 API 金鑰（Secret）',
+  diagnosisTimeout: '後端沒有在規定時間內回應',
+  diagnosisBadEndpoint: '位址能連上，但對面不是這個 API，或者路徑寫錯了',
+  diagnosisOffline: '瀏覽器目前處於離線狀態，請檢查網路連線',
+  diagnosisCorsBlocked:
+    '後端能連上，但瀏覽器無法讀取回應。請檢查後端是否放行當前來源（CORS），在核心設定裡設置 external-controller-cors',
+  diagnosisMixedContent:
+    '瀏覽器攔下了這次請求：HTTPS 頁面不能存取 HTTP 後端。請用 HTTP 開啟面板，或者給 API 配上 HTTPS',
+  diagnosisMixedContentOrUnreachable:
+    '後端連不上 —— 也可能後端是好的，只是瀏覽器不允許 HTTPS 頁面存取 HTTP 後端；可以試著用 HTTP 開啟面板',
+  diagnosisUnreachable: '後端連不上，請檢查位址與連接埠是否正確、核心是否在執行',
   backendConfigSaved: '後端配置儲存成功',
   saveFailed: '儲存失敗',
   checking: '檢查中...',

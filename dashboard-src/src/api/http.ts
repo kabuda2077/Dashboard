@@ -9,7 +9,7 @@ import {
   markBackendUnauthorized,
 } from '@/helper/backendSession'
 import { showNotification } from '@/helper/notification'
-import { markRequestErrorHandled } from '@/helper/requestError'
+import { markRequestErrorHandled } from '@/helper/request-error'
 import { getUrlFromBackend } from '@/helper/utils'
 import { activeBackend, activeUuid } from '@/store/setup'
 import axios, { AxiosError, CanceledError } from 'axios'
@@ -50,7 +50,11 @@ axios.interceptors.request.use(
       }
       if (!config.timeout || !Number.isFinite(config.timeout) || config.timeout < 0) config.timeout = 30000
       config.baseURL = getUrlFromBackend(activeBackend.value)
-      config.headers['Authorization'] = 'Bearer ' + activeBackend.value.password
+      if (activeBackend.value.password) {
+        config.headers.set('Authorization', 'Bearer ' + activeBackend.value.password)
+      } else {
+        config.headers.delete('Authorization')
+      }
     }
     return config
   },

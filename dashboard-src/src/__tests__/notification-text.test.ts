@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { showHostNotice } from '@/helper/hostNotice'
 import { initNotification } from '@/helper/notification'
-import { notifyRequestError } from '@/helper/requestError'
+import { notifyRequestError } from '@/helper/request-error'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {

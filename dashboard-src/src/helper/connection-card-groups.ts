@@ -1,6 +1,6 @@
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
 import { isSupportedConnectionField } from '@/helper/connectionFields'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { useDashboardStorage as useStorage } from '@/composables/use-storage'
 import { computed, ref, watch } from 'vue'
 
 export type ConnectionCardGroupKey =

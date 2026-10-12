@@ -17,7 +17,7 @@ vi.mock('@/store/setup', () => ({
 describe('connection history aggregation', () => {
   it('aggregates proxy-group traffic by the last chain entry', async () => {
     const { ConnectionHistoryType } = await import('@/helper/indexeddb')
-    const { aggregateConnections } = await import('@/store/connHistory')
+    const { aggregateConnections } = await import('@/store/conn-history')
     const connections = [
       { chains: ['Node A', 'Group A'], download: 100, upload: 20 },
       { chains: ['Node B', 'Group A'], download: 50, upload: 10 },

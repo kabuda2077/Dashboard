@@ -48,8 +48,8 @@
 </template>
 
 <script setup lang="ts">
-import { ctrlsBottom } from '@/composables/paddingViews'
-import { disableSwipe } from '@/composables/swipe'
+import { ctrlsBottom } from '@/composables/use-padding-for-views'
+import { disableSwipe } from '@/composables/use-swipe-router'
 import { proxyGroupList } from '@/assembly/proxies'
 import {
   activeFolderId,
@@ -58,7 +58,7 @@ import {
   folders,
   VIRTUAL_ALL,
   VIRTUAL_UNCAT,
-} from '@/store/proxyFolders'
+} from '@/store/proxy-folders'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import FolderItem from './FolderItem.vue'

@@ -1,4 +1,4 @@
-import { getConnectionGeoIPInfoSync } from '@/api/connectionGeoip'
+import { getConnectionGeoIPInfoSync } from '@/api/connection-geoip'
 import { IP_INFO_API } from '@/constant'
 import { IPInfoAPI } from '@/store/settings'
 

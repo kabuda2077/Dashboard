@@ -23,12 +23,12 @@ import {
 } from '@/helper'
 import { captureBackendSession } from '@/helper/backendSession'
 import { toSearchRegex } from '@/helper/search'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { useDashboardStorage as useStorage } from '@/composables/use-storage'
 import type { Connection } from '@/types'
 import { watchOnce } from '@vueuse/core'
 import dayjs from 'dayjs'
 import { computed, ref, shallowRef, watch } from 'vue'
-import { initAggregatedDataMap, saveConnectionHistory } from './connHistory'
+import { initAggregatedDataMap, saveConnectionHistory } from './conn-history'
 import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
@@ -36,10 +36,26 @@ import {
   connectionTableColumns,
   isConnectionCard,
   proxyChainDirection,
+  showClosedOnly,
   showFullProxyChain,
 } from './settings'
 
+export { showClosedOnly } from './settings'
+
 export const connectionTabShow = ref(CONNECTION_TAB_TYPE.ACTIVE)
+// Hot reload or an old in-memory session can still hold the retired Closed tab.
+watch(
+  connectionTabShow,
+  (tab) => {
+    if ((tab as string) !== 'closedConnections') return
+    showClosedOnly.value = true
+    connectionTabShow.value = CONNECTION_TAB_TYPE.ALL
+  },
+  { flush: 'sync', immediate: true },
+)
+export const isClosedOnlyView = computed(
+  () => connectionTabShow.value === CONNECTION_TAB_TYPE.ALL && showClosedOnly.value,
+)
 export const connectionSortType = useStorage<SORT_TYPE>(
   'config/connection-sort-type',
   SORT_TYPE.HOST,
@@ -163,16 +179,10 @@ const sortKeyFunctionMap: Record<SORT_TYPE, (connection: Connection) => string |
 }
 
 export const connections = computed(() => {
-  switch (connectionTabShow.value) {
-    case CONNECTION_TAB_TYPE.ACTIVE:
-      return activeConnections.value
-    case CONNECTION_TAB_TYPE.CLOSED:
-      return closedConnections.value
-    case CONNECTION_TAB_TYPE.ALL:
-      return closedConnections.value.concat(activeConnections.value)
-    default:
-      return activeConnections.value
-  }
+  if (connectionTabShow.value === CONNECTION_TAB_TYPE.ACTIVE) return activeConnections.value
+  return isClosedOnlyView.value
+    ? closedConnections.value
+    : closedConnections.value.concat(activeConnections.value)
 })
 
 const closedConnectionIds = computed(() => new Set(closedConnections.value.map(({ id }) => id)))

@@ -2,6 +2,8 @@
   <div :class="wrapperClass">
     <button
       class="btn btn-circle btn-sm"
+      :aria-label="$t('toggleSidebar')"
+      :aria-expanded="!isSidebarCollapsed"
       @click="isSidebarCollapsed = !isSidebarCollapsed"
     >
       <component

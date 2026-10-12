@@ -1,8 +1,8 @@
 import type { StorageLike, UseStorageOptions } from '@vueuse/core'
 import { tryOnMounted, useStorage as useVueUseStorage } from '@vueuse/core'
 import { toValue, watch, type MaybeRefOrGetter } from 'vue'
-import { isValidPreferenceValue } from './preferenceValues'
-import { notifyDashboardSettingsChanged } from './settingsChanges'
+import { isValidPreferenceValue } from '../helper/preferenceValues'
+import { notifyDashboardSettingsChanged } from '../helper/settingsChanges'
 
 // Keep native Storage identity: VueUse emits storage events for same-document
 // writes and also observes cross-document changes. A custom StorageLike wrapper

@@ -73,7 +73,7 @@
 
 <script setup lang="ts">
 import SettingItem from '@/components/settings/SettingItem.vue'
-import { disableSwipe } from '@/composables/swipe'
+import { disableSwipe } from '@/composables/use-swipe-router'
 import { sourceIPLabelList } from '@/store/settings'
 import type { SourceIPLabel } from '@/types'
 import {

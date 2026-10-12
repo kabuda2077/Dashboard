@@ -39,10 +39,10 @@ vi.mock('@/helper', () => ({ getConnectionRulePayload: () => '' }))
 vi.mock('@/helper/backendSession', () => ({
   captureBackendSession: () => ({ isCurrent: () => true }),
 }))
-vi.mock('@/helper/requestError', () => ({ notifyRequestErrorForSession: calls.notice }))
+vi.mock('@/helper/request-error', () => ({ notifyRequestErrorForSession: calls.notice }))
 vi.mock('@/helper/tooltip', () => ({ useTooltip: () => ({ showTip: calls.tip }) }))
 vi.mock('@/helper/utils', () => ({ fromNow: () => '' }))
-vi.mock('@/composables/bouncein', () => ({ useBounceOnVisible: vi.fn() }))
+vi.mock('@/composables/use-bounce-on-visible', () => ({ useBounceOnVisible: vi.fn() }))
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string, values: Record<string, unknown> = {}) =>
@@ -87,7 +87,7 @@ vi.mock('@/components/common/VirtualTable.vue', () => ({
 import { ruleProviderList, rules } from '@/assembly/rules'
 import RuleCard from '@/components/rules/RuleCard.vue'
 import RulesTable from '@/components/rules/RulesTable.vue'
-import { formatRuleHitCount, useRuleHitTooltip } from '@/composables/rules'
+import { formatRuleHitCount, useRuleHitTooltip } from '@/helper/rules'
 
 let tableColumns: ColumnDef<Rule>[]
 let columnVisibility: Record<string, boolean>
@@ -149,6 +149,21 @@ describe('shared rule hit tooltip', () => {
     expect(content.textContent).toContain('ruleLastMiss:2025-02-03 04:05:06')
     expect(content.hasAttribute('data-v-app')).toBe(false)
     expect(content.querySelector('[data-v-app]')).toBeNull()
+  })
+
+  it.each([
+    [0, '2025-01-02T03:04:05'],
+    [1, '0001-01-01T00:00:00Z'],
+    [1, 'not-a-date'],
+    [1, ''],
+    [1, undefined],
+  ])('omits invalid hit and miss times (count=%s, at=%s)', (count, at) => {
+    useRuleHitTooltip().showRuleHitTip(
+      new MouseEvent('mouseenter'),
+      rule({ extra: extra({ hitCount: count, missCount: count, hitAt: at, missAt: at }) }),
+    )
+    const content = calls.tip.mock.calls[0]![1] as HTMLElement
+    expect(content.textContent).toBe(`ruleHitCount:${count}ruleMissCount:${count}`)
   })
 
   it.each(['', undefined])(
@@ -214,6 +229,19 @@ describe('rule table statistics', () => {
     expect(container.querySelector('[data-column=hitCount]')!.textContent).toContain('01-02 03:04')
     expect(container.querySelectorAll('[data-column=hitCount]')[1]!.textContent).toBe('2')
     expect(tableColumns.some((column) => column.id === 'hitMiss')).toBe(false)
+  })
+
+  it.each([
+    [0, '2025-01-02T03:04:05'],
+    [2, '0001-01-01T00:00:00Z'],
+    [2, 'not-a-date'],
+    [2, ''],
+  ])('omits the invalid inline hit time (count=%s, at=%s)', (count, at) => {
+    rules.value = [rule({ extra: extra({ hitCount: count, hitAt: at }) })]
+    mount()
+    expect(container.querySelector('[data-column=hitCount]')!.textContent).toBe(
+      count ? String(count) : '—',
+    )
   })
 
   it('hides both statistics columns for a backend without rule extras', () => {

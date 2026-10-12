@@ -1,4 +1,4 @@
-import { confirmDialogState, resolveConfirmDialog, showConfirmDialog } from '@/helper/confirmDialog'
+import { confirmDialogState, resolveConfirmDialog, showConfirmDialog } from '@/helper/confirm-dialog'
 import { describe, expect, it } from 'vitest'
 
 describe('confirm dialog queue', () => {

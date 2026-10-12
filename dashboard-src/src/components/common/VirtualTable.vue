@@ -62,7 +62,7 @@
               v-for="virtualRow in virtualRows"
               :key="virtualRow.key.toString()"
               :style="{ height: `${estimateSize}px` }"
-              class="hover:bg-primary! hover:text-primary-content!"
+              class="hover:bg-(--table-hover)!"
               :class="[
                 virtualRow.index % 2 === 0 ? 'bg-base-150' : 'bg-base-100',
                 rowClass?.(rows[virtualRow.index].original),
@@ -113,7 +113,7 @@ import {
   type VisibilityState,
 } from '@tanstack/vue-table'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { useDashboardStorage as useStorage } from '@/composables/use-storage'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 

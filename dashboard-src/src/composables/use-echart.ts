@@ -1,8 +1,9 @@
+import { themeColorScheme, type ThemeColorScheme } from '@/helper/theme'
 import { isMiddleScreen } from '@/helper/utils'
 import { emoji, font, theme } from '@/store/settings'
 import { useElementSize } from '@vueuse/core'
 import { BarChart, LineChart, SankeyChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent } from 'echarts/components'
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { debounce } from 'lodash'
@@ -14,7 +15,6 @@ echarts.use([
   LineChart,
   SankeyChart,
   GridComponent,
-  LegendComponent,
   TooltipComponent,
   CanvasRenderer,
 ])
@@ -24,7 +24,45 @@ export type EChartOption = echarts.EChartsCoreOption
 
 type ChartElementRef = Ref<HTMLElement | null | undefined>
 
-export interface ChartTheme {
+interface ChartPalette {
+  seriesPrimary: string
+  seriesPrimaryMuted: string
+  seriesSecondary: string
+  seriesSecondaryMuted: string
+  grid: string
+  border: string
+  textMuted: string
+  text: string
+  surface: string
+}
+
+const CHART_COLOR_SCHEMES: Record<ThemeColorScheme, ChartPalette> = {
+  light: {
+    seriesPrimary: 'rgba(29, 29, 31, 0.6)',
+    seriesPrimaryMuted: 'rgba(29, 29, 31, 0.3)',
+    seriesSecondary: 'rgba(81, 104, 139, 0.75)',
+    seriesSecondaryMuted: 'rgba(71, 85, 105, 0.28)',
+    grid: 'rgba(29, 29, 31, 0.1)',
+    border: 'rgba(29, 29, 31, 0.3)',
+    textMuted: 'rgba(29, 29, 31, 0.6)',
+    text: '#1d1d1f',
+    surface: 'rgba(255, 255, 255, 0.7)',
+  },
+  dark: {
+    seriesPrimary: 'rgba(245, 245, 247, 0.6)',
+    seriesPrimaryMuted: 'rgba(245, 245, 247, 0.3)',
+    seriesSecondary: 'rgba(148, 163, 184, 0.78)',
+    seriesSecondaryMuted: 'rgba(148, 163, 184, 0.32)',
+    grid: 'rgba(245, 245, 247, 0.1)',
+    border: 'rgba(245, 245, 247, 0.3)',
+    textMuted: 'rgba(245, 245, 247, 0.6)',
+    text: '#f5f5f7',
+    surface: 'rgba(29, 29, 31, 0.7)',
+  },
+}
+
+// Topology and latency consumers still use theme token colors.
+export interface ChartTheme extends ChartPalette {
   primary30: string
   primary60: string
   info30: string
@@ -66,6 +104,7 @@ const createThemeProbe = () => {
 
 export const useChartTheme = (chartRef: ChartElementRef) => {
   const colors = reactive<ChartTheme>({
+    ...CHART_COLOR_SCHEMES[themeColorScheme.value],
     primary30: '',
     primary60: '',
     info30: '',
@@ -122,6 +161,9 @@ export const useChartTheme = (chartRef: ChartElementRef) => {
   })
 
   watch([theme, font, emoji], () => nextTick(update))
+  watch(themeColorScheme, (scheme) => Object.assign(colors, CHART_COLOR_SCHEMES[scheme]), {
+    flush: 'post',
+  })
 
   onUnmounted(() => {
     probe?.remove()

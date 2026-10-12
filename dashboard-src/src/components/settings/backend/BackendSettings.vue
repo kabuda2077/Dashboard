@@ -43,7 +43,7 @@
               class="flex min-w-0 flex-wrap items-center justify-end gap-2"
             >
               <span
-                v-if="!tunState.writable"
+                v-if="!tunState.writable && !isTunBusy"
                 class="text-base-content/60 text-xs"
               >
                 {{
@@ -60,6 +60,7 @@
                 :aria-label="$t('tunMode')"
                 :checked="tunState.enabled"
                 :disabled="!tunState.writable"
+                :aria-busy="isTunBusy"
                 @change="handlerTunModeChange"
               />
             </div>
@@ -71,6 +72,24 @@
             >
               {{ $t(unknownStateLabel) }}
             </span>
+          </div>
+          <div
+            v-if="canShowTunStack"
+            class="setting-item settings-dependent-item"
+          >
+            <div class="setting-item-label">
+              {{ $t('tunStack') }}
+              <span class="setting-item-summary">{{ $t('tunStackHelp') }}</span>
+            </div>
+            <SelectInput
+              :model-value="tunStack"
+              :options="tunStackOptions"
+              :disabled="!canWriteTun"
+              :aria-busy="isTunBusy"
+              :aria-label="$t('tunStack')"
+              class="select-sm min-w-24 shrink-0"
+              @update:model-value="handlerTunStackChange"
+            />
           </div>
           <div class="setting-item">
             <div class="setting-item-label">
@@ -238,6 +257,7 @@ import {
 } from '@/assembly/config'
 import { isSingBoxCore as isSingBox } from '@/assembly/version'
 import BackendVersion from '@/components/common/BackendVersion.vue'
+import SelectInput from '@/components/common/SelectInput.vue'
 import TopDownloadConnections from '@/components/settings/backend/TopDownloadConnections.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
 import { hasHostBridge, hostState, postHostMessage } from '@/composables/hostBridge'
@@ -248,7 +268,7 @@ import {
   getRequestErrorMessage,
   notifyRequestErrorForSession,
   runManualRequest,
-} from '@/helper/requestError'
+} from '@/helper/request-error'
 import { fetchConfigs } from '@/assembly/config'
 import { fetchProxies, flushSmartGroupWeightsAPI, hasSmartGroup } from '@/assembly/proxies'
 import { fetchRules } from '@/assembly/rules'
@@ -261,10 +281,16 @@ const {
   configStatus,
   configError,
   tunState,
+  tunStack,
+  tunStackOptions,
+  canShowTunStack,
+  canWriteTun,
+  isTunBusy,
   allowLanEnabled,
   ensureConfigLoaded,
   updateAllowLan,
   updateTunEnabled,
+  updateTunStack,
 } = useBackendRuntimeConfig()
 const unknownStateLabel = computed(() =>
   configStatus.value === 'error'
@@ -343,6 +369,11 @@ const handlerTunModeChange = async (event: Event) => {
     input.disabled = !tunState.value.writable
   }
 }
+const handlerTunStackChange = (stack: string) =>
+  runManualRequest(async () => {
+    if (await updateTunStack(stack) === false)
+      throw new Error(i18n.global.t('tunStackUpdateFailed'))
+  })
 const handlerAllowLanChange = async (event: Event) => {
   const input = event.target as HTMLInputElement
   if (typeof allowLanEnabled.value !== 'boolean') return

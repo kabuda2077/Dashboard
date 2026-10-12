@@ -19,7 +19,7 @@ import ConnectionCardList from '@/components/connections/ConnectionCardList.vue'
 import ConnectionDetails from '@/components/connections/ConnectionDetails.vue'
 import ConnectionTable from '@/components/connections/ConnectionTable.vue'
 import ConnectionCtrl from '@/components/controls/ConnectionCtrl.tsx'
-import { usePaddingForViews } from '@/composables/paddingViews'
+import { usePaddingForViews } from '@/composables/use-padding-for-views'
 import { isConnectionCard } from '@/store/settings'
 const { padding } = usePaddingForViews({
   offsetTop: 0,

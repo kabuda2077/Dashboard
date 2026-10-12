@@ -9,7 +9,7 @@ describe('keyboard shortcuts', () => {
 
   it('toggles manage hidden groups with the default H shortcut', async () => {
     const { default: router } = await import('@/router')
-    const { useKeyboard } = await import('@/composables/keyboard')
+    const { useKeyboard } = await import('@/composables/use-keyboard')
     const { manageHiddenGroup } = await import('@/store/settings')
 
     manageHiddenGroup.value = false

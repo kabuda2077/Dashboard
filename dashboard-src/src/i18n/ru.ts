@@ -145,6 +145,10 @@ const ru: LANG_MESSAGE = {
   automaticDisconnection: 'Автоматическое отключение',
   backend: 'Бэкенд',
   tunMode: 'Режим Tun',
+  tunStack: 'Стек TUN',
+  tunStackHelp: 'Смена стека пересоздаёт TUN и может прервать соединения.',
+  tunStackUpdateFailed:
+    'Смена стека TUN не подтверждена. Проверьте текущее состояние и журналы ядра.',
   upgradeCore: 'Обновить ядро до новой версии',
   upgradeCoreConfirm:
     'Обновить ядро сейчас? Ядро будет перезапущено, работа прокси ненадолго прервётся.',
@@ -296,9 +300,6 @@ const ru: LANG_MESSAGE = {
   moreSettings: 'Дополнительные настройки',
   customIcon: 'Пользовательская иконка',
   dropOrClickUpload: 'Перетащите изображение или вставьте URL',
-  disablePullToRefresh: 'Отключить свойство обновления',
-  disablePullToRefreshTip:
-    'Компоненты Pull-to-refresh и виртуальной прокрутки иногда могут конфликтовать. Если при прокрутке вверх-вниз у вас часто возникают задержки или случайные срабатывания Pull-to-refresh, попробуйте отключить Pull-to-refresh.',
   keyboardShortcuts: 'Горячие клавиши',
   keyboardShortcutsTip:
     'Нажмите на поле и затем нужную клавишу или сочетание клавиш. Для очистки используйте Backspace или Delete.',
@@ -358,6 +359,18 @@ const ru: LANG_MESSAGE = {
   manageBackends: 'Управление бэкендами',
   noBackendYet: 'Бэкендов пока нет',
   backendConnectionFailed: 'Не удалось подключиться к бэкенду, проверьте конфигурацию',
+  diagnosisUnauthorized: 'Ошибка авторизации (HTTP 401). Проверьте секрет API.',
+  diagnosisTimeout: 'Бэкенд не ответил вовремя.',
+  diagnosisBadEndpoint: 'адрес доступен, но это не тот API, либо путь указан неверно.',
+  diagnosisOffline: 'Браузер офлайн; проверьте сетевое подключение.',
+  diagnosisCorsBlocked:
+    'Бэкенд доступен, но браузер не смог прочитать ответ. Проверьте разрешение этого источника (CORS), задав external-controller-cors в конфигурации ядра.',
+  diagnosisMixedContent:
+    'Браузер заблокировал запрос: HTTPS-страница не может обращаться к HTTP-бэкенду. Откройте панель по HTTP или настройте HTTPS для API.',
+  diagnosisMixedContentOrUnreachable:
+    'Бэкенд недоступен — либо он работает, но браузер запретил HTTPS-странице обращаться к HTTP-бэкенду; попробуйте открыть панель по HTTP.',
+  diagnosisUnreachable:
+    'Бэкенд недоступен; проверьте правильность адреса и порта, а также запущено ли ядро.',
   backendConfigSaved: 'Конфигурация бэкенда успешно сохранена',
   saveFailed: 'Не удалось сохранить',
   checking: 'Проверка...',

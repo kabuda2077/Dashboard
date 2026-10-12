@@ -30,7 +30,7 @@ vi.mock('@/components/rules/RuleCard.vue', () => ({ default: { render: () => nul
 vi.mock('@/components/rules/RuleProvider.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/components/rules/RulesTable.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/components/common/VirtualScroller.vue', () => ({ default: { render: () => null } }))
-vi.mock('@/composables/paddingViews', async () => ({
+vi.mock('@/composables/use-padding-for-views', async () => ({
   usePaddingForViews: () => ({ padding: ref({}) }),
 }))
 vi.mock('@/assembly/logs', () => ({

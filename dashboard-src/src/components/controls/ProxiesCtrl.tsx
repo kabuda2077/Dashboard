@@ -11,15 +11,15 @@ import {
   updateProxyProviderAPI,
 } from '@/assembly/proxies'
 import { isSingBoxCore } from '@/assembly/version'
-import { renderProxiesPageItems } from '@/composables/proxies'
-import { isProxyNodeSearchMode, toggleProxySearchMode } from '@/composables/proxySearch'
-import { useCtrlsBar } from '@/composables/useCtrlsBar'
+import { renderProxiesPageItems } from '@/helper/proxies'
+import { isProxyNodeSearchMode, toggleProxySearchMode } from '@/helper/proxy-search'
+import { useCtrlsBar } from '@/composables/use-ctrls-bar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
 import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/request-error'
 import { getMinCardWidth } from '@/helper/utils'
 import { activeConnections } from '@/store/connections'
-import { isProxyFolderModeActive } from '@/store/proxyFolders'
+import { isProxyFolderModeActive } from '@/store/proxy-folders'
 import {
   automaticDisconnection,
   collapseGroupMap,

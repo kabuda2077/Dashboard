@@ -21,7 +21,7 @@ it('exposes only current fields and validates malformed field selections', () =>
   ])
 })
 it('new grouping validates current choices without an old-field migration', async () => {
-  const groups = await import('@/composables/connectionCardGroups')
+  const groups = await import('@/helper/connection-card-groups')
   groups.connectionCardGroupKey.value = 'invalid' as never
   expect(groups.connectionCardGroupKey.value).toBeNull()
   groups.connectionCardGroupKey.value = KEY.Rule

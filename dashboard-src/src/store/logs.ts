@@ -1,5 +1,5 @@
 import { stripAnsi } from '@/helper/ansi'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { useDashboardStorage as useStorage } from '@/composables/use-storage'
 import { ref } from 'vue'
 
 export { initLogs, isPaused, logLevel, logs, stopLogs, supportedLogLevels } from '@/assembly/logs'

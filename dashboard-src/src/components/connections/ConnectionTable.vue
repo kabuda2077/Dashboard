@@ -131,11 +131,12 @@
             v-for="virtualRow in virtualRows"
             :key="virtualRow.key.toString()"
             :style="{ height: `${virtualRow.size}px` }"
-            class="hover:bg-primary! hover:text-primary-content!"
+            class="hover:bg-(--table-hover)!"
             :class="[
               virtualRow.index % 2 === 0 ? 'bg-base-150' : 'bg-base-100',
               !isDragging ? 'cursor-pointer' : 'cursor-grabbing',
               connectionTabShow === CONNECTION_TAB_TYPE.ALL &&
+              !showClosedOnly &&
               isClosedConnection(rows[virtualRow.index].original)
                 ? 'opacity-60'
                 : '',
@@ -220,7 +221,7 @@ import {
   disconnectByIdAPI,
   getConnectionDisplayValue,
 } from '@/assembly/connections'
-import { useConnections } from '@/composables/connections'
+import { useConnections } from '@/composables/use-connections'
 import {
   CONNECTION_TAB_TYPE,
   CONNECTIONS_TABLE_ACCESSOR_KEY,
@@ -237,11 +238,13 @@ import {
 } from '@/helper'
 import { backgroundImage } from '@/helper/indexeddb'
 import { copyToClipboard } from '@/helper/clipboard'
-import { runManualRequest } from '@/helper/requestError'
+import { runManualRequest } from '@/helper/request-error'
 import {
   connectionFilter,
   connectionTabShow,
   isClosedConnection,
+  isClosedOnlyView,
+  showClosedOnly,
   renderConnections,
 } from '@/store/connections'
 import {
@@ -280,10 +283,10 @@ import {
   type SortingState,
 } from '@tanstack/vue-table'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import { useDashboardStorage as useStorage } from '@/helper/storage'
+import { useDashboardStorage as useStorage } from '@/composables/use-storage'
 import dayjs from 'dayjs'
 import { twMerge } from 'tailwind-merge'
-import { computed, h, ref, type VNode } from 'vue'
+import { computed, h, ref, watch, type VNode } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HighlightText from '../common/HighlightText.vue'
 import ProxyName from '../proxies/ProxyName.vue'
@@ -588,9 +591,7 @@ const tanstackTable = useVueTable({
         ...Object.fromEntries(
           connectionTableColumns.value
             .filter(
-              (key) =>
-                key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close ||
-                connectionTabShow.value !== CONNECTION_TAB_TYPE.CLOSED,
+              (key) => key !== CONNECTIONS_TABLE_ACCESSOR_KEY.Close || !isClosedOnlyView.value,
             )
             .map((key) => [key, true]),
         ),
@@ -666,13 +667,14 @@ const rowVirtualizerOptions = computed(() => {
   return {
     count: rows.value.length,
     getScrollElement: () => parentRef.value,
-    estimateSize: () => 36,
+    estimateSize: () => (tableSize.value === TABLE_SIZE.LARGE ? 40 : 36),
     getItemKey: (index: number) => rows.value[index]?.id ?? index,
     overscan: 24,
   }
 })
 
 const rowVirtualizer = useVirtualizer(rowVirtualizerOptions)
+watch(tableSize, () => rowVirtualizer.value.measure(), { flush: 'sync' })
 const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
 const paddingTop = computed(() => virtualRows.value[0]?.start ?? 0)
 const paddingBottom = computed(() => {

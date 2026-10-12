@@ -21,7 +21,7 @@ describe('proxy folder rules', () => {
 
   it('classifies built-in strategy and node-only groups', async () => {
     const proxies = await import('@/assembly/proxies')
-    const folders = await import('@/store/proxyFolders')
+    const folders = await import('@/store/proxy-folders')
 
     proxies.proxyGroupList.value = ['Strategy', 'NodeOnly']
     proxies.proxyMap.value = {
@@ -37,7 +37,7 @@ describe('proxy folder rules', () => {
 
   it('applies regex includes, regex excludes, and manual includes', async () => {
     const proxies = await import('@/assembly/proxies')
-    const folders = await import('@/store/proxyFolders')
+    const folders = await import('@/store/proxy-folders')
 
     proxies.proxyGroupList.value = ['NodeAlpha', 'NodeBeta', 'ManualGroup']
     proxies.proxyMap.value = {

@@ -1,5 +1,5 @@
-import { autoImportSettings, importSettingsFromUrl } from '@/helper/autoImportSettings'
-import { notifyRequestError } from '@/helper/requestError'
+import { autoImportSettings, importSettingsFromUrl } from '@/helper/auto-import-settings'
+import { notifyRequestError } from '@/helper/request-error'
 
 // Startup runs once per document, not once per App mount. Manual import remains
 // independent and keeps the existing confirmation / force behavior.

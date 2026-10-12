@@ -38,12 +38,12 @@ describe('production App desktop wiring', () => {
     vi.doMock('@/helper', () => ({ renderRoutes: ref(['core', 'proxies']) }))
     vi.doMock('@/helper/indexeddb', () => ({ backgroundImage: ref(null) }))
     vi.doMock('@/helper/backendRuntime', () => ({ startBackendRuntime: vi.fn() }))
-    vi.doMock('@/composables/useAppearanceVars', () => ({ useAppearanceVars: vi.fn() }))
+    vi.doMock('@/composables/use-appearance-vars', () => ({ useAppearanceVars: vi.fn() }))
     vi.doMock('@/components/common/ConfirmDialogHost.vue', () => ({
       default: { render: () => null },
     }))
     vi.doMock('@/helper/notification', () => ({ initNotification: vi.fn(), showNotification }))
-    vi.doMock('@/helper/autoImportSettings', () => ({
+    vi.doMock('@/helper/auto-import-settings', () => ({
       autoImportSettings: enabled,
       importSettingsFromUrl: importSettings,
     }))
@@ -88,6 +88,54 @@ describe('production App desktop wiring', () => {
     apps = apps.filter((item) => item !== app)
     press('h')
     expect(settings.manageHiddenGroup.value).toBe(true)
+  })
+
+  it('leaves document touch scrolling and overscroll unchanged with a retired saved preference', async () => {
+    localStorage.setItem('config/disable-pull-to-refresh', 'true')
+    const previousOverscroll = document.body.style.overscrollBehavior
+    document.body.style.overscrollBehavior = 'contain'
+    try {
+      const { app, root } = await mountApp()
+      const touch = (type: string, y: number) => {
+        const event = new Event(type, { bubbles: true, cancelable: true })
+        Object.defineProperty(event, 'touches', { value: [{ clientX: 100, clientY: y }] })
+        root.dispatchEvent(event)
+        return event
+      }
+      expect(document.body.style.overscrollBehavior).toBe('contain')
+      touch('touchstart', 100)
+      expect(touch('touchmove', 150).defaultPrevented).toBe(false)
+      app.unmount()
+      apps = apps.filter((item) => item !== app)
+      expect(document.body.style.overscrollBehavior).toBe('contain')
+      expect(localStorage.getItem('config/disable-pull-to-refresh')).toBe('true')
+    } finally {
+      document.body.style.overscrollBehavior = previousOverscroll
+    }
+  })
+
+  it('still applies saved fonts and desktop theme changes without synchronizing a phone theme-color', async () => {
+    localStorage.setItem('config/emoji', 'twemoji')
+    localStorage.setItem('config/font', 'SystemUI')
+    const meta = document.createElement('meta')
+    meta.name = 'theme-color'
+    meta.content = '#123456'
+    document.head.appendChild(meta)
+    try {
+      const { root } = await mountApp()
+      const settings = await import('@/store/settings')
+      const content = root.querySelector('#app-content')!
+      expect(content.classList.contains('font-SystemUI-Twemoji')).toBe(true)
+      settings.emoji.value = (await import('@/constant')).EMOJIS.NOTO_COLOR_EMOJI
+      settings.autoTheme.value = false
+      settings.defaultTheme.value = 'dark'
+      await nextTick()
+      expect(content.classList.contains('font-SystemUI-NotoEmoji')).toBe(true)
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+      expect(meta.content).toBe('#123456')
+    } finally {
+      meta.remove()
+    }
   })
 
   it('does not intercept editing controls', async () => {

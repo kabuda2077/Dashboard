@@ -2,13 +2,13 @@
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 # Check current documentation links, not historical ledgers or implementation claims.
-$required = @('docs/maintenance.md')
+$required = @('AGENTS.md', 'docs/maintenance.md')
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) {
         throw "Missing maintenance document: $relative"
     }
 }
-$documents = @('README.md', 'README.en.md') + @(Get-ChildItem (Join-Path $root 'docs') -Recurse -File -Filter *.md | ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName) })
+$documents = @('AGENTS.md', 'README.md', 'README.en.md') + @(Get-ChildItem (Join-Path $root 'docs') -Recurse -File -Filter *.md | ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName) })
 foreach ($relative in $documents) {
     $path = Join-Path $root $relative
     $text = [IO.File]::ReadAllText($path)

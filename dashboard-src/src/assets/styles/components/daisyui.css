@@ -122,6 +122,7 @@
   }
   @apply border-separate border-spacing-0;
   --table-stripe: color-mix(in oklab, var(--color-base-content) 3%, transparent);
+  --table-hover: color-mix(in oklab, var(--color-base-content) 10%, transparent);
 }
 
 /*
@@ -131,6 +132,7 @@
 @utility table-row-stripe {
   background-color: var(--table-stripe);
 }
+
 
 /*
  * 行不再是实色之后，横向固定列得自己不透明，否则滚到它下面的单元格会透出来。
@@ -146,16 +148,14 @@ tr.table-row-stripe > .pinned-td {
 }
 
 /*
- * 移动端弹窗改为底部抽屉：贴底、撑满宽度、只保留顶部圆角，高度随内容自适应。
+ * 窄布局弹窗使用底部抽屉：贴底、撑满宽度、只保留顶部圆角，高度随内容自适应。
  *
  * 压暗层用回 daisyUI 默认的 40%，不再覆写成透明 —— 压暗表达的是「这一层被禁用了」，
  * 属于交互状态而非外观偏好，所以刻意不接入 utilities/appearance.css 那套用户可调的
  * 循环（调到 0 就等于关掉了模态语义）。顺带去掉了整屏的 backdrop-blur：.modal-box
  * 自己已经有一层 backdrop-filter，在压暗层之上再模糊一次是零收益的 GPU 开销。
  *
- * 高度直接吃 daisyUI 的 inset: 0：viewport meta 上的 interactive-widget=resizes-content
- * 让软键盘弹起时 layout viewport（连带 dvh）一起收缩，抽屉自然停在键盘上方，不再需要
- * 用 JS 把 visualViewport.height 镜像成 CSS 变量。
+ * 使用 daisyUI 的 inset: 0 和视口高度约束，内容在弹层内部滚动。
  */
 @utility modal {
   @apply max-md:place-items-end;

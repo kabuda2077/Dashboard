@@ -2,8 +2,8 @@
   "schemaVersion": 2,
   "upstream": {
     "repository": "https://github.com/Zephyruso/zashboard.git",
-    "tag": "v3.27.0",
-    "revision": "98aa6e00a2217af141196f4439b91e184a55df23",
+    "tag": "e5b48b4e8fe5c727170a57444c969f01aca3fbad",
+    "revision": "e5b48b4e8fe5c727170a57444c969f01aca3fbad",
     "localPrefix": "dashboard-src/"
   },
   "historicalReference": {
@@ -21,6 +21,7 @@
     ".gitignore",
     ".node-version",
     "Dashboard.csproj",
+    "AGENTS.md",
     "LICENSE",
     "README.md",
     "README.en.md",
@@ -69,15 +70,18 @@
   "mirrors": [
     {
       "path": "dashboard-src/src/components/common/SelectInput.vue",
-      "sha256": "beadc0c986166834a3188b0bdaae212919d11ae25e8dc9afc4d73ac504789b27"
+      "sha256": "ac4f1eb1edf285df11a02c653da79965c0fdbc39d553f4e099cb5c47df428a01",
+      "revision": "e5b48b4e8fe5c727170a57444c969f01aca3fbad"
     },
     {
       "path": "dashboard-src/src/assets/styles/base/elements.css",
-      "sha256": "253c18873afa7189e195a6dcb90df48d686f6d376e92042a860ad4d8221bbf79"
+      "sha256": "83740ef598b6d2cb718332f8713a0783165fd3cda050e4dd1de82cec9bbc6a64",
+      "revision": "e5b48b4e8fe5c727170a57444c969f01aca3fbad"
     },
     {
       "path": "dashboard-src/src/assets/styles/components/tooltip.css",
-      "sha256": "020cd7ff2bdcc0424b55ab224c6c479fb2bbb8a7b75138b313647642c655b557"
+      "sha256": "020cd7ff2bdcc0424b55ab224c6c479fb2bbb8a7b75138b313647642c655b557",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
     }
   ],
   "contracts": [
@@ -93,7 +97,7 @@
       ],
       "watch": [
         "dashboard-src/src/components/common/CtrlsBar.vue",
-        "dashboard-src/src/composables/paddingViews.ts",
+        "dashboard-src/src/composables/use-padding-for-views.ts",
         "dashboard-src/src/assets/styles/*",
         "dashboard-src/package.json",
         "dashboard-src/pnpm-lock.yaml"
@@ -115,16 +119,20 @@
         "dashboard-src/src/assets/styles/*",
         "dashboard-src/src/assets/main.css",
         "dashboard-src/src/assets/images/sing-box.svg",
-        "dashboard-src/src/composables/useAppearanceVars.ts",
-        "dashboard-src/src/composables/useThemeColor.ts",
+        "dashboard-src/src/composables/use-appearance-vars.ts",
         "dashboard-src/src/helper/theme.ts",
         "dashboard-src/src/components/common/CtrlsBar.vue",
         "dashboard-src/src/components/common/WindowControls.vue",
-        "dashboard-src/src/composables/paddingViews.ts"
+        "dashboard-src/src/composables/use-padding-for-views.ts",
+        "dashboard-src/src/assets/load-fonts.ts"
       ],
       "watch": [
         "dashboard-src/src/components/common/*",
         "dashboard-src/src/components/controls/*",
+        "dashboard-src/src/views/HomePage.vue",
+        "dashboard-src/src/helper/utils.ts",
+        "dashboard-src/src/store/settings.ts",
+        "dashboard-src/src/components/settings/general/*",
         "dashboard-src/tailwind.config.ts",
         "dashboard-src/postcss.config.js",
         "dashboard-src/package.json",
@@ -141,14 +149,28 @@
       "paths": [
         "dashboard-src/src/components/common/*",
         "dashboard-src/src/components/controls/*",
-        "dashboard-src/src/composables/floatingMenu.ts",
-        "dashboard-src/src/composables/keyboard.ts",
-        "dashboard-src/src/composables/swipe.ts",
+        "dashboard-src/src/composables/use-floating-menu.ts",
+        "dashboard-src/src/composables/use-keyboard.ts",
+        "dashboard-src/src/composables/use-swipe-router.ts",
         "dashboard-src/src/composables/dialog.ts",
         "dashboard-src/src/composables/pageTransition.ts",
         "dashboard-src/src/helper/clipboard.ts",
-        "dashboard-src/src/helper/confirmDialog.ts",
-        "dashboard-src/src/helper/tooltip.ts"
+        "dashboard-src/src/helper/confirm-dialog.ts",
+        "dashboard-src/src/helper/tooltip.ts",
+        "dashboard-src/src/composables/use-bounce-on-visible.ts",
+        "dashboard-src/src/composables/use-collapse-motion.ts",
+        "dashboard-src/src/composables/use-collapse-transition.ts",
+        "dashboard-src/src/composables/use-ctrls-bar.ts",
+        "dashboard-src/src/composables/use-dialog-state.ts",
+        "dashboard-src/src/composables/use-overscroll-lock.ts",
+        "dashboard-src/src/composables/use-padding-for-views.ts",
+        "dashboard-src/src/composables/use-tooltip.ts",
+        "dashboard-src/src/composables/use-virtual-row-shift.ts",
+        "dashboard-src/src/helper/dialog.ts",
+        "dashboard-src/src/helper/keyboard.ts",
+        "dashboard-src/src/helper/padding-views.ts",
+        "dashboard-src/src/helper/page-transition.ts",
+        "dashboard-src/src/helper/virtual-row-shift.ts"
       ],
       "watch": [
         "dashboard-src/src/assets/styles/*",
@@ -159,6 +181,7 @@
         "dashboard-src/src/__tests__/segmented-control.test.ts",
         "dashboard-src/src/__tests__/clipboard.test.ts",
         "dashboard-src/src/__tests__/confirm-dialog.test.ts",
+        "dashboard-src/src/__tests__/dialog-swipe.test.ts",
         "dashboard-src/src/__tests__/tooltip-text.test.ts"
       ],
       "risk": "medium",
@@ -183,12 +206,13 @@
         "dashboard-src/src/assembly/*",
         "dashboard-src/src/helper/backend*",
         "dashboard-src/src/helper/host*",
-        "dashboard-src/src/store/setup.ts"
+        "dashboard-src/src/store/setup.ts",
+        "dashboard-src/src/helper/cache.ts"
       ],
       "watch": [
         "dashboard-src/src/views/*",
         "dashboard-src/src/components/settings/backend/*",
-        "dashboard-src/src/helper/requestError.ts",
+        "dashboard-src/src/helper/request-error.ts",
         "dashboard-src/src/constant/*"
       ],
       "checks": [
@@ -200,6 +224,8 @@
         "dashboard-src/src/__tests__/stream-lifecycle.test.ts",
         "tests/Dashboard.Tests/RealCoreIntegrationTests.cs",
         "dashboard-src/src/__tests__/backend-state-ui.test.ts",
+        "dashboard-src/src/__tests__/backend-runtime-config.test.ts",
+        "dashboard-src/src/__tests__/http-cancellation.test.ts",
         "dashboard-src/src/__tests__/core-draft.test.ts",
         "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"
       ],
@@ -211,19 +237,21 @@
       "paths": [
         "dashboard-src/src/components/settings/*",
         "dashboard-src/src/helper/dashboard*",
-        "dashboard-src/src/helper/storage.ts",
+        "dashboard-src/src/composables/use-storage.ts",
         "dashboard-src/src/helper/settings*",
         "dashboard-src/src/helper/preference*",
         "dashboard-src/src/helper/persistenceBarrier.ts",
         "dashboard-src/src/helper/backgroundUpdates.ts",
         "dashboard-src/src/helper/indexeddb.ts",
-        "dashboard-src/src/helper/autoImportSettings.ts",
+        "dashboard-src/src/helper/auto-import-settings.ts",
         "dashboard-src/src/composables/settings.ts",
         "dashboard-src/src/composables/settingsSection.ts",
         "dashboard-src/src/helper/utils.ts",
         "dashboard-src/src/store/settings.ts",
         "dashboard-src/src/i18n/*",
-        "dashboard-src/src/config/*"
+        "dashboard-src/src/config/*",
+        "dashboard-src/src/composables/use-setting-visibility.ts",
+        "dashboard-src/src/composables/use-settings-section.ts"
       ],
       "watch": [
         "dashboard-src/src/components/common/SelectInput.vue",
@@ -245,8 +273,9 @@
       "id": "notifications",
       "paths": [
         "dashboard-src/src/helper/notification.ts",
-        "dashboard-src/src/helper/requestError.ts",
-        "dashboard-src/src/helper/hostNotice.ts"
+        "dashboard-src/src/helper/request-error.ts",
+        "dashboard-src/src/helper/hostNotice.ts",
+        "dashboard-src/src/helper/connectivity.ts"
       ],
       "watch": [
         "dashboard-src/src/api/*",
@@ -265,12 +294,18 @@
       "paths": [
         "dashboard-src/src/views/ProxiesPage.vue",
         "dashboard-src/src/components/proxies/*",
-        "dashboard-src/src/composables/renderProxies.ts",
+        "dashboard-src/src/composables/use-render-proxy-list.ts",
         "dashboard-src/src/composables/proxies*",
-        "dashboard-src/src/composables/proxyGroupChain.ts",
+        "dashboard-src/src/helper/proxy-group-chain.ts",
         "dashboard-src/src/store/smart.ts",
         "dashboard-src/src/store/proxy*",
-        "dashboard-src/src/helper/proxy*"
+        "dashboard-src/src/helper/proxy*",
+        "dashboard-src/src/helper/proxy-group-traffic.ts",
+        "dashboard-src/src/helper/proxy-search.ts",
+        "dashboard-src/src/helper/proxies-scroll.ts",
+        "dashboard-src/src/helper/proxies.ts",
+        "dashboard-src/src/helper/render-proxies.ts",
+        "dashboard-src/src/store/proxies.ts"
       ],
       "watch": [
         "dashboard-src/src/assembly/proxies/*",
@@ -279,6 +314,7 @@
       ],
       "checks": [
         "dashboard-src/src/__tests__/proxy-folders.test.ts",
+        "dashboard-src/src/__tests__/proxies-content.test.ts",
         "dashboard-src/src/__tests__/provider-latency.test.ts",
         "dashboard-src/src/__tests__/proxy-request-lifecycle.test.ts"
       ],
@@ -298,12 +334,20 @@
         "dashboard-src/src/composables/connection*",
         "dashboard-src/src/composables/rules*",
         "dashboard-src/src/store/connections.ts",
-        "dashboard-src/src/store/connHistory.ts",
+        "dashboard-src/src/store/conn-history.ts",
         "dashboard-src/src/store/logs.ts",
         "dashboard-src/src/helper/connection*",
-        "dashboard-src/src/helper/sourceip.ts",
+        "dashboard-src/src/helper/source-ip.ts",
+        "dashboard-src/src/helper/reverse-dns.ts",
         "dashboard-src/src/helper/ansi.ts",
-        "dashboard-src/src/helper/topConnections.ts"
+        "dashboard-src/src/helper/topConnections.ts",
+        "dashboard-src/src/composables/use-connections.ts",
+        "dashboard-src/src/composables/use-rule-hit-tooltip.ts",
+        "dashboard-src/src/helper/dayjs.ts",
+        "dashboard-src/src/helper/geoip-chunk-store.ts",
+        "dashboard-src/src/helper/mmdb.ts",
+        "dashboard-src/src/helper/rules.ts",
+        "dashboard-src/src/store/rules.ts"
       ],
       "watch": [
         "dashboard-src/src/components/common/VirtualTable.vue",
@@ -319,6 +363,8 @@
         "dashboard-src/src/__tests__/logs-accumulator.test.ts",
         "dashboard-src/src/__tests__/stream-lifecycle.test.ts",
         "dashboard-src/src/__tests__/connection-search-scope.test.ts",
+        "dashboard-src/src/__tests__/connection-close-all.test.ts",
+        "dashboard-src/src/__tests__/connection-table-geometry.test.ts",
         "dashboard-src/src/__tests__/rules-table-tooltip.test.ts",
         "dashboard-src/src/__tests__/rules-controls.test.ts",
         "dashboard-src/src/__tests__/history-save-recovery.test.ts",
@@ -334,9 +380,10 @@
         "dashboard-src/src/views/OverviewPage.vue",
         "dashboard-src/src/components/overview/*",
         "dashboard-src/src/components/charts/*",
-        "dashboard-src/src/composables/useEChart.ts",
-        "dashboard-src/src/composables/overview.ts",
-        "dashboard-src/src/store/overview.ts"
+        "dashboard-src/src/composables/use-echart.ts",
+        "dashboard-src/src/helper/overview.ts",
+        "dashboard-src/src/store/overview.ts",
+        "dashboard-src/src/helper/sidebar-stats.ts"
       ],
       "watch": [
         "dashboard-src/src/assembly/overview/*",
@@ -375,11 +422,25 @@
         "dashboard-src/src/composables/backendListProbe.ts",
         "dashboard-src/src/composables/backendReachability.ts",
         "dashboard-src/src/composables/terminalConfig.ts",
-        "dashboard-src/src/helper/reverseDns.ts"
+        "dashboard-src/src/assets/images/dae.jpg",
+        "dashboard-src/src/components/dae/*",
+        "dashboard-src/src/api/dae*.ts",
+        "dashboard-src/src/assembly/dae.ts",
+        "dashboard-src/src/assembly/driver/dae.ts",
+        "dashboard-src/src/composables/use-backend-list-probe.ts",
+        "dashboard-src/src/composables/use-backend-reachability.ts",
+        "dashboard-src/src/composables/useThemeColor.ts",
+        "dashboard-src/src/composables/use-theme-color.ts",
+        "dashboard-src/public/apple-touch-icon.png"
       ],
       "watch": [
         "dashboard-src/src/router/*",
         "dashboard-src/src/constant/*",
+        "dashboard-src/src/App.vue",
+        "dashboard-src/src/appEntry.ts",
+        "dashboard-src/src/helper/index.ts",
+        "dashboard-src/src/helper/theme.ts",
+        "dashboard-src/index.html",
         "dashboard-src/package.json",
         "dashboard-src/pnpm-lock.yaml"
       ],
@@ -430,18 +491,7 @@
       "rule": "docs/maintenance.md#local-tooling"
     }
   ],
-  "pending": [
-    {
-      "id": "upstream-327-brand-icon",
-      "contract": "local-tooling",
-      "question": "v3.27.0 replaces the cube logo with a new block design and colors. Keep the current favicon/app/tray icons until an explicit visual comparison is accepted; see docs/maintenance.md#desktop-visuals."
-    },
-    {
-      "id": "upstream-327-mobile-overlay",
-      "contract": "proxy-experience",
-      "question": "Keep current proxy overlay transitions and browser theme-color behavior. The v3.27.0 mobile overlay/status-bar synchronization requires mobile-browser comparison before adoption; desktop WebView evidence does not establish equivalence."
-    }
-  ],
+  "pending": [],
   "knownGaps": [
     {
       "id": "system-acceptance-boundary",
@@ -449,6 +499,158 @@
       "expected": "Real UAC, logon tasks, cross-account credentials, physical DPI/touch and TUN sleep recovery are checked in an isolated system environment.",
       "observed": "Automated tests cover injected OS boundaries and isolated real WebView/core processes; no dedicated system environment was available for these manual scenarios.",
       "coverage": "Do not infer these system results from passing unit, WebView, real-core or performance suites. Follow docs/maintenance.md."
+    }
+  ],
+  "adaptations": [
+    {
+      "path": "dashboard-src/src/assembly/config/index.ts",
+      "upstreamPath": "dashboard-src/src/assembly/config/index.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/config/clash.ts",
+      "upstreamPath": "dashboard-src/src/assembly/config/clash.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/connections/accessor.ts",
+      "upstreamPath": "dashboard-src/src/assembly/connections/accessor.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/connections/clash.ts",
+      "upstreamPath": "dashboard-src/src/assembly/connections/clash.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/connections/index.ts",
+      "upstreamPath": "dashboard-src/src/assembly/connections/index.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/logs/accumulator.ts",
+      "upstreamPath": "dashboard-src/src/assembly/logs/accumulator.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/logs/clash.ts",
+      "upstreamPath": "dashboard-src/src/assembly/logs/clash.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/logs/index.ts",
+      "upstreamPath": "dashboard-src/src/assembly/logs/index.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/logs/types.ts",
+      "upstreamPath": "dashboard-src/src/assembly/logs/types.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/overview/clash.ts",
+      "upstreamPath": "dashboard-src/src/assembly/overview/clash.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/overview/index.ts",
+      "upstreamPath": "dashboard-src/src/assembly/overview/index.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/proxies/clash.ts",
+      "upstreamPath": "dashboard-src/src/assembly/proxies/clash.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/rules/clash.ts",
+      "upstreamPath": "dashboard-src/src/assembly/rules/clash.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assembly/rules/index.ts",
+      "upstreamPath": "dashboard-src/src/assembly/rules/index.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/assets/styles/components/toast.css",
+      "upstreamPath": "dashboard-src/src/assets/styles/components/toast.css",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/components/overview/ruleHitCount.ts",
+      "upstreamPath": "dashboard-src/src/components/overview/ruleHitCount.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/components/proxies/folders/folderName.ts",
+      "upstreamPath": "dashboard-src/src/components/proxies/folders/folderName.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/helper/ansi.ts",
+      "upstreamPath": "dashboard-src/src/helper/ansi.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/store/overview.ts",
+      "upstreamPath": "dashboard-src/src/store/overview.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/store/smart.ts",
+      "upstreamPath": "dashboard-src/src/store/smart.ts",
+      "revision": "98aa6e00a2217af141196f4439b91e184a55df23"
+    },
+    {
+      "path": "dashboard-src/src/helper/reverse-dns.ts",
+      "upstreamPath": "dashboard-src/src/helper/reverse-dns.ts",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/bench.mjs",
+      "upstreamPath": "dashboard-src/test/bench.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/collapse.mjs",
+      "upstreamPath": "dashboard-src/test/collapse.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/lib/cdp.mjs",
+      "upstreamPath": "dashboard-src/test/lib/cdp.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/lib/chrome.mjs",
+      "upstreamPath": "dashboard-src/test/lib/chrome.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/lib/harness.mjs",
+      "upstreamPath": "dashboard-src/test/lib/harness.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/lib/ports.mjs",
+      "upstreamPath": "dashboard-src/test/lib/ports.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/lib/static-server.mjs",
+      "upstreamPath": "dashboard-src/test/lib/static-server.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/mock-server.mjs",
+      "upstreamPath": "dashboard-src/test/mock-server.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
+    },
+    {
+      "path": "dashboard-src/test/verify.mjs",
+      "upstreamPath": "dashboard-src/test/verify.mjs",
+      "revision": "50717b02dac68425cdc5b80cb754bea768ee4fc9"
     }
   ]
 }

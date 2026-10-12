@@ -1,6 +1,6 @@
 import type { IPInfo } from '@/api/geoip'
 import { LANG } from '@/constant'
-import { geoIPChunkStore, type GeoIPFileManifest } from '@/helper/geoipChunkStore'
+import { geoIPChunkStore, type GeoIPFileManifest } from '@/helper/geoip-chunk-store'
 import { AsyncMMDBReader } from '@/helper/mmdb'
 import { geoipASNDatabaseURL, geoipCountryDatabaseURL, language } from '@/store/settings'
 import { watchDebounced } from '@vueuse/core'

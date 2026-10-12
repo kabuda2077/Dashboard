@@ -34,7 +34,7 @@
 <script lang="ts" setup>
 import WindowControls from '@/components/common/WindowControls.vue'
 import { hasHostBridge } from '@/composables/hostBridge'
-import { ctrlsBottom } from '@/composables/paddingViews'
+import { ctrlsBottom } from '@/composables/use-padding-for-views'
 import { isMiddleScreen } from '@/helper/utils'
 import { useElementBounding } from '@vueuse/core'
 import { computed, onUnmounted, ref, watch } from 'vue'
@@ -46,19 +46,18 @@ const props = defineProps<{
   pageAligned?: boolean
 }>()
 const { bottom: ctrlsBarBottom } = useElementBounding(ctrlsBarRef)
-const showWindowControls = computed(
-  () => !isMiddleScreen.value && (hasHostBridge || import.meta.env.DEV),
-)
+const showWindowControls = hasHostBridge || import.meta.env.DEV
 const ctrlsBarStyle = computed(() =>
   props.pageAligned
-    ? undefined
+    ? { paddingTop: 'env(safe-area-inset-top, 0px)' }
     : {
+        paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))',
         left: 'var(--sidebar-width, 0px)',
         transition: isMiddleScreen.value ? undefined : 'left 320ms cubic-bezier(0.34,0.1,0.2,1)',
       },
 )
 const ctrlsBarContentStyle = computed(() =>
-  showWindowControls.value
+  showWindowControls
     ? {
         maxWidth: 'calc(100% - 11rem)',
       }

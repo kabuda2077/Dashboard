@@ -5,8 +5,8 @@ describe('settings override confirmation', () => {
     vi.resetModules()
     localStorage.clear()
 
-    const settings = await import('@/helper/autoImportSettings')
-    const dialog = await import('@/helper/confirmDialog')
+    const settings = await import('@/helper/auto-import-settings')
+    const dialog = await import('@/helper/confirm-dialog')
 
     settings.skipImportSettingsConfirm.value = false
     const confirmation = settings.confirmSettingsOverride(

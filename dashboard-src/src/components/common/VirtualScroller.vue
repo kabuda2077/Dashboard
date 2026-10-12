@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { usePaddingForViews } from '@/composables/paddingViews'
+import { usePaddingForViews } from '@/composables/use-padding-for-views'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { computed, nextTick, ref } from 'vue'
 

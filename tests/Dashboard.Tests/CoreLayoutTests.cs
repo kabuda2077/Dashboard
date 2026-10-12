@@ -101,6 +101,11 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         }
                     }
                     await Until(async () => await Script("!!document.querySelector('#core-exe')") == "true");
+                    Assert.Equal("true", await Script($$"""
+                        document.documentElement.getAttribute('data-theme') === {{JsonSerializer.Serialize(theme)}} &&
+                        getComputedStyle(document.documentElement).colorScheme.includes({{JsonSerializer.Serialize(theme)}}) &&
+                        getComputedStyle(document.body).colorScheme.includes({{JsonSerializer.Serialize(theme)}})
+                        """));
                     var evidence = TestDirectory.ReportDirectory("core-layout");
                     Directory.CreateDirectory(evidence);
                     // Chinese covers sidebar geometry and desktop minimum; English covers long labels
@@ -221,17 +226,45 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         // The previous page can still have a combobox during out-in
                         // transitions. Require its DOM to leave and the new page to settle.
                         await Until(async () => await Script("!window.__previousToolbar?.isConnected && !!document.querySelector('.ctrls-bar [role=combobox]') && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
-                        var controls = await Script("JSON.stringify([...document.querySelectorAll('.ctrls-bar [role=combobox]')].map(e=>({height:e.getBoundingClientRect().height,radius:parseFloat(getComputedStyle(e).borderRadius)})))");
+                        var controls = await Script("""
+                            (() => {
+                              const bar=document.querySelector('.ctrls-bar'), root=bar.parentElement.parentElement;
+                              const probe=document.createElement('div'); probe.style.paddingTop='env(safe-area-inset-top, 0px)'; root.appendChild(probe);
+                              const inset=parseFloat(getComputedStyle(probe).paddingTop); probe.remove();
+                              return JSON.stringify({inset,paddingTop:parseFloat(getComputedStyle(root).paddingTop),top:bar.getBoundingClientRect().top,
+                                controls:[...bar.querySelectorAll('[role=combobox]')].map(e=>({height:e.getBoundingClientRect().height,radius:parseFloat(getComputedStyle(e).borderRadius)}))});
+                            })()
+                            """);
                         var json = JsonSerializer.Deserialize<string>(controls)!;
                         await File.WriteAllTextAsync(Path.Combine(evidence, $"toolbar-{route}-{language}.json"), json);
                         await CaptureScreenshot(Path.Combine(evidence, $"toolbar-{route}-{language}.png"));
                         using var measured = JsonDocument.Parse(json);
-                        Assert.Equal(route == "logs" ? 2 : 1, measured.RootElement.GetArrayLength());
-                        foreach (var control in measured.RootElement.EnumerateArray())
+                        Assert.Equal(0, measured.RootElement.GetProperty("inset").GetDouble());
+                        Assert.InRange(measured.RootElement.GetProperty("paddingTop").GetDouble(), 11.5, 12.5);
+                        Assert.InRange(measured.RootElement.GetProperty("top").GetDouble(), 11.5, 12.5);
+                        Assert.Equal(route == "logs" ? 2 : 1, measured.RootElement.GetProperty("controls").GetArrayLength());
+                        foreach (var control in measured.RootElement.GetProperty("controls").EnumerateArray())
                         {
                             Assert.InRange(control.GetProperty("height").GetDouble(), 35.5, 36.5);
                             Assert.InRange(control.GetProperty("radius").GetDouble(), 7.5, 8.5);
                         }
+                        // A narrow desktop layout keeps real window actions reachable
+                        // while preserving compact navigation and toolbar input space.
+                        form.ClientSize = new System.Drawing.Size(640, 1000);
+                        await Until(async () => await Script("innerWidth<700 && !!document.querySelector('.tab-bar') && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
+                        Assert.Equal("true", await Script("""
+                            (() => {
+                              const bar=document.querySelector('.ctrls-bar'), row=bar.parentElement;
+                              const buttons=[...row.querySelectorAll('button')].filter(e=>['最小化','最大化','还原','关闭'].includes(e.getAttribute('aria-label')));
+                              const br=bar.getBoundingClientRect();
+                              return buttons.length===3 && buttons.every(e=>{
+                                const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+                                return r.width>0 && r.left>=br.right-1 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight && !!hit && (hit===e || e.contains(hit));
+                              });
+                            })()
+                            """));
+                        form.ClientSize = new System.Drawing.Size(1360, 1000);
+                        await Until(async () => await Script("innerWidth>1300 && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
                     }
                     // Visiting the real proxies page must not bypass the stopped-session gate.
                     Assert.Equal(0, api.Requests.GetValueOrDefault("/proxies"));
@@ -255,12 +288,31 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         };
                         View()!.CoreWebView2.PostWebMessageAsJson(HostBridgeJson.Serialize(new { protocolVersion = 2, type = "state", state = state with { Runtime = runtime } }));
                     }
-                    async Task RecordBackendState(string name)
+                    var stackLabel = language == "zh-CN" ? "TUN 协议栈" : "TUN stack";
+                    var stackHelp = language == "zh-CN" ? "切换协议栈会重建 TUN，可能中断连接。" : "Changing the stack rebuilds TUN and may interrupt connections.";
+                    async Task<string> RecordBackendState(string name)
                     {
                         await Until(async () => await Script("!document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
-                        var json = await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'); return {text:root.innerText,controls:[...root.querySelectorAll('input[type=checkbox]')].map(e=>({label:e.getAttribute('aria-label'),checked:e.checked,disabled:e.disabled}))} })()");
+                        var json = await Script($$"""
+                            (() => {
+                              const root=document.querySelector('#core-settings-backendSettings');
+                              const select=[...root.querySelectorAll('[role=combobox]')].find(e=>e.getAttribute('aria-label')==={{JsonSerializer.Serialize(stackLabel)}});
+                              const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+                              let stack=null;
+                              if (select) {
+                                const row=select.closest('.setting-item'),label=row.querySelector('.setting-item-label'),help=label.querySelector('.setting-item-summary');
+                                const card=row.closest('.settings-grid'),r=rect(row),c=rect(card),s=rect(select),l=rect(label),h=rect(help);
+                                stack={value:select.textContent.trim(),disabled:select.disabled,label:label.textContent.trim(),help:help.textContent.trim(),row:r,select:s,labelRect:l,helpRect:h,
+                                  bounded:r.left>=c.left-1 && r.right<=c.right+1 && s.left>=r.left-1 && s.right<=r.right+1 && l.right<=s.left+1 && h.right<=s.left+1 &&
+                                    [s,l,h].every(box=>box.top>=r.top-1 && box.bottom<=r.bottom+1) && row.scrollWidth<=row.clientWidth+1 && label.scrollWidth<=label.clientWidth+1 && help.scrollWidth<=help.clientWidth+1 &&
+                                    r.top>=0 && r.bottom<=innerHeight};
+                              }
+                              return {text:root.innerText,stack,controls:[...root.querySelectorAll('input[type=checkbox]')].map(e=>({label:e.getAttribute('aria-label'),checked:e.checked,disabled:e.disabled}))};
+                            })()
+                            """);
                         await File.WriteAllTextAsync(Path.Combine(evidence, $"backend-{name}-{language}.json"), json);
-                        await CaptureScreenshot(Path.Combine(evidence, $"backend-{name}-{language}.png"));
+                        await CaptureScreenshot(Path.Combine(evidence, $"backend-{name}-{language}.png"), representative: name.StartsWith("tun-stack-640", StringComparison.Ordinal));
+                        return json;
                     }
                     api.ConfigStatusCode = 404; // permanent read failure; no background retry races
                     api.ConfigResponse = new { message = "fixture API denied <img src=x>" };
@@ -276,6 +328,35 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     Assert.True(api.Requests.GetValueOrDefault("/configs") > readsBeforeRetry);
                     Assert.Equal("true", await Script("[...document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]')].every(e=>!e.checked&&!e.disabled)"));
                     await RecordBackendState("recovered");
+                    if (!baselineEvidence)
+                    {
+                        api.ConfigResponse = new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false, stack = "System" } };
+                        SendBackendState();
+                        await Until(async () => await Script("!!document.querySelector('#core-settings-backendSettings .settings-dependent-item [role=combobox]:not(:disabled)')") == "true");
+                        foreach (var width in new[] { 1500, 640 })
+                        {
+                            form.Size = new System.Drawing.Size(width, 1000);
+                            await Until(async () => await Script($"innerWidth==={width}") == "true");
+                            await Script("document.querySelector('#core-settings-backendSettings .settings-dependent-item').scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+                            var json = await RecordBackendState($"tun-stack-{width}");
+                            using var measured = JsonDocument.Parse(json);
+                            var stack = measured.RootElement.GetProperty("stack");
+                            Assert.Equal("system", stack.GetProperty("value").GetString());
+                            Assert.False(stack.GetProperty("disabled").GetBoolean());
+                            Assert.Contains(stackLabel, stack.GetProperty("label").GetString());
+                            Assert.Equal(stackHelp, stack.GetProperty("help").GetString());
+                            Assert.True(stack.GetProperty("bounded").GetBoolean(), json);
+                            foreach (var box in new[] { "select", "labelRect", "helpRect" })
+                            {
+                                Assert.True(stack.GetProperty(box).GetProperty("width").GetDouble() > 0, json);
+                                Assert.True(stack.GetProperty(box).GetProperty("height").GetDouble() > 0, json);
+                            }
+                        }
+                        form.ClientSize = new System.Drawing.Size(1360, 1000);
+                        api.ConfigResponse = null;
+                        SendBackendState();
+                        await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2 && !document.querySelector('#core-settings-backendSettings .settings-dependent-item [role=combobox]')") == "true");
+                    }
                     if (language == "en-US")
                     {
                         // Feed real connection frames through each core's session; measure the
@@ -353,6 +434,18 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         var expected = enabled ? "true" : "false";
                         await Until(async () => await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'), inputs=root.querySelectorAll('input[type=checkbox]'); return inputs.length===1 && inputs[0].disabled && inputs[0].checked===" + expected + " && !!root.querySelector('[role=alert]') })()") == "true");
                         await RecordBackendState("read-only-" + expected);
+                        if (!baselineEvidence)
+                        {
+                            api.ConfigStatusCode = 200;
+                            api.ConfigResponse = new Dictionary<string, object> { ["allow-lan"] = false, ["tun"] = new { enable = !enabled, stack = "Mixed" } };
+                            SendBackendState(enabled);
+                            await Until(async () => await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'), inputs=root.querySelectorAll('input[type=checkbox]'); return inputs.length===2 && inputs[0].disabled && inputs[0].checked===" + expected + " && !root.querySelector('[role=alert]') })()") == "true");
+                            var json = await RecordBackendState("read-only-reported-stack-" + expected);
+                            using var measured = JsonDocument.Parse(json);
+                            Assert.Equal(JsonValueKind.Null, measured.RootElement.GetProperty("stack").ValueKind);
+                            Assert.True(measured.RootElement.GetProperty("controls")[0].GetProperty("disabled").GetBoolean());
+                            Assert.Equal(enabled, measured.RootElement.GetProperty("controls")[0].GetProperty("checked").GetBoolean());
+                        }
                     }
                     foreach (var status in new[] { "unauthorized", "unreachable" })
                     {
@@ -538,12 +631,44 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             await RecordPilot("rules-640-populated");
                         }
 
+                        api.Rows = 100;
                         await Script("location.hash='#/connections'; true");
                         await Until(async () => await Script("!!document.querySelector('.ctrls-bar input[placeholder*=Regex]') && !!document.querySelector('table tbody') && document.querySelector('table tbody').textContent.includes('fixture.example')") == "true");
                         foreach (var width in new[] { 1500, 640 })
                         {
                             form.ClientSize = new System.Drawing.Size(width, 1000);
                             await Until(async () => await Script(width == 1500 ? "innerWidth>1400 && !!document.querySelector('.ctrls-search')" : "innerWidth<700 && !document.querySelector('.ctrls-search')") == "true");
+                            if (!baselineEvidence)
+                            {
+                                foreach (var (size, expectedHeight) in new[] { ("small", 36), ("large", 40) })
+                                {
+                                    await Script($$"""
+                                        (() => { const key='config/connection-table-size',oldValue=localStorage.getItem(key),value={{JsonSerializer.Serialize(size)}};
+                                          localStorage.setItem(key,value);window.dispatchEvent(new StorageEvent('storage',{key,oldValue,newValue:value,storageArea:localStorage}));return true; })()
+                                        """);
+                                    await RestorePilotSessionAfterPreferenceSave();
+                                    await Until(async () => await Script("[...document.querySelectorAll('table tbody tr')].filter(r=>r.cells.length>1).length>=2") == "true");
+                                    var beforeScroll = await RecordPilot($"connections-{width}-{size}-rows");
+                                    AssertConnectionDensity(beforeScroll, expectedHeight);
+                                    await Script("(() => { const scroll=document.querySelector('table').closest('.overflow-auto');scroll.scrollTop=800;return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))); })()");
+                                    await Until(async () => await Script("document.querySelector('table').closest('.overflow-auto').scrollTop>0 && [...document.querySelectorAll('table tbody tr')].filter(r=>r.cells.length>1).length>=2") == "true");
+                                    var afterScroll = await RecordPilot($"connections-{width}-{size}-scrolled");
+                                    AssertConnectionDensity(afterScroll, expectedHeight);
+                                    using (var measured = JsonDocument.Parse(afterScroll))
+                                        Assert.True(measured.RootElement.GetProperty("scrollState").GetProperty("top").GetDouble() > 0, afterScroll);
+                                    Assert.Equal("true", await Script("""
+                                        (() => { const table=document.querySelector('table'),scroll=table.closest('.overflow-auto').getBoundingClientRect(),header=table.querySelector('thead').getBoundingClientRect();
+                                          const cell=[...table.querySelectorAll('tbody tr')].filter(r=>r.cells.length>1).flatMap(r=>[...r.cells]).find(c=>{
+                                            const rect=c.getBoundingClientRect();return c.textContent.includes('fixture.example') && rect.top>=header.bottom && rect.bottom<=Math.min(scroll.bottom,innerHeight);});
+                                          cell?.setAttribute('data-density-cell','');return !!cell; })()
+                                        """));
+                                    await Pointer("[data-density-cell]");
+                                    await Until(async () => await Script("!!document.querySelector('.modal-open [id=dialog-title]') && document.querySelector('.modal-open').textContent.includes('fixture.example')") == "true");
+                                    await Pointer(".modal-open button[aria-label=close]");
+                                    await Until(async () => await Script("!document.querySelector('.modal-open')") == "true");
+                                    await Script("document.querySelector('table').closest('.overflow-auto').scrollTop=0; true");
+                                }
+                            }
                             var searchMetrics = await RecordPilot($"connections-{width}-visible-scope", PilotSearchMeasure);
                             if (baselineEvidence) continue;
                             using (var metrics = JsonDocument.Parse(searchMetrics))
@@ -581,6 +706,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         {
                             form.ClientSize = new System.Drawing.Size(1500, 1000);
                             await Until(async () => await Script("innerWidth>1400") == "true");
+                            await Script("document.querySelector('table').closest('.overflow-auto').scrollTop=800; new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
                             await Pointer(".ctrls-bar button[role=combobox]");
                             await Until(async () => await Script("!!document.querySelector('[role=listbox] [role=option]')") == "true");
                             var stackMetrics = await RecordPilot("connections-1500-source-popover", PilotStackMeasure, representative: true);
@@ -588,6 +714,60 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                                 Assert.True(metrics.RootElement.GetProperty("aboveHeader").GetBoolean(), stackMetrics);
                             await Pointer(".ctrls-bar button[role=combobox]");
                             await Until(async () => await Script("!document.querySelector('[role=listbox]')") == "true");
+                            // The adopted two-tab filter exposes a real keyboard menu and restores focus.
+                            Assert.Equal("2", await Script("document.querySelectorAll('[role=tab]').length"));
+                            await Pointer("[role=tab][aria-haspopup=menu]");
+                            await Pointer("[role=tab][aria-haspopup=menu]");
+                            await Until(async () => await Script("document.querySelector('[role=tab][aria-haspopup=menu]')?.getAttribute('aria-expanded')==='true' && document.querySelectorAll('[role=menuitemradio]').length===2") == "true");
+                            Assert.Equal("true", await Script("document.activeElement?.getAttribute('role')==='menuitemradio'"));
+                            await Until(async () => await Script("(() => {const e=document.querySelector('[role=menu]');return e && getComputedStyle(e).opacity==='1' && !e.className.includes('floating-menu-enter')})()") == "true");
+                            const string connectionMenuMeasure = "(() => {const e=document.querySelector('[role=menu]'),r=e.getBoundingClientRect(),p=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {text:e.textContent,opacity:getComputedStyle(e).opacity,reachable:e.contains(p),left:r.left,top:r.top,right:r.right,bottom:r.bottom};})()";
+                            var menuJson = await RecordPilot("connections-all-filter-menu", connectionMenuMeasure, representative: true);
+                            using (var menu = JsonDocument.Parse(menuJson))
+                                Assert.True(menu.RootElement.GetProperty("reachable").GetBoolean(), menuJson);
+                            await Script("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); true");
+                            await Until(async () => await Script("!document.querySelector('[role=menu]') && document.activeElement?.getAttribute('aria-haspopup')==='menu'") == "true");
+
+                            form.ClientSize = new System.Drawing.Size(640, 1000);
+                            await Script("location.hash='#/proxies'; true");
+                            await Until(async () => await Script("!!document.querySelector('.proxy-group-card') && !!document.querySelector('.tab-bar')") == "true");
+                            Assert.Equal("true", await Script("[...document.querySelectorAll('.tab-bar-item')].every(e=>e.getAttribute('aria-label') && e.getBoundingClientRect().width>0) && document.querySelector('.tab-bar-item[aria-current=page]')?.getAttribute('aria-label')!==null"));
+                            await Script("(() => {const e=document.querySelector('[data-group-name]:has(> .proxy-group-card)'); e.focus(); e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true;})()");
+                            await Until(async () => await Script("document.querySelector('.proxy-group-card[role=dialog]')?.getAttribute('aria-modal')==='true' && document.querySelector('.proxy-group-card-content')?.style.opacity==='1'") == "true");
+                            Assert.Equal("true", await Script("document.querySelector('.proxy-group-card[role=dialog]').contains(document.activeElement)"));
+                            await Script("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true})); true");
+                            Assert.Equal("true", await Script("document.querySelector('.proxy-group-card[role=dialog]').contains(document.activeElement)"));
+                            const string overlayMeasure = "(() => {const e=document.querySelector('.proxy-group-card[role=dialog]'),r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight,glass:e.classList.contains('overlay-glass'),focus:e.contains(document.activeElement)};})()";
+                            var overlayJson = await RecordPilot("proxy-overlay-640", overlayMeasure, representative: true);
+                            using (var overlay = JsonDocument.Parse(overlayJson))
+                            {
+                                Assert.True(overlay.RootElement.GetProperty("glass").GetBoolean(), overlayJson);
+                                var viewportWidth = overlay.RootElement.GetProperty("width").GetDouble();
+                                var viewportHeight = overlay.RootElement.GetProperty("height").GetDouble();
+                                Assert.InRange(overlay.RootElement.GetProperty("left").GetDouble(), 0, viewportWidth);
+                                Assert.InRange(overlay.RootElement.GetProperty("right").GetDouble(), 0, viewportWidth);
+                                Assert.InRange(overlay.RootElement.GetProperty("top").GetDouble(), 0, viewportHeight);
+                                Assert.InRange(overlay.RootElement.GetProperty("bottom").GetDouble(), 0, viewportHeight);
+                            }
+                            form.ClientSize = new System.Drawing.Size(700, 800);
+                            await Until(async () => await Script("innerWidth>680 && innerWidth<750 && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
+                            await RecordPilot("proxy-overlay-resized", overlayMeasure, representative: true);
+                            await Script("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); true");
+                            await Until(async () => await Script("!document.querySelector('.proxy-group-card[role=dialog]') && document.activeElement?.hasAttribute('data-group-name')") == "true");
+                            // Exercise the real RouterView/Transition handoff, then a second navigation.
+                            await Script("""
+                                (() => {
+                                  const main=document.querySelector('.home-page main');
+                                  const touch=x=>new Touch({identifier:1,target:main,clientX:x,clientY:350});
+                                  const send=(name,x)=>main.dispatchEvent(new TouchEvent(name,{bubbles:true,cancelable:true,touches:name==='touchend'?[]:[touch(x)],changedTouches:[touch(x)]}));
+                                  send('touchstart',650); send('touchmove',620); send('touchmove',100); send('touchend',100);
+                                  return true;
+                                })()
+                                """);
+                            await Until(async () => await Script("location.hash==='#/connections' && document.querySelector('[role=tab]') && !document.querySelector('.home-page main > div').style.transform && !document.querySelector('.home-page main > div').style.getPropertyValue('--swipe-offset') && !document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
+                            await RecordPilot("swipe-connections-settled", PilotTableMeasure, representative: true);
+                            await Pointer(".tab-bar-item:last-child");
+                            await Until(async () => await Script("location.hash==='#/rules' && document.querySelector('table tbody')?.textContent.includes('pilot-two.example') && !document.querySelector('.home-page main > div').style.transform") == "true");
                         }
                     }
                     Assert.Empty(api.Errors);
@@ -626,6 +806,22 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
         finally { Assert.True(thread.Join(TimeSpan.FromSeconds(30))); }
     }
 
+    private static void AssertConnectionDensity(string json, int expectedHeight)
+    {
+        using var measured = JsonDocument.Parse(json);
+        var rows = measured.RootElement.GetProperty("rows").EnumerateArray().ToArray();
+        Assert.True(rows.Length >= 2, json);
+        double? previousBottom = null;
+        foreach (var row in rows)
+        {
+            Assert.InRange(row.GetProperty("rect").GetProperty("height").GetDouble(), expectedHeight - 0.5, expectedHeight + 0.5);
+            Assert.InRange(row.GetProperty("requestedHeight").GetDouble(), expectedHeight - 0.5, expectedHeight + 0.5);
+            var top = row.GetProperty("rect").GetProperty("top").GetDouble();
+            if (previousBottom.HasValue) Assert.InRange(top - previousBottom.Value, -0.5, 0.5);
+            previousBottom = row.GetProperty("rect").GetProperty("bottom").GetDouble();
+        }
+    }
+
     private const string PilotTableMeasure = """
         (() => {
           const rect=e=>{const r=e.getBoundingClientRect(); return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
@@ -634,8 +830,9 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
             route:location.hash,viewport:{width:innerWidth,height:innerHeight},theme:document.documentElement.getAttribute('data-theme'),
             tableLayout:getComputedStyle(table).tableLayout,table:rect(table),
             scroll:rect(table.closest('.overflow-auto')),
+            scrollState:{top:table.closest('.overflow-auto').scrollTop,height:table.closest('.overflow-auto').scrollHeight,clientHeight:table.closest('.overflow-auto').clientHeight},
             headers:[...table.querySelectorAll('th')].map(e=>({text:e.textContent.trim(),rect:rect(e)})),
-            rows:[...table.querySelectorAll('tbody tr')].filter(r=>r.cells.length>1).map(r=>({rect:rect(r),cells:[...r.cells].map(e=>({
+            rows:[...table.querySelectorAll('tbody tr')].filter(r=>r.cells.length>1).map(r=>({rect:rect(r),requestedHeight:parseFloat(r.style.height),cells:[...r.cells].map(e=>({
               text:e.textContent.trim(),title:e.getAttribute('title'),rect:rect(e),clipped:e.scrollWidth>e.clientWidth,
               textAlign:getComputedStyle(e).textAlign
             }))})),
@@ -689,6 +886,8 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
           const profileCard = profile.querySelector('.settings-grid'), backendCard = backend.querySelector('.settings-grid');
           const toolbar = document.querySelector('.core-toolbar');
           const cr = rect(content), pr = rect(profileCard), br = rect(backendCard), tr = rect(toolbar), or = rect(output);
+          const alignedBar=toolbar.closest('.ctrls-bar'),alignedContainer=alignedBar.parentElement,alignedRoot=alignedContainer.parentElement;
+          if (parseFloat(getComputedStyle(alignedRoot).paddingTop)!==0 || !near(parseFloat(getComputedStyle(alignedContainer).paddingTop),12)) errors.push('page-aligned zero-inset toolbar padding');
           const contentWidth = content.clientWidth - parseFloat(getComputedStyle(content).paddingLeft) - parseFloat(getComputedStyle(content).paddingRight);
           const wide = contentWidth >= 1000;
           if (!near(tr.left, pr.left)) errors.push('toolbar/profile left edge');

@@ -330,8 +330,8 @@ import {
   type HostCommand,
   type CommandResult,
 } from '@/composables/hostBridge'
-import { usePaddingForViews } from '@/composables/paddingViews'
-import { showConfirmDialog } from '@/helper/confirmDialog'
+import { usePaddingForViews } from '@/composables/use-padding-for-views'
+import { showConfirmDialog } from '@/helper/confirm-dialog'
 import {
   acceptCoreDraft,
   coreDrafts,

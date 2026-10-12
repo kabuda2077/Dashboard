@@ -1,7 +1,7 @@
 /*
  * 用户可调外观：背景不透明度与毛玻璃强度。
  *
- * 两个值由 composables/useAppearanceVars.ts 发布到 <html> 上：
+ * 两个值由 composables/use-appearance-vars.ts 发布到 <html> 上：
  *   --app-surface-alpha  表面底色的不透明度（如 90%）
  *   --app-glass          毛玻璃滤镜（如 blur(10px)；强度调到 0 时直接是 none）
  * 整组规则只在开了自定义背景图（.custom-background）时生效。
@@ -27,7 +27,6 @@
     .input,
     .select,
     .toggle,
-    .tabs,
     .base-container,
     .settings-grid,
     .floating-menu-panel,
@@ -51,7 +50,7 @@
     );
   }
 
-  :is(.bg-base-200, .dock) {
+  :is(.bg-base-200, .tab-bar) {
     background-color: color-mix(
       in oklab,
       var(--color-base-200) var(--app-surface-alpha),
@@ -81,7 +80,7 @@
     );
   }
 
-  .bg-primary:not(.tab.tab-active) {
+  .bg-primary {
     background-color: color-mix(
       in oklab,
       var(--color-primary) max(var(--app-surface-alpha), 60%),
@@ -89,12 +88,8 @@
     );
   }
 
-  .bg-primary\/85 .latency-tag {
-    background-color: color-mix(
-      in oklab,
-      var(--color-base-100) max(var(--app-surface-alpha), 90%),
-      transparent
-    );
+  .proxy-active-card .latency-tag {
+    @apply bg-base-100;
   }
 
   /*
@@ -117,11 +112,23 @@
    */
   /* prettier-ignore */
   :is(.bg-base-100, .bg-base-150, .bg-base-200, .card, .collapse, .modal-box, .base-container, .settings-grid, .floating-menu-panel, .surface):not(
-    tr, .badge, .latency-tag,
-    .custom-background :is(.bg-base-100, .bg-base-150, .bg-base-200, .card, .collapse, .modal-box, .base-container, .settings-grid, .floating-menu-panel, .surface) *
+    tr, .badge, .latency-tag, .home-page,
+    .custom-background :is(.bg-base-100, .bg-base-150, .bg-base-200, .card, .collapse, .modal-box, .base-container, .settings-grid, .floating-menu-panel, .surface):not(.home-page) *
   ),
   .glass-over-content {
+    -webkit-backdrop-filter: var(--app-glass, none);
     backdrop-filter: var(--app-glass, none);
+  }
+
+  :is(.modal-box, .tab-bar, .floating-menu-panel, .overlay-glass) {
+    --app-glass: var(--app-glass-overlay);
+    -webkit-backdrop-filter: var(--app-glass-overlay);
+    backdrop-filter: var(--app-glass-overlay);
+  }
+
+  .tab-bar {
+    -webkit-backdrop-filter: var(--app-glass-overlay) saturate(180%);
+    backdrop-filter: var(--app-glass-overlay) saturate(180%);
   }
 
   /* 横向固定列本身不上底色，自己出一层玻璃把滚过它下面的单元格糊掉 */
@@ -150,6 +157,8 @@
   .table-glass {
     position: relative;
     isolation: isolate;
+    min-height: 100%;
+    overflow-y: clip;
   }
 
   .table-glass::before {
@@ -160,6 +169,7 @@
     z-index: -1;
     height: 100dvh;
     margin-bottom: -100dvh;
+    -webkit-backdrop-filter: var(--app-glass, none);
     backdrop-filter: var(--app-glass, none);
   }
 }

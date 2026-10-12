@@ -6,8 +6,9 @@ param(
     [string]$OutputDirectory = '',
     [string]$DecisionFile = '',
     [string]$RepositoryRoot = (Join-Path $PSScriptRoot '..'),
-    [ValidateSet('Plan', 'Review', 'Result', 'Close')][string]$Phase = 'Plan',
-    [switch]$ResetResults
+    [ValidateSet('Plan', 'Review', 'Prepare', 'Complete')][string]$Phase = 'Plan',
+    [string[]]$Revisit = @(),
+    [switch]$AdvanceBaseline
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -32,6 +33,7 @@ function Get-AuditDigest {
     try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))).Replace('-', '').ToLowerInvariant() }
     finally { $hash.Dispose() }
 }
+function Copy-AuditRecord { param($Value); return ,(ConvertFrom-Json (ConvertTo-Json -InputObject $Value -Depth 60)) }
 function Get-AuditSourceSnapshot {
     $head = [string](Invoke-AuditGit $root @('rev-parse', 'HEAD'))
     $files = [string[]]@(Get-AuditPaths $root @('ls-files', '--cached', '--others', '--exclude-standard') | Sort-Object -Unique)
@@ -44,6 +46,15 @@ function Get-AuditSourceSnapshot {
     $fingerprint = @($manifest | ForEach-Object { "$($_.path)`t$($_.sha256)" })
     return [pscustomobject]@{ head = $head; files = $files; manifest = $manifest; hash = Get-AuditDigest ($head + "`n" + ($fingerprint -join "`n")) }
 }
+function Assert-NoAuditLinks {
+    param([string]$Path)
+    for ($ancestor = $Path; $ancestor; $ancestor = [IO.Path]::GetDirectoryName($ancestor)) {
+        try { $attributes = [IO.File]::GetAttributes($ancestor) }
+        catch [IO.FileNotFoundException] { continue }
+        catch [IO.DirectoryNotFoundException] { continue }
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reports and decision files must not use reparse points or symlink ancestors: $ancestor" }
+    }
+}
 function Assert-AuditOutputPath {
     param([string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
@@ -51,19 +62,14 @@ function Assert-AuditOutputPath {
         $full.StartsWith($UpstreamRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Reports and decision files must be outside the read-only upstream checkout.'
     }
-    for ($ancestor = $full; $ancestor; $ancestor = [IO.Path]::GetDirectoryName($ancestor)) {
-        try { $attributes = [IO.File]::GetAttributes($ancestor) }
-        catch [IO.FileNotFoundException] { continue }
-        catch [IO.DirectoryNotFoundException] { continue }
-        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reports and decision files must not use reparse points or symlink ancestors: $ancestor" }
-    }
+    Assert-NoAuditLinks $full
     $relative = [IO.Path]::GetRelativePath($root, $full).Replace('\', '/')
     if ($relative -eq '.' -or ($relative -notmatch '^\.\./' -and -not [IO.Path]::IsPathRooted($relative))) {
         $null = git --no-replace-objects -C $root check-ignore --no-index --quiet -- $relative
         if ($LASTEXITCODE -ne 0) { throw 'Reports and decision files inside the candidate must be in ignored output paths, such as .tmp/reports; source files are read-only.' }
     }
     foreach ($file in $startSnapshot.files) {
-        if ($full.Equals([IO.Path]::GetFullPath((Join-Path $root $file)), [StringComparison]::OrdinalIgnoreCase)) { throw 'Output includes git-visible source inputs; choose a separate ignored report directory and decision file.' }
+        if ($full.Equals([IO.Path]::GetFullPath((Join-Path $root $file)), [StringComparison]::OrdinalIgnoreCase)) { throw 'Output includes git-visible source inputs.' }
     }
 }
 function Write-AuditOutput {
@@ -71,27 +77,21 @@ function Write-AuditOutput {
     Assert-AuditOutputPath $Path
     $temporary = Join-Path ([IO.Path]::GetDirectoryName($Path)) ('.audit-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     try {
-        $Content | Set-Content -LiteralPath $temporary -Encoding utf8
+        [IO.File]::WriteAllText($temporary, $Content + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
         Assert-AuditOutputPath $Path
-        # Replace the directory entry instead of truncating an existing hard-linked source file.
+        # Replace the directory entry, so an existing hardlink cannot overwrite source.
         [IO.File]::Move($temporary, $Path, $true)
     }
     finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
 }
-function Write-ReviewJson {
-    param([string]$Name, $Value)
-    Write-AuditOutput (Join-Path $OutputDirectory $Name) (ConvertTo-Json -InputObject $Value -Depth 40)
-}
-function Read-ReviewJson {
-    param([string]$Path)
-    Assert-AuditOutputPath $Path
-    return [IO.File]::ReadAllText($Path) | ConvertFrom-Json
-}
+function Write-ReviewJson { param([string]$Name, $Value); Write-AuditOutput (Join-Path $OutputDirectory $Name) (ConvertTo-Json -InputObject $Value -Depth 60) }
+function Save-Decisions { Write-AuditOutput $DecisionFile (ConvertTo-Json -InputObject $review -Depth 60) }
+function Read-ReviewJson { param([string]$Path); Assert-AuditOutputPath $Path; return [IO.File]::ReadAllText($Path) | ConvertFrom-Json }
 function Assert-AuditGitMetadata {
     param([string]$Directory)
     $grafts = [string](Invoke-AuditGit $Directory @('rev-parse', '--git-path', 'info/grafts'))
     if (-not [IO.Path]::IsPathRooted($grafts)) { $grafts = Join-Path $Directory $grafts }
-    if (Test-Path -LiteralPath $grafts) { throw 'Git graft metadata is unsupported; remove fixture grafts before planning.' }
+    if (Test-Path -LiteralPath $grafts) { throw 'Git graft metadata is unsupported.' }
 }
 function Assert-StableSources {
     Assert-AuditGitMetadata $root
@@ -102,186 +102,345 @@ function Assert-StableSources {
 }
 function Get-PlanHash {
     param($Value, [string]$HashField = 'planInputHash')
-    $copy = $Value | ConvertTo-Json -Depth 40 | ConvertFrom-Json
+    $copy = Copy-AuditRecord $Value
     $copy.PSObject.Properties.Remove($HashField)
-    return Get-AuditDigest ($copy | ConvertTo-Json -Depth 40 -Compress)
+    return Get-AuditDigest (ConvertTo-Json -InputObject $copy -Depth 60 -Compress)
 }
 function Get-DecisionHash {
     param($Value)
-    # Reasons and dispositions are the preimplementation decision; results never refresh this hash.
-    $copy = $Value | ConvertTo-Json -Depth 40 | ConvertFrom-Json
-    $copy.PSObject.Properties.Remove('resultInputHash')
-    foreach ($batch in $copy.batches) { $batch.PSObject.Properties.Remove('result') }
-    return Get-AuditDigest ($copy | ConvertTo-Json -Depth 40 -Compress)
+    # Validation and preview history do not change the implementation decision.
+    $copy = Copy-AuditRecord $Value
+    foreach ($field in @('review', 'evidence', 'history')) { $copy.PSObject.Properties.Remove($field) }
+    return Get-AuditDigest (ConvertTo-Json -InputObject $copy -Depth 60 -Compress)
+}
+function Get-TargetDiagnostics {
+    param($Policy, [string]$Target, [string]$Base)
+    $prefix = $Policy.upstream.localPrefix
+    $basePaths = @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $Base))
+    foreach ($file in @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $Target))) {
+        $path = $prefix + $file
+        if (Test-ForkPathMatch $path @($Policy.forkOwnedPaths)) { [ordered]@{ path = $path; kind = 'fork-owned-collision' } }
+        if ($file -cnotin $basePaths) {
+            if (-not @(Get-ForkChangeIds $path $Policy).Count) { [ordered]@{ path = $path; kind = 'target-new-file-needs-contract' } }
+            if (Test-Path -LiteralPath (Join-Path $root $path)) { [ordered]@{ path = $path; kind = 'target-new-file-local-overlap' } }
+        }
+    }
 }
 function Test-ReviewBatches {
-    param($Plan, $Review)
-    if ($Review.schemaVersion -ne 3) { throw 'Unsupported decision file version.' }
-    foreach ($field in @('upstreamRevision', 'targetRevision', 'planInputHash')) {
-        if ($Review.$field -isnot [string] -or $Review.$field -cne $Plan.$field) { throw "Stale review $field; use the original immutable plan." }
-    }
-    if (@($Plan.unclassified).Count) { throw 'Unclassified local ownership remains; classify the candidate before creating a new plan.' }
-    if (@($Plan.unclassifiedDivergence).Count) { throw 'Shared divergence without contracts remains; record the behavior before creating a new plan.' }
-    Assert-ForkArray $Review.batches 'batches' -Strings:$false
+    param($Plan, $Review, [switch]$RequireResolved)
+    if ($Review.schemaVersion -ne 4 -or $Review.upstreamRevision -cne $Plan.upstreamRevision -or
+        $Review.targetRevision -cne $Plan.targetRevision -or $Review.planInputHash -cne $Plan.planInputHash) { throw 'Decision record does not match the immutable plan.' }
+    Assert-ForkArray $Review.batches 'batches'
     Assert-ForkArray $Review.overlapExceptions 'overlapExceptions'
-    $required = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($path in $Plan.requiredPaths) { $null = $required.Add($path) }
     $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $coverage = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     foreach ($batch in $Review.batches) {
         Assert-ForkText $batch.id 'batch.id'
-        if ($batch.id -cnotmatch '^[a-z][a-z0-9-]+$' -or -not $ids.Add($batch.id)) { throw "Invalid or duplicate batch ID: $($batch.id)" }
-        Assert-ForkArray $batch.paths 'batch.paths' -NonEmpty -Strings
-        if ($batch.action -cnotin @('adopt', 'adapt', 'replace-local', 'keep-local', 'defer')) { throw "Unresolved or invalid batch action: $($batch.id)" }
-        Assert-ForkText $batch.reason 'batch.reason'
-        Assert-ForkArray $batch.validation 'batch.validation' -NonEmpty -Strings
-        Assert-ForkArray $batch.dependencies 'batch.dependencies' -Strings
-        if ($batch.action -eq 'defer') { Assert-ForkText $batch.reReviewWhen 'defer.reReviewWhen' }
-        if ($batch.action -eq 'replace-local') { Assert-ForkText $batch.upstreamEquivalent 'replace-local.upstreamEquivalent' }
+        if (-not $ids.Add($batch.id)) { throw "Duplicate batch ID: $($batch.id)" }
+        if ($batch.action -cnotin @('adopt', 'adapt', 'replace-local', 'keep-local', 'defer', 'pending', 'undecided')) { throw "Invalid batch action: $($batch.id)" }
+        $question = @($Plan.pendingDecisions | Where-Object { $_.id -ceq $batch.id -and $null -eq $_.paths })
+        Assert-ForkArray $batch.paths 'batch.paths' -NonEmpty:($question.Count -eq 0) -Strings
+        $localPaths = @()
         if ($null -ne $batch.localPaths) {
             Assert-ForkArray $batch.localPaths 'batch.localPaths' -Strings
-            foreach ($path in $batch.localPaths) { Assert-ForkRelativePath $path }
+            $localPaths = @($batch.localPaths)
         }
-        $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        foreach ($path in $batch.paths) {
-            if (-not $required.Contains($path) -or -not $seen.Add($path)) { throw "Unknown or duplicate batch path: $path" }
-            if (-not $coverage.ContainsKey($path)) { $coverage[$path] = [Collections.Generic.List[string]]::new() }
-            $coverage[$path].Add($batch.id)
+        if ($question.Count) {
+            # A pathless question is resolved by choosing adoption or retaining local behavior.
+            if ($batch.action -cnotin @('pending', 'undecided', 'keep-local', 'adopt', 'defer')) { throw "Question action must be pending, keep-local, adopt or defer: $($batch.id)" }
+            if ($batch.action -in @('keep-local', 'adopt', 'defer')) { Assert-ForkText $batch.reason 'question decision reason' }
+        }
+        if ($batch.action -eq 'defer') { Assert-ForkText $batch.reason 'batch.reason'; Assert-ForkText $batch.reReviewWhen 'batch.reReviewWhen' }
+        if ($null -ne $batch.dependencies) { Assert-ForkArray $batch.dependencies 'batch.dependencies' -Strings }
+        foreach ($path in @($batch.paths) + $localPaths) {
+            Assert-ForkRelativePath $path
+            if (-not $coverage.ContainsKey($path)) { $coverage[$path] = [Collections.Generic.List[object]]::new() }
+            $coverage[$path].Add([pscustomobject]@{ id = $batch.id; action = $batch.action; local = $path -cin $localPaths })
         }
     }
-    if ($coverage.Count -ne $required.Count) { throw 'Every incoming and carried deferred path requires batch coverage.' }
-    $exceptions = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $dispositions = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+    $exceptions = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($exception in $Review.overlapExceptions) {
-        Assert-ForkText $exception.reason 'overlap.reason'
-        Assert-ForkArray $exception.batches 'overlap.batches' -NonEmpty -Strings
-        if ($exception.path -isnot [string] -or -not $coverage.ContainsKey($exception.path) -or
-            $coverage[$exception.path].Count -lt 2 -or -not $exceptions.Add($exception.path) -or
-            (@($exception.batches | Sort-Object -Unique) -join "`n") -cne (@($coverage[$exception.path] | Sort-Object) -join "`n")) { throw "Invalid overlap exception: $($exception.path)" }
-        if ($exception.action -cnotin @($Review.batches | Where-Object id -cin $exception.batches | ForEach-Object action)) { throw "Overlap must select a declared disposition: $($exception.path)" }
+        Assert-ForkRelativePath $exception.path
+        Assert-ForkText $exception.reason 'exception.reason'
+        Assert-ForkArray $exception.batches 'exception.batches' -NonEmpty -Strings
+        if (-not $coverage.ContainsKey($exception.path) -or -not $exceptions.Add($exception.path) -or
+            (@($exception.batches | Sort-Object -Unique) -join "`n") -cne (@($coverage[$exception.path].id | Sort-Object -Unique) -join "`n") -or
+            $exception.action -cnotin @($coverage[$exception.path].action)) { throw "Invalid overlap exception: $($exception.path)" }
         $dispositions[$exception.path] = $exception.action
     }
-    foreach ($path in $required) {
-        $actions = @($Review.batches | Where-Object id -cin $coverage[$path] | ForEach-Object action | Sort-Object -Unique)
-        $sameUnchangedAction = $actions.Count -eq 1 -and $actions[0] -in @('keep-local', 'defer')
-        if ($coverage[$path].Count -gt 1 -and -not $sameUnchangedAction -and -not $exceptions.Contains($path)) { throw "Batch overlap requires an explicit exception: $path" }
-        if (-not $dispositions.ContainsKey($path)) { $dispositions[$path] = ($Review.batches | Where-Object id -ceq $coverage[$path][0]).action }
+    foreach ($path in $coverage.Keys) {
+        if ($dispositions.ContainsKey($path)) { continue }
+        $actions = @($coverage[$path].action | Sort-Object -Unique)
+        # A declared local adaptation also covers that local incoming name.
+        $localActions = @($coverage[$path] | Where-Object { $_.local -and $_.action -in @('adapt', 'replace-local') } | ForEach-Object action | Sort-Object -Unique)
+        if ($actions.Count -eq 1) { $dispositions[$path] = $actions[0] }
+        elseif ($localActions.Count -eq 1 -and -not @($actions | Where-Object { $_ -notin @('keep-local', 'defer', $localActions[0]) }).Count) { $dispositions[$path] = $localActions[0] }
+        else { throw "Batch action conflict requires an explicit scope exception: $path" }
     }
-    foreach ($pending in $Plan.pendingDecisions) {
-        if ($null -ne $pending.paths -and $pending.id -cnotin @($Review.batches.id)) { throw "Carried defer requires its original batch ID: $($pending.id)" }
-        if ($null -ne $pending.paths) {
-            $batch = $Review.batches | Where-Object id -ceq $pending.id
-            foreach ($path in $pending.paths) { if ($path -cnotin $batch.paths) { throw "Carried defer lost path: $path" } }
+    if ($RequireResolved) {
+        if (@($Review.batches | Where-Object { $_.action -in @('pending', 'undecided') }).Count) { throw 'Unresolved user decisions prevent Prepare/Complete.' }
+        foreach ($path in $Plan.requiredPaths) { if (-not $dispositions.ContainsKey($path)) { throw "Path requires batch coverage: $path" } }
+        foreach ($item in $Plan.triggeredPending | Where-Object { $_.id -cin @($Plan.pendingDecisions | Where-Object { $null -eq $_.paths } | ForEach-Object id) }) {
+            if ($item.id -cnotin @($Review.batches.id)) { throw "Triggered question requires an explicit same-ID decision: $($item.id)" }
         }
     }
     return ,$dispositions
 }
+function Save-DecisionHistory {
+    $last = @($review.history | Select-Object -Last 1)
+    if ($last.Count -and $last[0].decisionHash -ceq $decisionHash) { return }
+    if ($last.Count) { Assert-ForkText $review.revisionReason 'revisionReason for changed decisions' }
+    $summaries = @(foreach ($batch in $review.batches) {
+        [ordered]@{ id = $batch.id; action = $batch.action; reason = $batch.reason; paths = $batch.paths.Count; localPaths = $(if ($null -eq $batch.localPaths) { 0 } else { $batch.localPaths.Count })
+            hash = Get-AuditDigest (ConvertTo-Json -InputObject $batch -Depth 40 -Compress) }
+    })
+    $review.history = @($review.history) + @([ordered]@{ decisionHash = $decisionHash; reason = $review.revisionReason; batches = $summaries })
+}
 function New-ReviewReport {
-    param($Plan, $Review = $null, $Results = $null)
-    $report = [Collections.Generic.List[string]]::new()
-    $report.Add("# Upstream review`n`nU0: $($Plan.upstreamRevision)`nU1: $($Plan.targetRevision)`nD0: $($Plan.candidateSnapshot.head) (dirty: $($Plan.candidateDirty))`nPlan: $($Plan.planInputHash)`n")
-    $report.Add("Incoming: $($Plan.incoming.Count); shared divergence: $($Plan.shared.Count); carried deferred: $(@($Plan.pendingDecisions | Where-Object { $null -ne $_.paths }).Count). Path coverage and Git hints are evidence, not semantic approval.")
-    $report.Add("`n## Functional decisions and results")
-    if ($null -eq $Review) { $report.Add('Group related changes in decisions.json. Unknown changes are pending; no disposition has been approved.') }
-    else {
-        foreach ($batch in $Review.batches) {
-            $report.Add("`n### $($batch.id) — $($batch.action) ($($batch.paths.Count) upstream paths; $(@($batch.localPaths).Count) local paths)")
-            $report.Add($batch.reason)
-            $report.Add("Planned validation: $($batch.validation -join '; ')")
-            if ($batch.action -eq 'defer') { $report.Add("Reconsider: $($batch.reReviewWhen); dependencies: $($batch.dependencies -join ', ')") }
-            if ($null -ne $Results) {
-                $report.Add("Recorded outcome: $($batch.result.outcome). Actual evidence: $($batch.result.validation -join '; ')")
-                if ($batch.result.deviations) { $report.Add("Implementation deviations: $($batch.result.deviations)") }
-                if ($batch.result.replacement) { $report.Add("Replacement: $($batch.result.replacement | ConvertTo-Json -Compress)") }
+    param($Plan, $Review, $Prepared = $null, $Results = $null)
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('# Upstream follow-up')
+    $lines.Add("`nU0: $($Plan.upstreamRevision); U1: $($Plan.targetRevision)")
+    $newIncoming = @($Plan.incoming.path | Where-Object { $_ -cnotin @($Plan.pendingDecisions | ForEach-Object paths) })
+    $lines.Add("Incoming: $($Plan.incoming.Count) paths ($($newIncoming.Count) new to pending); triggered pending: $($Plan.triggeredPending.Count); automatically carried: $($Plan.pendingDecisions.Count - $Plan.triggeredPending.Count). Only triggered scope requires review.")
+    $categories = [ordered]@{ 'Direct adoption / adaptation' = @('adopt', 'adapt', 'replace-local'); 'User decisions needed' = @('pending', 'undecided'); 'Equivalent / retained decisions' = @('keep-local'); 'Deferred work' = @('defer') }
+    foreach ($label in $categories.Keys) {
+        $batches = @($Review.batches | Where-Object action -cin $categories[$label])
+        $missing = if ($label -eq 'User decisions needed') { @($Plan.requiredPaths | Where-Object { $_ -cnotin @($Review.batches | ForEach-Object paths) -and $_ -cnotin @($Review.batches | ForEach-Object localPaths) }) } else { @() }
+        $lines.Add("`n## $label ($($batches.Count))")
+        foreach ($batch in $batches) {
+            $scopePaths = @((@($batch.paths) + @($batch.localPaths)) | Where-Object { $null -ne $_ } | Sort-Object -Unique)
+            $lines.Add("- **$($batch.id)** — $($batch.action), $($scopePaths.Count) scope paths. $($batch.reason)")
+            foreach ($field in @('impact', 'options', 'recommendation', 'reReviewWhen')) { if ($batch.$field) { $lines.Add("  ${field}: $($batch.$field)") } }
+        }
+        if ($missing.Count) { $lines.Add("- $($missing.Count) paths have no decision yet; empty batches do not imply defer.") }
+        if ($label -eq 'User decisions needed') {
+            foreach ($item in $Plan.triggeredPending | Where-Object { $_.id -cnotin @($Review.batches.id) -and $_.id -cin @($Plan.pendingDecisions | Where-Object { $null -eq $_.paths } | ForEach-Object id) }) {
+                $lines.Add("- **$($item.id)** — triggered question requires a same-ID decision. $($item.question)")
             }
         }
     }
-    if ($null -ne $Results) { $report.Add("`nD0→D1: $($Results.changedPaths.Count) declared changed paths. Full raw-hash change manifest: results.json. Deferred batches: $($Results.deferred.Count). Baseline closure remains a separate step.") }
-    $report.Add("`n## Affected rules`n`n| Contract | Risk | Rule |`n| --- | --- | --- |")
-    foreach ($contract in $Plan.affectedContracts) { $report.Add("| $($contract.id) | $($contract.risk) | $($contract.rule) |") }
-    $suggestedChecks = @($Plan.checks)
-    $checkScope = 'Target affected checks; select by actual implementation'
-    if ($null -ne $Review) {
-        $implementedIds = @($Review.batches | Where-Object { $_.action -in @('adopt', 'adapt', 'replace-local') } | ForEach-Object {
-            foreach ($path in @($_.paths) + @($_.localPaths)) { Get-ForkChangeIds $path $Plan.policy -IncludeWatch }
-        } | Sort-Object -Unique)
-        $suggestedChecks = @($Plan.policy.contracts | Where-Object id -cin $implementedIds | ForEach-Object checks | Sort-Object -Unique)
-        $checkScope = 'Checks associated with implemented batches; full target impact remains in plan.json'
+    if ($Review.history.Count -gt 1) {
+        $previous = $Review.history[-2]
+        $changed = @($Review.batches | Where-Object { $batch = $_; $old = @($previous.batches | Where-Object id -ceq $batch.id); -not $old.Count -or (Get-AuditDigest (ConvertTo-Json -InputObject $batch -Depth 40 -Compress)) -cne $old[0].hash } | ForEach-Object id)
+        $removed = @($previous.batches.id | Where-Object { $_ -cnotin @($Review.batches.id) })
+        $lines.Add("`nRevision: $($Review.history[-1].reason). Changed/new: $($changed -join ', '); removed: $($removed -join ', ').")
     }
-    $report.Add("`n<details>`n<summary>$checkScope ($($suggestedChecks.Count), deduplicated; not executed)</summary>`n")
-    foreach ($check in $suggestedChecks) { $report.Add("- $check") }
-    $report.Add("`n</details>")
-    $report.Add("`n## Path evidence`n`nFull incoming paths and coverage requirements: plan.json. Initial ownership and byte comparisons: inventory.json.")
-    $report.Add("`n## Blockers")
-    foreach ($path in @($Plan.unclassified) + @($Plan.unclassifiedDivergence)) { $report.Add("- $path") }
-    $report.Add("`n<details>`n<summary>Git hints ($($Plan.renameHints.Count) renames, $($Plan.commitHints.Count) commits; content review required)</summary>`n")
-    foreach ($hint in @($Plan.renameHints) + @($Plan.commitHints)) { $report.Add("- $hint") }
-    $report.Add("`n</details>")
-    $report.Add("`n## Persistent pending and known gaps")
-    foreach ($item in $Plan.pendingDecisions) { $report.Add("- $($item.id): $($item.reason)$($item.question); reconsider $($item.reReviewWhen)") }
-    foreach ($item in $Plan.knownGaps) { $report.Add("- $($item.id): $($item.observed); $($item.coverage)") }
-    $report.Add("`nReview validates coverage and declared evidence. Result validates source binding and explicit file provenance. Neither executes tests nor certifies semantic equivalence, product approval, or release readiness.")
-    return $report -join [Environment]::NewLine
+    if ($Prepared) { $lines.Add("`nCandidate registered before validation: $($Prepared.candidateSnapshot.hash); baseline advanced: $($Prepared.advanceBaseline).") }
+    if ($Results) { $lines.Add("`nActual review: $($Results.review)"); foreach ($item in $Results.evidence) { $lines.Add("- $item") } }
+    $lines.Add("`n<details><summary>Paths, diagnostics captured at Plan and Git hints</summary>`n")
+    foreach ($item in $Plan.targetDiagnostics) { $lines.Add("- $($item.kind): $($item.path)") }
+    foreach ($item in $Plan.triggeredPending) { $lines.Add("- Triggered $($item.id): $($item.paths.Count) paths. $($item.reason)$($item.question)") }
+    foreach ($batch in $Review.batches) {
+        $scopePaths = @((@($batch.paths) + @($batch.localPaths)) | Where-Object { $null -ne $_ } | Sort-Object -Unique)
+        $lines.Add("- $($batch.id): $($scopePaths -join ', ')")
+    }
+    foreach ($hint in @($Plan.renameHints) + @($Plan.commitHints)) { $lines.Add("- $hint") }
+    $lines.Add("`nChecks suggested (not executed): $($Plan.checks -join ', ')")
+    $lines.Add("`n</details>`n`nRecords describe decisions and supplied evidence. The script checks source binding and provenance; it does not grant user approval or certify semantic equivalence.")
+    return $lines -join [Environment]::NewLine
+}
+function Get-ChangedPaths {
+    param($Before, $After, $Dispositions)
+    $old = @{}; $new = @{}
+    foreach ($file in $Before.manifest) { $old[$file.path] = $file.sha256 }
+    foreach ($file in $After.manifest) { $new[$file.path] = $file.sha256 }
+    foreach ($path in @(@($old.Keys) + @($new.Keys) | Sort-Object -Unique)) {
+        if ($old[$path] -ceq $new[$path]) { continue }
+        # Candidate registration itself is an explicit Prepare responsibility.
+        if ($path -cne 'docs/upstream/ownership.json' -and (-not $Dispositions.ContainsKey($path) -or $Dispositions[$path] -cnotin @('adopt', 'adapt', 'replace-local'))) { throw "Actual source change is outside adopted/adapted batch paths/localPaths: $path" }
+        [ordered]@{ path = $path; beforeSha256 = $old[$path]; afterSha256 = $new[$path] }
+    }
+}
+function Get-CandidatePolicy {
+    param($Plan, $Review, $Dispositions, [bool]$Advance)
+    $proposal = Copy-AuditRecord $currentPolicy
+    $prefix = $Plan.policy.upstream.localPrefix
+    if ($proposal.upstream.repository -cne $Plan.policy.upstream.repository -or $proposal.upstream.localPrefix -cne $prefix -or
+        $proposal.upstream.revision -cnotin @($Plan.upstreamRevision, $Plan.targetRevision)) { throw 'Candidate policy changed upstream source identity.' }
+    if (-not $Advance -and $proposal.upstream.revision -cne $Plan.upstreamRevision) { throw 'Use -AdvanceBaseline consistently for the advanced candidate.' }
+    if ($Advance) { $proposal.upstream.revision = $Plan.targetRevision; $proposal.upstream.tag = $Plan.targetRef }
+    $pending = [Collections.Generic.List[object]]::new()
+    foreach ($item in $Plan.pendingDecisions) {
+        $scopeBatches = @($Review.batches | Where-Object id -ceq $item.id)
+        if ($null -eq $item.paths) {
+            if ($scopeBatches.Count -and $scopeBatches[0].action -in @('keep-local', 'adopt')) { continue }
+            $copy = Copy-AuditRecord $item
+            if ($scopeBatches.Count -and $scopeBatches[0].action -eq 'defer') {
+                foreach ($field in @('reason', 'reReviewWhen', 'dependencies')) { $copy | Add-Member -Force NoteProperty $field $scopeBatches[0].$field }
+            }
+            $pending.Add($copy)
+            continue
+        }
+        # File disposition authorizes edits, but only this feature's own decision closes its work.
+        $completedPaths = @($scopeBatches | Where-Object { $_.action -in @('adopt', 'adapt', 'replace-local', 'keep-local') } | ForEach-Object paths)
+        $remaining = @($item.paths | Where-Object { $_ -cnotin $completedPaths })
+        if ($remaining.Count) {
+            $copy = Copy-AuditRecord $item
+            $copy.paths = $remaining
+            $updates = @($scopeBatches | Where-Object action -eq 'defer')
+            if ($updates.Count -or ($copy.scopeUpdates -and $remaining.Count -ne $item.paths.Count)) {
+                $updatedPaths = @($updates | ForEach-Object paths)
+                $oldUpdates = @(foreach ($entry in $copy.scopeUpdates) {
+                    $scope = @($entry.paths | Where-Object { $_ -cin $remaining -and $_ -cnotin $updatedPaths })
+                    if ($scope.Count) { $entryCopy = Copy-AuditRecord $entry; $entryCopy.paths = $scope; $entryCopy }
+                })
+                $newUpdates = @(foreach ($entry in $updates) {
+                    $scope = @($entry.paths | Where-Object { $_ -cin $remaining })
+                    if ($scope.Count) { [ordered]@{ paths = $scope; reason = $entry.reason; reReviewWhen = $entry.reReviewWhen; dependencies = @($entry.dependencies) } }
+                })
+                $copy | Add-Member -Force NoteProperty scopeUpdates @($oldUpdates + $newUpdates)
+            }
+            $pending.Add($copy)
+        }
+    }
+    foreach ($item in $currentPolicy.pending) {
+        if ($item.id -cnotin @($Plan.pendingDecisions.id) -and $item.id -cnotin @($oldPrepared.generatedPendingIds) -and $item.id -cnotin @($Review.batches.id)) { $pending.Add((Copy-AuditRecord $item)) }
+    }
+    foreach ($batch in $Review.batches | Where-Object action -eq 'defer') {
+        if ($batch.id -cin @($Plan.pendingDecisions.id)) {
+            $original = @($Plan.pendingDecisions | Where-Object id -ceq $batch.id)[0]
+            if ($null -eq $original.paths) { continue }
+            $paths = @($batch.paths | Where-Object { $_ -cnotin @($original.paths) })
+            if (-not $paths.Count) { continue }
+            $existing = @($pending | Where-Object id -ceq $batch.id)[0]
+            $existing.paths = @($existing.paths) + $paths
+            continue
+        }
+        $paths = @($batch.paths)
+        if (-not $paths.Count) { continue }
+        if ($batch.id -cin @($pending.id)) { throw "Deferred batch ID collides with carried pending: $($batch.id)" }
+        $pending.Add([ordered]@{ id = $batch.id; paths = $paths; reason = $batch.reason; reReviewWhen = $batch.reReviewWhen; dependencies = @($batch.dependencies) })
+    }
+    $proposal.pending = @($pending)
+    $mappings = @($currentPolicy.adaptations | Where-Object { $null -ne $_ })
+    foreach ($mapping in $Plan.policy.adaptations) {
+        if ($mapping.path -cnotin @($mappings.path) -and (-not $Dispositions.ContainsKey($mapping.path) -or $Dispositions[$mapping.path] -cnotin @('adopt', 'adapt', 'replace-local'))) { $mappings += Copy-AuditRecord $mapping }
+    }
+    foreach ($path in $Dispositions.Keys) {
+        if (-not $path.StartsWith($prefix, [StringComparison]::Ordinal) -or $path -cin @($mappings.path) -or
+            -not (Test-Path -LiteralPath (Join-Path $root $path) -PathType Leaf)) { continue }
+        $relative = $path.Substring($prefix.Length)
+        $targetSource = Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $relative
+        $baseSource = Get-ForkUpstreamHash $UpstreamRoot $Plan.upstreamRevision $relative
+        if ($targetSource -eq 'MISSING' -and $baseSource -ne 'MISSING') {
+            $mappings += [ordered]@{ path = $path; upstreamPath = $path; revision = $Plan.upstreamRevision }
+        }
+        elseif (-not $Advance -and $baseSource -eq 'MISSING' -and $targetSource -ne 'MISSING' -and $Dispositions[$path] -in @('adopt', 'adapt', 'replace-local')) {
+            # Partial adoption keeps U0 but records where the new U1 file came from.
+            $mappings += [ordered]@{ path = $path; upstreamPath = $path; revision = $Plan.targetRevision }
+        }
+    }
+    $proposal | Add-Member -Force NoteProperty adaptations @($mappings)
+    foreach ($mapping in $proposal.adaptations) {
+        $source = Get-ForkUpstreamHash $UpstreamRoot $mapping.revision $mapping.upstreamPath.Substring($prefix.Length)
+        if ($source -eq 'MISSING') { throw "Adaptation upstream source does not exist: $($mapping.upstreamPath)" }
+        if (-not @(Get-ForkChangeIds $mapping.path $proposal).Count) { throw "Adaptation requires a contract: $($mapping.path)" }
+    }
+    # Start with immutable original mirror registrations; deleting one cannot evade provenance checks.
+    $mirrors = @($Plan.policy.mirrors) + @($currentPolicy.mirrors | Where-Object path -cnotin @($Plan.policy.mirrors.path))
+    $proposal.mirrors = @(foreach ($mirror in $mirrors) {
+        $path = $mirror.path
+        $hash = Get-NormalizedSourceHash (Join-Path $root $path)
+        $revision = if ($mirror.revision) { $mirror.revision } elseif ($mirror.path -cin @($Plan.policy.mirrors.path)) { $Plan.upstreamRevision } else { $currentPolicy.upstream.revision }
+        if ((Get-ForkUpstreamHash $UpstreamRoot $revision $path.Substring($prefix.Length)) -cne $mirror.sha256) { throw "Mirror baseline is not the reviewed upstream source: $path" }
+        $action = if ($Dispositions.ContainsKey($path)) { $Dispositions[$path] } else { 'keep-local' }
+        $targetHash = Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $path.Substring($prefix.Length)
+        if ($action -eq 'adopt' -and $hash -ceq $targetHash) {
+            if ($hash -ne 'MISSING') { [ordered]@{ path = $path; sha256 = $hash; revision = $Plan.targetRevision } }
+        }
+        elseif ($action -in @('adapt', 'replace-local')) { }
+        elseif ($hash -ceq $mirror.sha256) { [ordered]@{ path = $path; sha256 = $mirror.sha256; revision = $revision } }
+        else { throw "Mirror changed without declared disposition: $path" }
+    })
+    return $proposal
+}
+function Test-CandidateSources {
+    param($Plan, $Dispositions, $Proposal)
+    $prefix = $Proposal.upstream.localPrefix
+    $before = @{}; foreach ($row in @(Read-ReviewJson (Join-Path $OutputDirectory 'inventory.json'))) { $before[$row.path] = $row.candidateSha256 }
+    foreach ($path in $Dispositions.Keys) {
+        $action = $Dispositions[$path]
+        $hash = Get-NormalizedSourceHash (Join-Path $root $path)
+        if ($action -eq 'adopt') {
+            if (-not $path.StartsWith($prefix, [StringComparison]::Ordinal) -or $hash -cne (Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $path.Substring($prefix.Length))) { throw "Adopt must match exact target source (including deletions): $path" }
+        }
+        if ($action -in @('keep-local', 'defer')) {
+            $oldHash = if ($before.ContainsKey($path)) { $before[$path] } else { 'MISSING' }
+            if ($hash -cne $oldHash) { throw "Retained/deferred path changed without an adapted disposition: $path" }
+        }
+    }
+    $diagnostics = @(Get-TargetDiagnostics $Proposal $Plan.targetRevision $Plan.upstreamRevision)
+    foreach ($item in $diagnostics) {
+        if ($item.kind -eq 'fork-owned-collision') { throw "Fork-owned path collides with target upstream: $($item.path)" }
+        if ($item.kind -eq 'target-new-file-needs-contract' -and ($Proposal.upstream.revision -ceq $Plan.targetRevision -or ($Dispositions.ContainsKey($item.path) -and $Dispositions[$item.path] -in @('adopt', 'adapt', 'replace-local')))) { throw "Target new file requires a contract: $($item.path)" }
+    }
+    $futureFiles = @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $Proposal.upstream.revision) | ForEach-Object { $prefix + $_ })
+    foreach ($file in $startSnapshot.files) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root $file) -PathType Leaf)) { continue }
+        $owned = Test-ForkPathMatch $file @($Proposal.forkOwnedPaths)
+        if ($owned) {
+            if ($file -cin $futureFiles) { throw "Fork-owned path collides with candidate baseline: $file" }
+            continue
+        }
+        $mapped = $file -cin @($Proposal.adaptations.path) -or $file -cin @($Proposal.mirrors.path) -or $file -cin @($Proposal.pending | ForEach-Object paths)
+        $incomingAdopted = $file.StartsWith($prefix, [StringComparison]::Ordinal) -and $Dispositions.ContainsKey($file) -and $Dispositions[$file] -in @('adopt', 'adapt', 'replace-local') -and
+            (Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $file.Substring($prefix.Length)) -ne 'MISSING'
+        if ($file -cnotin $futureFiles -and -not $mapped -and -not $incomingAdopted) { throw "Unclassified result path requires explicit target/adaptation provenance: $file" }
+        $same = $file -cin $futureFiles -and (Get-NormalizedSourceHash (Join-Path $root $file)) -ceq (Get-ForkUpstreamHash $UpstreamRoot $Proposal.upstream.revision $file.Substring($prefix.Length))
+        if (-not $same -and -not @(Get-ForkChangeIds $file $Proposal).Count) { throw "Shared candidate path requires a contract: $file" }
+    }
+    Test-ForkMirrors -Root $root -Policy $Proposal -UpstreamRoot $UpstreamRoot
 }
 
 Assert-AuditGitMetadata $root
 $startSnapshot = Get-AuditSourceSnapshot
 $currentPolicy = Read-ForkPolicy -Root $root
-if (-not $UpstreamRoot) { $UpstreamRoot = Join-Path $root ('.tmp/experiments/upstream-audit-' + $currentPolicy.upstream.tag) }
-$UpstreamRoot = [IO.Path]::GetFullPath($UpstreamRoot)
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root '.tmp/reports/upstream-current' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
-foreach ($destination in @('plan.json', 'inventory.json', 'decisions.json', 'review.json', 'results.json', 'closure.json', 'report.md')) { Assert-AuditOutputPath (Join-Path $OutputDirectory $destination) }
+if (-not $UpstreamRoot) {
+    $existingPlanPath = Join-Path $OutputDirectory 'plan.json'
+    $UpstreamRoot = if (Test-Path -LiteralPath $existingPlanPath) { ([IO.File]::ReadAllText($existingPlanPath) | ConvertFrom-Json).upstreamRoot }
+        else { Join-Path $root ('.tmp/experiments/upstream-audit-' + $currentPolicy.upstream.tag) }
+}
+$UpstreamRoot = [IO.Path]::GetFullPath($UpstreamRoot)
+$names = @('plan.json', 'inventory.json', 'decisions.json', 'prepared.json', 'results.json', 'report.md')
+foreach ($name in $names) { Assert-AuditOutputPath (Join-Path $OutputDirectory $name) }
 if (-not $DecisionFile) { $DecisionFile = Join-Path $OutputDirectory 'decisions.json' }
 $DecisionFile = [IO.Path]::GetFullPath($DecisionFile)
 Assert-AuditOutputPath $DecisionFile
-foreach ($generated in @('plan.json', 'inventory.json', 'review.json', 'results.json', 'closure.json', 'report.md')) {
-    if ($DecisionFile.Equals((Join-Path $OutputDirectory $generated), [StringComparison]::OrdinalIgnoreCase)) { throw 'DecisionFile must be the editable decision record, not generated evidence.' }
-}
+foreach ($name in $names | Where-Object { $_ -ne 'decisions.json' }) { if ($DecisionFile.Equals((Join-Path $OutputDirectory $name), [StringComparison]::OrdinalIgnoreCase)) { throw 'DecisionFile must be the editable decision record, not generated evidence.' } }
 Assert-AuditGitMetadata $UpstreamRoot
 $checkoutRevision = [string](Invoke-AuditGit $UpstreamRoot @('rev-parse', 'HEAD'))
 if (@(Invoke-AuditGit $UpstreamRoot @('status', '--porcelain', '--untracked-files=all')).Count) { throw 'The upstream worktree must be clean.' }
-if ($ResetResults -and $Phase -ne 'Result') { throw 'ResetResults is only valid in Result phase.' }
-foreach ($mapping in $currentPolicy.adaptations) {
-    if ((Get-ForkUpstreamHash $UpstreamRoot $mapping.revision $mapping.upstreamPath.Substring($currentPolicy.upstream.localPrefix.Length)) -ceq 'MISSING') { throw "Adaptation upstream source does not exist: $($mapping.upstreamPath)" }
-}
+if ($Revisit.Count -and $Phase -ne 'Plan') { throw 'Revisit is only valid in Plan.' }
+if ($AdvanceBaseline -and $Phase -ne 'Prepare') { throw 'AdvanceBaseline is only valid in Prepare.' }
 $planPath = Join-Path $OutputDirectory 'plan.json'
-if ($Phase -eq 'Plan') {
+if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
     if ($checkoutRevision -cne $currentPolicy.upstream.revision) { throw 'The upstream checkout must be at the exact reviewed policy SHA.' }
     $target = if ($TargetRef) { [string](Invoke-AuditGit $UpstreamRoot @('rev-parse', ($TargetRef + '^{commit}'))) } else { $checkoutRevision }
     $null = Invoke-AuditGit $UpstreamRoot @('merge-base', '--is-ancestor', $checkoutRevision, $target)
     Test-ForkMirrors -Root $root -Policy $currentPolicy -UpstreamRoot $UpstreamRoot
-    if (Test-Path -LiteralPath $planPath) {
-        $saved = Read-ReviewJson $planPath
-        if ($saved.planInputHash -cne (Get-PlanHash $saved) -or $saved.candidateSnapshot.hash -cne $startSnapshot.hash -or
-            $saved.upstreamRevision -cne $checkoutRevision -or $saved.targetRevision -cne $target -or
-            $saved.inventoryHash -cne (Get-AuditDigest ([IO.File]::ReadAllText((Join-Path $OutputDirectory 'inventory.json'))))) { throw 'Immutable plan already exists for different inputs; choose a new output directory.' }
-        Assert-StableSources
-        Write-Host "Existing immutable plan preserved: $planPath"
-        return
-    }
-    foreach ($name in @('inventory.json', 'review.json', 'results.json', 'closure.json', 'decisions.json')) {
-        if (Test-Path -LiteralPath (Join-Path $OutputDirectory $name)) { throw 'Existing review evidence without its plan; choose a new output directory.' }
-    }
-    if (Test-Path -LiteralPath $DecisionFile) { throw 'Existing editable decision record without its plan; choose a new decision file.' }
+    foreach ($mapping in $currentPolicy.adaptations) { if ((Get-ForkUpstreamHash $UpstreamRoot $mapping.revision $mapping.upstreamPath.Substring($currentPolicy.upstream.localPrefix.Length)) -eq 'MISSING') { throw "Adaptation upstream source does not exist: $($mapping.upstreamPath)" } }
+    foreach ($name in $names | Where-Object { $_ -notin @('plan.json', 'report.md') }) { if (Test-Path -LiteralPath (Join-Path $OutputDirectory $name)) { throw 'Existing review evidence without its plan; choose a new output directory.' } }
+    if (Test-Path -LiteralPath $DecisionFile) { throw 'Existing decision record without its plan.' }
+    foreach ($id in $Revisit) { if ($id -cnotin @($currentPolicy.pending.id)) { throw "Unknown pending ID for Revisit: $id" } }
     $prefix = $currentPolicy.upstream.localPrefix
     $upstreamFiles = @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $checkoutRevision) | ForEach-Object { $prefix + $_ })
-    $paths = [string[]]@($upstreamFiles + $startSnapshot.files | Sort-Object -Unique)
-    [Array]::Sort($paths, [StringComparer]::Ordinal)
-    $rows = @(foreach ($file in $paths) {
+    $rows = @(foreach ($file in @($upstreamFiles + $startSnapshot.files | Sort-Object -Unique)) {
         $inUpstream = $file -cin $upstreamFiles
         $owned = Test-ForkPathMatch $file @($currentPolicy.forkOwnedPaths)
-        $retained = $file -cin @($currentPolicy.pending | ForEach-Object paths) -or $file -cin @($currentPolicy.mirrors.path) -or $file -cin @($currentPolicy.adaptations.path)
         if ($owned -and $inUpstream) { throw "Fork-owned path collides with reviewed upstream: $file" }
-        $u = if ($inUpstream) { Get-NormalizedSourceHash (Join-Path $UpstreamRoot $file.Substring($prefix.Length)) } else { 'MISSING' }
+        $u = if ($inUpstream) { Get-ForkUpstreamHash $UpstreamRoot $checkoutRevision $file.Substring($prefix.Length) } else { 'MISSING' }
         $d = Get-NormalizedSourceHash (Join-Path $root $file)
         $relation = Get-ForkRelation $u $d
+        $retained = $file -cin @($currentPolicy.pending | ForEach-Object paths) -or $file -cin @($currentPolicy.mirrors.path) -or $file -cin @($currentPolicy.adaptations.path)
         [ordered]@{ path = $file; upstreamSha256 = $u; candidateSha256 = $d; upstreamToCandidate = $relation
             ownership = if ($u -eq 'MISSING' -and $d -eq 'MISSING') { 'absent' } elseif ($owned) { 'fork-owned' } elseif (($inUpstream -and $relation -ne 'same') -or $retained) { 'shared' } elseif ($inUpstream) { 'upstream' } else { 'unclassified' }
             contracts = @(Get-ForkChangeIds $file $currentPolicy) }
     })
-    $byPath = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
-    foreach ($row in $rows) { $byPath[$row.path] = $row }
+    $byPath = @{}; foreach ($row in $rows) { $byPath[$row.path] = $row }
     $incoming = @(foreach ($file in @(Get-AuditPaths $UpstreamRoot @('diff', '--name-only', '--no-renames', $checkoutRevision, $target))) {
         $path = $prefix + $file
         $direct = @(Get-ForkChangeIds $path $currentPolicy)
@@ -289,234 +448,120 @@ if ($Phase -eq 'Plan') {
         $contracts = @($currentPolicy.contracts | Where-Object id -cin $groups)
         $owned = Test-ForkPathMatch $path @($currentPolicy.forkOwnedPaths)
         $overlap = $byPath.ContainsKey($path) -and $byPath[$path].upstreamToCandidate -ne 'same'
-        $risk = 'low'
-        foreach ($contract in $contracts) { if ($contract.risk -eq 'high' -or ($contract.risk -eq 'medium' -and $risk -eq 'low')) { $risk = $contract.risk } }
+        $risk = 'low'; foreach ($contract in $contracts) { if ($contract.risk -eq 'high' -or ($contract.risk -eq 'medium' -and $risk -eq 'low')) { $risk = $contract.risk } }
         if (-not $groups.Count) { $risk = 'high' }
         [ordered]@{ path = $path; localOverlap = $overlap; contracts = $groups; risk = $risk
             attention = if ($owned) { 'fork-owned-collision' } elseif ($overlap) { 'shared-overlap' } elseif ($direct.Count) { 'upstream-change' } elseif ($groups.Count) { 'contract-watch' } else { 'unclassified' }
             targetSha256 = Get-ForkUpstreamHash $UpstreamRoot $target $file }
     })
-    $affectedIds = @($incoming | ForEach-Object contracts | Sort-Object -Unique)
-    foreach ($pending in $currentPolicy.pending) {
-        if ($pending.paths) { foreach ($path in $pending.paths) { $affectedIds += @(Get-ForkChangeIds $path $currentPolicy -IncludeWatch) } }
-    }
-    $affected = @($currentPolicy.contracts | Where-Object id -cin $affectedIds | ForEach-Object {
-        [ordered]@{ id = $_.id; risk = $_.risk; rule = if ($_.rule) { $_.rule } else { "docs/maintenance.md#$($_.id)" } }
+    $triggered = @(foreach ($item in $currentPolicy.pending) {
+        $paths = if ($item.paths) { @($item.paths | Where-Object { $_ -cin @($incoming.path) -or $item.id -cin $Revisit }) }
+        else { $contract = @($currentPolicy.contracts | Where-Object id -ceq $item.contract)[0]; @($incoming.path | Where-Object { Test-ForkPathMatch $_ (@($contract.paths) + @($contract.watch)) }) }
+        if ($paths.Count -or $item.id -cin $Revisit) { $copy = Copy-AuditRecord $item; $copy | Add-Member -Force NoteProperty paths @($paths); $copy }
     })
-    $inventoryText = (ConvertTo-Json -InputObject $rows -Depth 15) + [Environment]::NewLine
-    $plan = [ordered]@{
-        schemaVersion = 3; upstreamRevision = $checkoutRevision; targetRevision = $target; candidateSnapshot = $startSnapshot
-        candidateDirty = (@(Invoke-AuditGit $root @('status', '--porcelain')).Count -gt 0); policy = $currentPolicy
-        normalization = 'Inventory normalizes CRLF to LF for UTF-8; binary bytes unchanged. Source binding uses raw hashes. Comments or formatting imply no approval.'
-        inventoryHash = Get-AuditDigest $inventoryText; incoming = $incoming
-        shared = @($rows | Where-Object ownership -eq 'shared' | ForEach-Object path)
-        unclassified = @($rows | Where-Object ownership -eq 'unclassified' | ForEach-Object path)
-        unclassifiedDivergence = @($rows | Where-Object { $_.ownership -eq 'shared' -and -not $_.contracts.Count } | ForEach-Object path)
-        requiredPaths = @(@($incoming.path) + @($currentPolicy.pending | ForEach-Object { $_.paths }) | Where-Object { $_ } | Sort-Object -Unique)
-        affectedContracts = $affected; checks = @($currentPolicy.contracts | Where-Object id -cin $affectedIds | ForEach-Object checks | Sort-Object -Unique)
-        pendingDecisions = @($currentPolicy.pending); knownGaps = @($currentPolicy.knownGaps)
+    $required = @(@($incoming.path) + @($triggered | ForEach-Object paths) | Sort-Object -Unique)
+    $affectedIds = @($required | ForEach-Object { Get-ForkChangeIds $_ $currentPolicy -IncludeWatch } | Sort-Object -Unique)
+    $inventoryText = (ConvertTo-Json -InputObject $rows -Depth 40) + [Environment]::NewLine
+    $plan = [ordered]@{ schemaVersion = 4; upstreamRevision = $checkoutRevision; targetRevision = $target; targetRef = if ($TargetRef) { $TargetRef } else { $target }; upstreamRoot = $UpstreamRoot
+        candidateSnapshot = $startSnapshot; candidateDirty = (@(Invoke-AuditGit $root @('status', '--porcelain')).Count -gt 0); policy = $currentPolicy
+        inventoryHash = Get-AuditDigest $inventoryText; incoming = $incoming; requiredPaths = $required; pendingDecisions = @($currentPolicy.pending); triggeredPending = $triggered; revisit = $Revisit
+        targetDiagnostics = @(Get-TargetDiagnostics $currentPolicy $target $checkoutRevision)
+        affectedContracts = @($currentPolicy.contracts | Where-Object id -cin $affectedIds | ForEach-Object { [ordered]@{ id = $_.id; risk = $_.risk; rule = $_.rule } })
+        checks = @($currentPolicy.contracts | Where-Object id -cin $affectedIds | ForEach-Object checks | Sort-Object -Unique)
         renameHints = @(Invoke-AuditGit $UpstreamRoot @('diff', '--name-status', '-M', $checkoutRevision, $target) | Where-Object { $_ -cmatch '^R[0-9]+\s' })
-        commitHints = @(Invoke-AuditGit $UpstreamRoot @('log', '--format=%H %s', '--reverse', ($checkoutRevision + '..' + $target)))
-    }
+        commitHints = @(Invoke-AuditGit $UpstreamRoot @('log', '--format=%H %s', '--reverse', ($checkoutRevision + '..' + $target))) }
     $plan.planInputHash = Get-PlanHash $plan
-    $review = [ordered]@{ schemaVersion = 3; upstreamRevision = $checkoutRevision; targetRevision = $target; planInputHash = $plan.planInputHash
-        batches = @(); overlapExceptions = @() }
+    $review = [ordered]@{ schemaVersion = 4; upstreamRevision = $checkoutRevision; targetRevision = $target; planInputHash = $plan.planInputHash
+        batches = @(); overlapExceptions = @(); revisionReason = ''; history = @(); review = ''; evidence = @() }
     Assert-StableSources
     $null = New-Item -ItemType Directory -Force $OutputDirectory
     $null = New-Item -ItemType Directory -Force ([IO.Path]::GetDirectoryName($DecisionFile))
     Write-AuditOutput (Join-Path $OutputDirectory 'inventory.json') $inventoryText.TrimEnd("`r", "`n")
     Write-ReviewJson 'plan.json' $plan
-    Write-AuditOutput $DecisionFile ($review | ConvertTo-Json -Depth 40)
-    Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan)
-    Write-Host "Immutable plan created; $($incoming.Count) incoming paths; $($plan.requiredPaths.Count) paths require functional batches. Edit $DecisionFile"
+    Save-Decisions
+    Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan $review)
+    Write-Host "Plan fixed: $($incoming.Count) incoming; $($triggered.Count) triggered pending; $($currentPolicy.pending.Count - $triggered.Count) automatically carried. Edit $DecisionFile"
     return
 }
 $plan = Read-ReviewJson $planPath
-if ($plan.schemaVersion -ne 3 -or $plan.planInputHash -cne (Get-PlanHash $plan) -or
+if ($plan.schemaVersion -ne 4 -or $plan.planInputHash -cne (Get-PlanHash $plan) -or
     $plan.inventoryHash -cne (Get-AuditDigest ([IO.File]::ReadAllText((Join-Path $OutputDirectory 'inventory.json'))))) { throw 'Immutable plan evidence was modified.' }
 if ($TargetRef -and [string](Invoke-AuditGit $UpstreamRoot @('rev-parse', ($TargetRef + '^{commit}'))) -cne $plan.targetRevision) { throw 'TargetRef differs from immutable plan.' }
-$expectedCheckout = if ($Phase -eq 'Close') { $plan.targetRevision } else { $plan.upstreamRevision }
-if ($checkoutRevision -cne $expectedCheckout) { throw "Upstream checkout must be at $expectedCheckout for $Phase." }
+if ($checkoutRevision -cnotin @($plan.upstreamRevision, $plan.targetRevision)) { throw 'Upstream checkout must remain at U0 or U1; target blobs are read without checkout.' }
+if ($Phase -eq 'Plan') {
+    if ($Revisit.Count -and (@($Revisit | Sort-Object -Unique) -join "`n") -cne (@($plan.revisit | Sort-Object -Unique) -join "`n")) { throw 'Revisit scope differs from immutable plan; choose a new round.' }
+    Assert-StableSources
+    Write-Host 'Original plan preserved; implementation and decision revisions do not require replanning.'
+    return
+}
 $review = Read-ReviewJson $DecisionFile
-$dispositions = Test-ReviewBatches $plan $review
+$dispositions = Test-ReviewBatches $plan $review -RequireResolved:($Phase -in @('Prepare', 'Complete'))
 $decisionHash = Get-DecisionHash $review
-$reviewPath = Join-Path $OutputDirectory 'review.json'
-if ($Phase -eq 'Review') {
-    if ($startSnapshot.hash -cne $plan.candidateSnapshot.hash) { throw 'Candidate differs from preimplementation plan; use Result for implementation changes.' }
-    Assert-StableSources
-    if (Test-Path -LiteralPath $reviewPath) {
-        $approved = Read-ReviewJson $reviewPath
-        if ($approved.planInputHash -cne $plan.planInputHash -or $approved.decisionHash -cne $decisionHash) { throw 'Immutable preimplementation decisions changed; create a new plan.' }
-    }
-    else { Write-ReviewJson 'review.json' ([ordered]@{ schemaVersion = 3; planInputHash = $plan.planInputHash; decisionHash = $decisionHash; batches = $review.batches; overlapExceptions = $review.overlapExceptions }) }
-    Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan $review)
-    Write-Host 'Preimplementation batch decisions frozen. No tests or semantic approval performed.'
-    return
-}
-$approved = Read-ReviewJson $reviewPath
-if ($approved.planInputHash -cne $plan.planInputHash -or $approved.decisionHash -cne $decisionHash) { throw 'Decisions differ from frozen preimplementation review; old reasons cannot be rebound to a new implementation.' }
+$preparedPath = Join-Path $OutputDirectory 'prepared.json'
 $resultsPath = Join-Path $OutputDirectory 'results.json'
-if ($Phase -eq 'Result') {
-    if ($currentPolicy.upstream.revision -cne $plan.upstreamRevision) { throw 'Do not advance the comparison baseline before completing Result.' }
-    if (Test-Path -LiteralPath $resultsPath) {
-        $saved = Read-ReviewJson $resultsPath
-        if ($saved.resultHash -cne (Get-PlanHash $saved 'resultHash')) { throw 'Immutable result evidence was modified.' }
-        if ($ResetResults) { throw 'Completed results are immutable; create a new review round for further implementation.' }
-        if ($saved.candidateSnapshot.hash -cne $startSnapshot.hash -or $saved.decisionHash -cne $decisionHash -or
-            $saved.recordHash -cne (Get-AuditDigest ($review | ConvertTo-Json -Depth 40 -Compress))) { throw 'Result source or decisions changed; previous validation cannot be reused.' }
-        Assert-StableSources
-        Write-Host 'Existing immutable results match the current source and decisions.'
-        return
-    }
-    if ($ResetResults -or -not $review.resultInputHash) {
-        $review | Add-Member -Force NoteProperty resultInputHash $startSnapshot.hash
-        foreach ($batch in $review.batches) {
-            $batch | Add-Member -Force NoteProperty result ([pscustomobject]@{ outcome = ''; deviations = ''; validation = @(); replacement = $null })
-        }
-        Assert-StableSources
-        Write-AuditOutput $DecisionFile ($review | ConvertTo-Json -Depth 40)
-        Write-Host 'Result source captured. Fill each batch.result with actual evidence, then rerun Result. No completion recorded.'
-        return
-    }
-    if ($review.resultInputHash -cne $startSnapshot.hash) { throw 'Result source changed; use -ResetResults to discard old validation and capture the new source.' }
-    $initialFiles = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
-    $actualFiles = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
-    foreach ($file in $plan.candidateSnapshot.manifest) { $initialFiles[$file.path] = $file.sha256 }
-    foreach ($file in $startSnapshot.manifest) { $actualFiles[$file.path] = $file.sha256 }
-    $changedPaths = @(foreach ($path in @(@($initialFiles.Keys) + @($actualFiles.Keys) | Sort-Object -Unique)) {
-        $beforeHash = if ($initialFiles.ContainsKey($path)) { $initialFiles[$path] } else { 'MISSING' }
-        $afterHash = if ($actualFiles.ContainsKey($path)) { $actualFiles[$path] } else { 'MISSING' }
-        if ($beforeHash -cne $afterHash) {
-            $covering = @($review.batches | Where-Object { $path -cin $_.paths -or $path -cin $_.localPaths } | ForEach-Object id)
-            if (-not $covering.Count) { throw "Actual source change is outside declared batch paths/localPaths: $path" }
-            [ordered]@{ path = $path; beforeSha256 = $beforeHash; afterSha256 = $afterHash; batches = $covering }
-        }
-    })
-    foreach ($batch in $review.batches) {
-        if ($batch.result.outcome -cne $batch.action) { throw "Result outcome must match the declared disposition (revise decisions explicitly if needed): $($batch.id)" }
-        Assert-ForkArray $batch.result.validation 'result.validation' -NonEmpty -Strings
-        if ($batch.result.deviations -isnot [string]) { throw 'result.deviations must be a string (empty means no deviation).' }
-        if ($batch.action -eq 'replace-local') {
-            foreach ($field in @('newImplementation', 'oldImplementationExit', 'retainedAdaptation')) { Assert-ForkText $batch.result.replacement.$field "replacement.$field" }
-        }
-    }
-    $inventory = @(Read-ReviewJson (Join-Path $OutputDirectory 'inventory.json'))
-    $before = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
-    foreach ($row in $inventory) { $before[$row.path] = $row }
-    foreach ($path in $plan.requiredPaths) {
-        $action = $dispositions[$path]
-        $hash = Get-NormalizedSourceHash (Join-Path $root $path)
-        if ($action -eq 'adopt') {
-            $item = @($plan.incoming | Where-Object path -ceq $path)
-            $targetHash = if ($item.Count) { $item[0].targetSha256 } else { Get-ForkUpstreamHash $UpstreamRoot $plan.targetRevision $path.Substring($plan.policy.upstream.localPrefix.Length) }
-            if ($hash -cne $targetHash) { throw "Adopt must match exact target source (including deletions): $path" }
-        }
-        if ($action -in @('keep-local', 'defer')) {
-            $oldHash = if ($before.ContainsKey($path)) { $before[$path].candidateSha256 } else { 'MISSING' }
-            if ($hash -cne $oldHash) { throw "Retained/deferred path changed without an adopted/adapted disposition: $path" }
-        }
-    }
-    $baseFiles = @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $plan.upstreamRevision) | ForEach-Object { $plan.policy.upstream.localPrefix + $_ })
-    foreach ($file in $startSnapshot.files) {
-        if ($file -cin $baseFiles -or (Test-ForkPathMatch $file @($plan.policy.forkOwnedPaths))) { continue }
-        $retained = $file -cin @($plan.policy.pending | ForEach-Object paths) -or $file -cin @($plan.policy.mirrors.path) -or $file -cin @($plan.policy.adaptations.path)
-        if ($retained -and $before.ContainsKey($file) -and (Get-NormalizedSourceHash (Join-Path $root $file)) -ceq $before[$file].candidateSha256) { continue }
-        $declared = $dispositions.ContainsKey($file) -and $dispositions[$file] -in @('adopt', 'adapt', 'replace-local')
-        $localAdaptation = @($review.batches | Where-Object { $_.action -in @('adapt', 'replace-local') -and $file -cin $_.localPaths }).Count -gt 0
-        if (-not $declared -and -not $localAdaptation) { throw "Unclassified result path requires an explicit target/adaptation disposition: $file" }
-    }
-    foreach ($mirror in $plan.policy.mirrors) {
-        $hash = Get-NormalizedSourceHash (Join-Path $root $mirror.path)
-        if ($hash -ceq $mirror.sha256) { continue }
-        $adapted = @($review.batches | Where-Object { $_.action -in @('adapt', 'replace-local') -and $mirror.path -cin $_.localPaths }).Count -gt 0
-        if (-not $adapted -and (-not $dispositions.ContainsKey($mirror.path) -or $dispositions[$mirror.path] -cnotin @('adopt', 'adapt', 'replace-local'))) { throw "Mirror changed without declared disposition: $($mirror.path)" }
-    }
+if (Test-Path -LiteralPath $resultsPath) {
+    $results = Read-ReviewJson $resultsPath
+    if ($results.resultHash -cne (Get-PlanHash $results 'resultHash') -or $results.planInputHash -cne $plan.planInputHash -or
+        $results.decisionHash -cne $decisionHash -or $results.candidateSnapshot.hash -cne $startSnapshot.hash -or
+        $results.recordHash -cne (Get-AuditDigest (ConvertTo-Json -InputObject $review -Depth 60 -Compress))) { throw 'Completed round is immutable; changed source/decisions/evidence require a new round.' }
     Assert-StableSources
-    $results = [ordered]@{ schemaVersion = 3; planInputHash = $plan.planInputHash; decisionHash = $decisionHash
-        recordHash = Get-AuditDigest ($review | ConvertTo-Json -Depth 40 -Compress); candidateSnapshot = $startSnapshot; changedPaths = $changedPaths
-        deferred = @($review.batches | Where-Object action -eq 'defer' | ForEach-Object {
-            [ordered]@{ id = $_.id; paths = @($_.paths); reason = $_.reason; reReviewWhen = $_.reReviewWhen; dependencies = @($_.dependencies) }
-        }); policy = $currentPolicy; batches = @($review.batches)
-        scope = 'Source provenance and declared results validated. Evidence is reviewer supplied; tests and semantic equivalence are not certified.' }
-    $proposal = $currentPolicy | ConvertTo-Json -Depth 40 | ConvertFrom-Json
-    $proposal.upstream.revision = $plan.targetRevision
-    $proposal.upstream.tag = if ($TargetRef) { $TargetRef } else { $plan.targetRevision }
-    $proposal.pending = @($currentPolicy.pending | Where-Object { $null -eq $_.paths }) + @($results.deferred)
-    $retainedMappings = @($currentPolicy.adaptations | Where-Object { $null -ne $_ })
-    foreach ($path in $plan.requiredPaths) {
-        if ($dispositions[$path] -cnotin @('keep-local', 'adapt', 'replace-local') -or $path -cin @($retainedMappings.path) -or
-            -not (Test-Path -LiteralPath (Join-Path $root $path) -PathType Leaf)) { continue }
-        $relative = $path.Substring($plan.policy.upstream.localPrefix.Length)
-        if ((Get-ForkUpstreamHash $UpstreamRoot $plan.targetRevision $relative) -cne 'MISSING') { continue }
-        if ((Get-ForkUpstreamHash $UpstreamRoot $plan.upstreamRevision $relative) -cne 'MISSING') {
-            $retainedMappings += [ordered]@{ path = $path; upstreamPath = $path; revision = $plan.upstreamRevision }
-        }
-    }
-    if ($retainedMappings.Count) { $proposal | Add-Member -Force NoteProperty adaptations $retainedMappings }
-    $proposal.mirrors = @(foreach ($mirror in $currentPolicy.mirrors) {
-        $hash = Get-NormalizedSourceHash (Join-Path $root $mirror.path)
-        $targetHash = Get-ForkUpstreamHash $UpstreamRoot $plan.targetRevision $mirror.path.Substring($plan.policy.upstream.localPrefix.Length)
-        if ($hash -ceq $targetHash -and $hash -cne 'MISSING') { [ordered]@{ path = $mirror.path; sha256 = $hash } }
-        elseif ($hash -ceq $mirror.sha256) {
-            [ordered]@{ path = $mirror.path; sha256 = $mirror.sha256; revision = if ($mirror.revision) { $mirror.revision } else { $plan.upstreamRevision } }
-        }
-        # Explicitly adapted former mirrors cease to be mirrors; their contracts remain required.
-    })
-    $results.policyProposal = $proposal
-    $results.resultHash = Get-PlanHash $results 'resultHash'
-    Write-ReviewJson 'results.json' $results
-    Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan $review $results)
-    Write-Host "Immutable results recorded; $($results.deferred.Count) batches must be carried into ownership.pending before baseline closure."
+    Write-Host 'Existing completion preserved; no further registration or source changes.'
     return
 }
-# Close permits only the reviewed baseline, pending work and source provenance updates.
-$results = Read-ReviewJson $resultsPath
-if ($results.resultHash -cne (Get-PlanHash $results 'resultHash')) { throw 'Immutable result evidence was modified.' }
-if ($results.planInputHash -cne $plan.planInputHash -or $results.decisionHash -cne $decisionHash -or
-    $results.recordHash -cne (Get-AuditDigest ($review | ConvertTo-Json -Depth 40 -Compress))) { throw 'Completed result does not match this plan and decision record.' }
-if ($currentPolicy.upstream.revision -cne $plan.targetRevision) { throw 'Close requires the comparison baseline advanced to the reviewed target.' }
-$policyPath = 'docs/upstream/ownership.json'
-$oldManifest = @($results.candidateSnapshot.manifest | Where-Object path -cne $policyPath | ForEach-Object { "$($_.path)`t$($_.sha256)" })
-$newManifest = @($startSnapshot.manifest | Where-Object path -cne $policyPath | ForEach-Object { "$($_.path)`t$($_.sha256)" })
-if ($startSnapshot.head -cne $results.candidateSnapshot.head -or ($oldManifest -join "`n") -cne ($newManifest -join "`n")) { throw 'Result source changed after validation; baseline closure cannot reuse old results.' }
-foreach ($value in @($results.policy, $currentPolicy)) {
-    $copy = $value | ConvertTo-Json -Depth 40 | ConvertFrom-Json
-    foreach ($field in @('upstream', 'pending', 'mirrors', 'adaptations')) { $copy.PSObject.Properties.Remove($field) }
-    $canonical = $copy | ConvertTo-Json -Depth 40 -Compress
-    if ($value -eq $results.policy) { $oldPolicy = $canonical } elseif ($canonical -cne $oldPolicy) { throw 'Only baseline, pending and reviewed source provenance may change after Result.' }
+if ($Phase -eq 'Review') {
+    Save-DecisionHistory
+    Assert-StableSources
+    Save-Decisions
+    Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan $review)
+    Write-Host 'Current decision preview refreshed; no approval or implementation gate.'
+    return
 }
-if ((ConvertTo-Json -InputObject @($currentPolicy.adaptations | Where-Object { $null -ne $_ }) -Depth 20 -Compress) -cne
-    (ConvertTo-Json -InputObject @($results.policyProposal.adaptations | Where-Object { $null -ne $_ }) -Depth 20 -Compress)) { throw 'Retained source mappings must match the reviewed policy proposal.' }
-if ($currentPolicy.upstream.repository -cne $plan.policy.upstream.repository -or $currentPolicy.upstream.localPrefix -cne $plan.policy.upstream.localPrefix) { throw 'Baseline closure cannot change upstream repository or local prefix.' }
-foreach ($pending in $results.deferred) {
-    $found = @($currentPolicy.pending | Where-Object id -ceq $pending.id)
-    if ($found.Count -ne 1 -or ($found[0] | ConvertTo-Json -Depth 20 -Compress) -cne ($pending | ConvertTo-Json -Depth 20 -Compress)) { throw "Deferred batch must be preserved in durable ownership.pending: $($pending.id)" }
-}
-foreach ($pending in $plan.pendingDecisions | Where-Object { $null -eq $_.paths }) {
-    $found = @($currentPolicy.pending | Where-Object id -ceq $pending.id)
-    if ($found.Count -ne 1 -or ($found[0] | ConvertTo-Json -Depth 20 -Compress) -cne ($pending | ConvertTo-Json -Depth 20 -Compress)) { throw "Existing pending decision cannot disappear during baseline closure: $($pending.id)" }
-}
-foreach ($mirror in $results.policyProposal.mirrors) {
-    if ($mirror.path -cnotin @($currentPolicy.mirrors.path)) { throw "Reviewed mirror cannot disappear during baseline closure: $($mirror.path)" }
-}
-foreach ($mirror in $currentPolicy.mirrors) {
-    $sourceRevision = if ($mirror.revision) { $mirror.revision } else { $currentPolicy.upstream.revision }
-    if ($sourceRevision -cne $plan.targetRevision) {
-        $original = @($plan.policy.mirrors | Where-Object path -ceq $mirror.path)
-        $originalRevision = if ($original.Count -and $original[0].revision) { $original[0].revision } else { $plan.upstreamRevision }
-        if ($original.Count -ne 1 -or $sourceRevision -cne $originalRevision -or $mirror.sha256 -cne $original[0].sha256 -or
-            ($dispositions.ContainsKey($mirror.path) -and $dispositions[$mirror.path] -cnotin @('keep-local', 'defer'))) { throw "Retained mirror must retain its original reviewed provenance: $($mirror.path)" }
+if ($Phase -eq 'Prepare') {
+    $oldPrepared = if (Test-Path -LiteralPath $preparedPath) { Read-ReviewJson $preparedPath } else { $null }
+    if ($oldPrepared -and $oldPrepared.preparedHash -cne (Get-PlanHash $oldPrepared 'preparedHash')) { throw 'Prepared evidence was modified.' }
+    $advance = [bool]$AdvanceBaseline
+    if ($oldPrepared -and $oldPrepared.advanceBaseline -and $currentPolicy.upstream.revision -ceq $plan.targetRevision) { $advance = $true }
+    $proposal = Get-CandidatePolicy $plan $review $dispositions $advance
+    $changed = @(Get-ChangedPaths $plan.candidateSnapshot $startSnapshot $dispositions)
+    Test-CandidateSources $plan $dispositions $proposal
+    Save-DecisionHistory
+    Assert-StableSources
+    $policyPath = Join-Path $root 'docs/upstream/ownership.json'
+    if ($policyPath.StartsWith($UpstreamRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Candidate registration must not write upstream source.' }
+    Assert-NoAuditLinks $policyPath
+    if ((ConvertTo-Json -InputObject $proposal -Depth 60 -Compress) -cne (ConvertTo-Json -InputObject $currentPolicy -Depth 60 -Compress)) {
+        $temporary = Join-Path ([IO.Path]::GetDirectoryName($policyPath)) ('.ownership-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+        try { [IO.File]::WriteAllText($temporary, (ConvertTo-Json -InputObject $proposal -Depth 60) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false)); [IO.File]::Move($temporary, $policyPath, $true) }
+        finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
     }
+    $registeredPolicy = Read-ForkPolicy -Root $root
+    if ((ConvertTo-Json -InputObject $registeredPolicy -Depth 60 -Compress) -cne (ConvertTo-Json -InputObject $proposal -Depth 60 -Compress)) { throw 'Candidate policy changed during registration.' }
+    $beforeRegistration = $startSnapshot
+    $startSnapshot = Get-AuditSourceSnapshot
+    $registrationChanges = @(Get-ChangedPaths $beforeRegistration $startSnapshot $dispositions | Where-Object path -cne 'docs/upstream/ownership.json')
+    if ($beforeRegistration.head -cne $startSnapshot.head -or $registrationChanges.Count) { throw 'Candidate source inputs changed during registration; rerun Prepare with stable inputs.' }
+    $changed = @(Get-ChangedPaths $plan.candidateSnapshot $startSnapshot $dispositions)
+    $prepared = [ordered]@{ schemaVersion = 4; planInputHash = $plan.planInputHash; decisionHash = $decisionHash; advanceBaseline = $advance; candidateSnapshot = $startSnapshot; changedPaths = $changed; policy = $proposal
+        generatedPendingIds = @($review.batches | Where-Object { $_.action -eq 'defer' -and $_.id -cnotin @($plan.pendingDecisions.id) } | ForEach-Object id) }
+    $prepared.preparedHash = Get-PlanHash $prepared 'preparedHash'
+    if (-not $oldPrepared -or $oldPrepared.preparedHash -cne $prepared.preparedHash) { $review.review = ''; $review.evidence = @() }
+    Assert-StableSources
+    Save-Decisions
+    Write-ReviewJson 'prepared.json' $prepared
+    Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan $review $prepared)
+    Write-Host 'Candidate ownership registered and raw source bound. Run existing validation, fill decisions.review/evidence, then Complete.'
+    return
 }
-Test-ForkMirrors -Root $root -Policy $currentPolicy -UpstreamRoot $UpstreamRoot
+$prepared = Read-ReviewJson $preparedPath
+if ($prepared.preparedHash -cne (Get-PlanHash $prepared 'preparedHash') -or $prepared.planInputHash -cne $plan.planInputHash) { throw 'Prepared evidence was modified.' }
+if ($prepared.decisionHash -cne $decisionHash -or $prepared.candidateSnapshot.hash -cne $startSnapshot.hash) { throw 'Prepared source or decisions changed; rerun Prepare to discard stale evidence before validation.' }
+Assert-ForkText $review.review 'review actual implementation assessment'
+Assert-ForkArray $review.evidence 'evidence actual round validation' -NonEmpty -Strings
 Assert-StableSources
-$closure = [ordered]@{ schemaVersion = 3; planInputHash = $plan.planInputHash; resultSourceHash = $results.candidateSnapshot.hash
-    closedSourceHash = $startSnapshot.hash; comparisonBaseline = $plan.targetRevision; deferredIds = @($results.deferred.id)
-    scope = 'Comparison baseline reviewed; this does not claim that all target features were adopted.' }
-$closurePath = Join-Path $OutputDirectory 'closure.json'
-if (Test-Path -LiteralPath $closurePath) {
-    $saved = Read-ReviewJson $closurePath
-    if (($saved | ConvertTo-Json -Depth 40 -Compress) -cne ($closure | ConvertTo-Json -Depth 40 -Compress)) { throw 'Immutable closure already exists for different inputs.' }
-}
-else { Write-ReviewJson 'closure.json' $closure }
-Write-Host 'Comparison baseline closed with durable deferred decisions and verified mirror provenance; no full-target adoption claim.'
+$results = [ordered]@{ schemaVersion = 4; planInputHash = $plan.planInputHash; decisionHash = $decisionHash; preparedHash = $prepared.preparedHash
+    recordHash = Get-AuditDigest (ConvertTo-Json -InputObject $review -Depth 60 -Compress); candidateSnapshot = $startSnapshot; changedPaths = $prepared.changedPaths; policy = $currentPolicy
+    batches = $review.batches; review = $review.review; evidence = $review.evidence; advanceBaseline = $prepared.advanceBaseline }
+$results.resultHash = Get-PlanHash $results 'resultHash'
+Write-ReviewJson 'results.json' $results
+Write-AuditOutput (Join-Path $OutputDirectory 'report.md') (New-ReviewReport $plan $review $prepared $results)
+Write-Host 'Immutable completion recorded against the validated candidate; no Git source changed.'

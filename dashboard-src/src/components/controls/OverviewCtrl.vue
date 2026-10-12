@@ -14,7 +14,7 @@
 
 <script setup lang="ts">
 import OverviewCardSettingsDialog from '@/components/overview/OverviewCardSettingsDialog.vue'
-import { useCtrlsBar } from '@/composables/useCtrlsBar'
+import { useCtrlsBar } from '@/composables/use-ctrls-bar'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 import CtrlsBar from '../common/CtrlsBar.vue'

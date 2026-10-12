@@ -1,12 +1,12 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /*
  * 节点网格按「行」虚拟化,只渲染视口附近的几行。
  */
 import { handlerProxySelect } from '@/assembly/proxies'
-import { runManualRequest } from '@/helper/requestError'
+import { runManualRequest } from '@/helper/request-error'
 import { PROXY_CARD_SIZE } from '@/constant'
-import { useCollapseTransition } from '@/composables/collapseTransition'
-import { scrollNodeIntoViewKey } from '@/composables/proxiesScroll'
+import { useCollapseTransition } from '@/composables/use-collapse-transition'
+import { scrollNodeIntoViewKey } from '@/helper/proxies-scroll'
 import { PROXIES_PARENT_CLASS } from '@/helper/utils'
 import { minProxyCardWidth, proxyCardSize } from '@/store/settings'
 import { useVirtualizer } from '@tanstack/vue-virtual'
@@ -14,7 +14,7 @@ import { useElementSize, useResizeObserver } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import ProxyNodeCard from './ProxyNodeCard.vue'
 
-// 行距做在行自己的 pb 上,算进量到的行高里;最后一行多出来的 pb 由根节点的 -mb-2 抵掉。
+// 行距只加在非末行的 pb 上,让估算、实测与最后一张卡片的边界一致。
 const GAP = 8
 
 const props = defineProps<{
@@ -33,9 +33,11 @@ const columns = computed(() =>
   width.value ? Math.max(1, Math.floor((width.value + GAP) / (minProxyCardWidth.value + GAP))) : 1,
 )
 const rowCount = computed(() => Math.ceil(props.renderProxies.length / columns.value))
-const estimatedRowHeight = computed(
-  () => (proxyCardSize.value === PROXY_CARD_SIZE.SMALL ? 48 : 60) + GAP,
+const estimatedCardHeight = computed(() =>
+  proxyCardSize.value === PROXY_CARD_SIZE.SMALL ? 48 : 60,
 )
+const estimateRowHeight = (rowIndex: number) =>
+  rowIndex === rowCount.value - 1 ? estimatedCardHeight.value : estimatedCardHeight.value + GAP
 
 // 入场 / 高亮动画会给卡片挂 transform,只能用不受 transform 影响的布局尺寸来量。
 const measureRowHeight = (element: Element, entry: ResizeObserverEntry | undefined) => {
@@ -52,7 +54,7 @@ const rowVirtualizer = useVirtualizer(
   computed(() => ({
     count: rowCount.value,
     getScrollElement: () => scrollEl.value,
-    estimateSize: () => estimatedRowHeight.value,
+    estimateSize: estimateRowHeight,
     measureElement: measureRowHeight,
     scrollMargin: scrollMargin.value,
     overscan: overscan.value,
@@ -282,7 +284,7 @@ onBeforeUnmount(cancelCorrect)
 <template>
   <div
     ref="rootRef"
-    class="-mb-2 min-w-0"
+    class="min-w-0"
   >
     <div :style="{ height: `${topSpacer}px` }" />
     <div
@@ -290,7 +292,8 @@ onBeforeUnmount(cancelCorrect)
       :key="row.key.toString()"
       :data-index="row.index"
       :ref="(el) => measureRow(el as Element | null)"
-      class="grid min-w-0 gap-2 pb-2"
+      class="grid min-w-0 gap-2"
+      :class="row.index < rowCount - 1 && 'pb-2'"
       :style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }"
     >
       <ProxyNodeCard

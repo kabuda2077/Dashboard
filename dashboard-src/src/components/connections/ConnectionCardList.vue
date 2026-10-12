@@ -47,8 +47,8 @@ import {
   syncConnectionCardGroupIds,
   toggleConnectionCardGroup,
   type ConnectionCardGroupKey,
-} from '@/composables/connectionCardGroups'
-import { connectionTabShow, renderConnections } from '@/store/connections'
+} from '@/helper/connection-card-groups'
+import { connectionTabShow, renderConnections, showClosedOnly } from '@/store/connections'
 import { connectionCardLines, proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import { activeUuid } from '@/store/setup'
 import type { Connection } from '@/types'
@@ -132,9 +132,13 @@ const listItems = computed<ConnectionCardListItem[]>(() => {
   })
 })
 
-watch([connectionCardGroupKey, connectionTabShow, activeUuid], resetConnectionCardGroups, {
-  flush: 'sync',
-})
+watch(
+  [connectionCardGroupKey, connectionTabShow, showClosedOnly, activeUuid],
+  resetConnectionCardGroups,
+  {
+    flush: 'sync',
+  },
+)
 watch(groups, (nextGroups) => syncConnectionCardGroupIds(nextGroups.map((group) => group.id)), {
   immediate: true,
 })

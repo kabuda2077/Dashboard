@@ -104,17 +104,17 @@
 
 <script setup lang="ts">
 import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession } from '@/helper/requestError'
+import { notifyRequestErrorForSession } from '@/helper/request-error'
 import { proxyGroupList } from '@/assembly/proxies'
 import { fetchRules, rulesFilter, updateRuleProviderAPI } from '@/assembly/rules'
-import { useBounceOnVisible } from '@/composables/bouncein'
+import { useBounceOnVisible } from '@/composables/use-bounce-on-visible'
 import {
   getRuleSize,
   isRuleDisabled,
   isUpdateableRuleSet as checkUpdateableRuleSet,
   toggleRuleDisabledWithSideEffects,
   useRuleHitTooltip,
-} from '@/composables/rules'
+} from '@/helper/rules'
 import { useTooltip } from '@/helper/tooltip'
 import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
 import type { Rule } from '@/types'

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { Connection } from '@/types'
 
 beforeEach(() => { vi.resetModules(); localStorage.clear() })
-afterEach(() => { localStorage.clear(); window.dispatchEvent(new Event('pagehide')) })
+afterEach(() => { localStorage.clear(); window.dispatchEvent(new Event('pagehide')); vi.restoreAllMocks() })
 
 it.each(['connection-sort-type', 'connection-sort-direction', 'connection-display-style', 'proxy-sort-type', 'log-level'])(
   'rejects an invalid current enum before import changes storage (%s)', async (key) => {
@@ -18,10 +18,45 @@ it.each(['connection-sort-type', 'connection-sort-direction', 'connection-displa
 
 it('valid raw enum preferences round-trip without quoting or legacy migration', async () => {
   const { parseSettingsDocument, applyDashboardSettingsToStorage, getDashboardSettingsFromStorage } = await import('@/helper/utils')
-  const preferences = { 'config/connection-sort-type': 'host', 'config/connection-display-style': 'card', 'config/font': 'SystemUI' }
+  const preferences = { 'config/connection-sort-type': 'host', 'config/connection-display-style': 'card', 'config/font': 'SystemUI', 'config/emoji': 'twemoji', 'config/disable-pull-to-refresh': 'true' }
   applyDashboardSettingsToStorage(parseSettingsDocument({ schemaVersion: 2, preferences }))
   expect(getDashboardSettingsFromStorage()).toEqual(preferences)
   expect(() => parseSettingsDocument({ schemaVersion: 1, preferences })).toThrow()
+})
+
+it.each(['Win32', 'MacIntel', 'iPhone', 'Linux armv8l'])(
+  'defaults to Noto without a platform-dependent emoji choice (%s)', async (platform) => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+    const { emoji } = await import('@/store/settings')
+    expect(emoji.value).toBe('noto-color-emoji')
+    expect(localStorage.getItem('config/emoji')).toBeNull()
+  },
+)
+
+it.each(['twemoji', 'noto-color-emoji'])(
+  'keeps a saved emoji choice (%s)', async (saved) => {
+    localStorage.setItem('config/emoji', saved)
+    const { emoji } = await import('@/store/settings')
+    expect(emoji.value).toBe(saved)
+    expect(localStorage.getItem('config/emoji')).toBe(saved)
+  },
+)
+
+it('loads existing preferences containing retired theme names and a pull-to-refresh key', async () => {
+  const { parseSettingsDocument, applyDashboardSettingsToStorage } = await import('@/helper/utils')
+  applyDashboardSettingsToStorage(parseSettingsDocument({ schemaVersion: 2, preferences: {
+    'config/default-theme': 'light-monet',
+    'config/dark-theme': 'dark-monet',
+    'config/disable-pull-to-refresh': 'true',
+    'config/emoji': 'twemoji',
+    'config/font': 'SystemUI',
+  } }))
+  const { defaultTheme, darkTheme, emoji, font } = await import('@/store/settings')
+  expect(defaultTheme.value).toBe('light')
+  expect(darkTheme.value).toBe('dark')
+  expect(emoji.value).toBe('twemoji')
+  expect(font.value).toBe('SystemUI')
+  expect(localStorage.getItem('config/disable-pull-to-refresh')).toBe('true')
 })
 
 it('an invalid stored or subsequently assigned sort value cannot break live connection rendering', async () => {

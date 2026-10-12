@@ -1,4 +1,4 @@
-import { useChartTheme, useEChart } from '@/composables/useEChart'
+import { useChartTheme, useEChart } from '@/composables/use-echart'
 import type { EChartsCoreOption } from 'echarts/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
@@ -75,6 +75,13 @@ describe('useEChart', () => {
 
   it('mounts late rule data with connected theme colors and refreshes them after remount', async () => {
     // Chromium returns empty computed colors for detached elements.
+    const { autoTheme, defaultTheme } = await import('@/store/settings')
+    const wasAutoTheme = autoTheme.value
+    const wasDefaultTheme = defaultTheme.value
+    const wasColorScheme = document.documentElement.style.colorScheme
+    autoTheme.value = false
+    defaultTheme.value = 'light'
+    document.documentElement.style.colorScheme = 'light'
     let themeColor = 'rgb(39, 39, 42)'
     const getStyle = globalThis.getComputedStyle
     const styleSpy = vi.spyOn(globalThis, 'getComputedStyle').mockImplementation(
@@ -84,7 +91,8 @@ describe('useEChart', () => {
             if (property === 'borderBottomColor' || property === 'borderTopColor') {
               return element.isConnected ? themeColor : ''
             }
-            return Reflect.get(target, property, target)
+            const value = Reflect.get(target, property, target)
+            return typeof value === 'function' ? value.bind(target) : value
           },
         }),
     )
@@ -98,6 +106,7 @@ describe('useEChart', () => {
         useEChart(
           chartRef,
           computed(() => ({
+            color: colors.seriesPrimary,
             series: [{ data: [value.value], itemStyle: { color: colors.primary30 } }],
           })),
         )
@@ -126,6 +135,7 @@ describe('useEChart', () => {
       await nextTick()
       await nextTick()
       expect(mocks.init).toHaveBeenCalledOnce()
+      expect(mocks.chart.setOption.mock.lastCall?.[0].color).toBe('rgba(29, 29, 31, 0.6)')
       expect(mocks.chart.setOption.mock.lastCall?.[0].series[0]).toEqual({
         data: [10],
         itemStyle: { color: themeColor },
@@ -136,6 +146,8 @@ describe('useEChart', () => {
       expect(mocks.chart.dispose).toHaveBeenCalledOnce()
       const rendersBeforeRemount = mocks.chart.setOption.mock.calls.length
       themeColor = 'rgb(240, 240, 245)'
+      document.documentElement.style.colorScheme = 'dark'
+      defaultTheme.value = 'dark'
       value.value = 20
       await nextTick()
       expect(mocks.chart.setOption).toHaveBeenCalledTimes(rendersBeforeRemount)
@@ -144,10 +156,16 @@ describe('useEChart', () => {
       await nextTick()
       await nextTick()
       expect(mocks.init).toHaveBeenCalledTimes(2)
+      expect(mocks.chart.setOption.mock.lastCall?.[0].color).toBe('rgba(245, 245, 247, 0.6)')
       expect(mocks.chart.setOption.mock.lastCall?.[0].series[0]).toEqual({
         data: [20],
         itemStyle: { color: themeColor },
       })
+      document.documentElement.style.colorScheme = 'light'
+      defaultTheme.value = 'light'
+      await nextTick()
+      await nextTick()
+      expect(mocks.chart.setOption.mock.lastCall?.[0].color).toBe('rgba(29, 29, 31, 0.6)')
       expect(
         mocks.chart.setOption.mock.calls.every(
           ([option]) => option.series[0].itemStyle.color !== '',
@@ -157,6 +175,9 @@ describe('useEChart', () => {
       app.unmount()
       host.remove()
       styleSpy.mockRestore()
+      document.documentElement.style.colorScheme = wasColorScheme
+      defaultTheme.value = wasDefaultTheme
+      autoTheme.value = wasAutoTheme
     }
   })
 })

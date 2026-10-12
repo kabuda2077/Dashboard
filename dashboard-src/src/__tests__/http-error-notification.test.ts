@@ -6,7 +6,7 @@ import {
   notifyRequestError,
   notifyRequestErrorForSession,
   runManualRequest,
-} from '@/helper/requestError'
+} from '@/helper/request-error'
 import router from '@/router'
 import { activeUuid, addBackend } from '@/store/setup'
 import axios, { AxiosError } from 'axios'
@@ -102,6 +102,26 @@ describe('request error ownership', () => {
     expect(push).not.toHaveBeenCalled()
     push.mockRestore()
     expect(showNotification).not.toHaveBeenCalled()
+  })
+
+  it('keeps host network failures on the existing path without a browser secondary probe', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const session = captureBackendSession()
+      const error = new AxiosError('Network Error', 'ERR_NETWORK', {
+        headers: new axios.AxiosHeaders(),
+        url: '/proxies',
+        backendSession: session,
+      })
+      await notifyRequestErrorForSession(error, session)
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ content: '/proxies \nNetwork Error' }),
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps cancellation silent', () => {

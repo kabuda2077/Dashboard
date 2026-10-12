@@ -1,4 +1,4 @@
-import { useStorage } from '@/helper/storage'
+import { useStorage } from '@/composables/use-storage'
 import { customBackgroundURL } from '@/store/settings'
 import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'

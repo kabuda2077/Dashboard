@@ -46,10 +46,10 @@
 
 <script setup lang="ts">
 import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession } from '@/helper/requestError'
+import { notifyRequestErrorForSession } from '@/helper/request-error'
 import { updateRuleProviderAPI } from '@/assembly/rules'
 import HighlightText from '@/components/common/HighlightText.vue'
-import { useBounceOnVisible } from '@/composables/bouncein'
+import { useBounceOnVisible } from '@/composables/use-bounce-on-visible'
 import { fromNow } from '@/helper/utils'
 import { fetchRules, rulesFilter } from '@/assembly/rules'
 import type { RuleProvider } from '@/types'

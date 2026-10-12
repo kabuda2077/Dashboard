@@ -40,7 +40,7 @@ const drain = async () => {
     }
   } catch (error) {
     failure = error
-    const { notifyRequestError } = await import('@/helper/requestError')
+    const { notifyRequestError } = await import('@/helper/request-error')
     notifyRequestError(error)
   } finally {
     const completed = waiters.filter((waiter) => waiter.sequence <= job.sequence)

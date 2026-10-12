@@ -54,6 +54,18 @@ export const EMPTY_CELL = '—'
 export const formatRuleHitCount = (count: number | undefined) =>
   count ? count.toLocaleString() : EMPTY_CELL
 
+export const formatRuleHitTime = (
+  count: number | undefined,
+  at: string | undefined,
+  format = 'YYYY-MM-DD HH:mm:ss',
+) => {
+  if (!count || !at) return ''
+
+  const time = dayjs(at)
+
+  return time.isValid() && time.year() > 1 ? time.format(format) : ''
+}
+
 export const useRuleHitTooltip = () => {
   const { t } = useI18n()
   const { showTip } = useTooltip()
@@ -66,14 +78,14 @@ export const useRuleHitTooltip = () => {
     return line
   }
 
-  const buildSection = (countText: string, at: string, lastTextKey: string) => {
+  const buildSection = (countText: string, count: number, at: string, lastTextKey: string) => {
     const section = document.createElement('div')
+    const time = formatRuleHitTime(count, at)
 
     section.className = 'flex flex-col gap-1'
     section.append(buildLine(countText))
-    // An absent timestamp must not be formatted by dayjs as the current time.
-    if (at) {
-      section.append(buildLine(t(lastTextKey, { time: dayjs(at).format('YYYY-MM-DD HH:mm:ss') })))
+    if (time) {
+      section.append(buildLine(t(lastTextKey, { time })))
     }
 
     return section
@@ -88,8 +100,18 @@ export const useRuleHitTooltip = () => {
 
     content.className = 'flex flex-col gap-2 text-sm'
     content.append(
-      buildSection(t('ruleHitCount', { count: extra.hitCount }), extra.hitAt, 'ruleLastHit'),
-      buildSection(t('ruleMissCount', { count: extra.missCount }), extra.missAt, 'ruleLastMiss'),
+      buildSection(
+        t('ruleHitCount', { count: extra.hitCount }),
+        extra.hitCount,
+        extra.hitAt,
+        'ruleLastHit',
+      ),
+      buildSection(
+        t('ruleMissCount', { count: extra.missCount }),
+        extra.missCount,
+        extra.missAt,
+        'ruleLastMiss',
+      ),
     )
 
     showTip(event, content, {

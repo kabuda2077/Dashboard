@@ -215,7 +215,7 @@ import {
   skipImportSettingsConfirm,
   skipSyncSettingsConfirm,
   syncSettingsFromCore,
-} from '@/helper/autoImportSettings'
+} from '@/helper/auto-import-settings'
 import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { LOCAL_IMAGE } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
@@ -224,7 +224,7 @@ import {
   notifyRequestError,
   notifyRequestErrorForSession,
   runManualRequest,
-} from '@/helper/requestError'
+} from '@/helper/request-error'
 import { cancelBackgroundUpdates } from '@/helper/backgroundUpdates'
 import { useTooltip } from '@/helper/tooltip'
 import {

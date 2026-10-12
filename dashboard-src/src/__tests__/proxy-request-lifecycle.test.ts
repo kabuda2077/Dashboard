@@ -37,7 +37,7 @@ vi.mock('@/helper', () => ({
   isProxyGroup: (name: string) => name === 'G',
 }))
 vi.mock('@/helper/notification', () => ({ showNotification: vi.fn() }))
-vi.mock('@/helper/requestError', () => ({
+vi.mock('@/helper/request-error', () => ({
   notifyRequestErrorForSession: vi.fn(),
   runManualRequest: vi.fn(),
 }))

@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { openProxyGroupChain } from '@/composables/proxyGroupChain'
+import { openProxyGroupChain } from '@/helper/proxy-group-chain'
 import { PROXY_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import { getNowProxyNodeName, proxyGroupList, proxyMap } from '@/assembly/proxies'

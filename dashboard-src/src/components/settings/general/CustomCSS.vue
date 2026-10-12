@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { applyCustomCSS } from '@/composables/useAppearanceVars'
+import { applyCustomCSS } from '@/composables/use-appearance-vars'
 import { customCSS } from '@/store/settings'
 import { ref, watch } from 'vue'
 import DialogWrapper from '../../common/DialogWrapper.vue'

@@ -1,3 +1,4 @@
+import { getReverseDNSHostname } from '@/helper/reverse-dns'
 import { sourceIPLabelList } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import * as ipaddr from 'ipaddr.js'
@@ -97,5 +98,5 @@ export const getIPLabelFromMap = (ip: string) => {
     }
   }
 
-  return cacheResult(ip, ip)
+  return getReverseDNSHostname(ip) ?? ip
 }

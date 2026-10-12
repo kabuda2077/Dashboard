@@ -34,7 +34,7 @@ import {
   closeProxyGroupChain,
   proxyGroupChainModalOpen,
   proxyGroupChainTarget,
-} from '@/composables/proxyGroupChain'
+} from '@/helper/proxy-group-chain'
 import { PROXIES_PARENT_CLASS } from '@/helper/utils'
 import { ref, watch } from 'vue'
 

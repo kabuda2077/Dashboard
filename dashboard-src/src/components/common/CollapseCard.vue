@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { useCollapseMotion } from '@/composables/collapseMotion'
+import { useCollapseMotion } from '@/composables/use-collapse-motion'
 import { PROXIES_PARENT_CLASS } from '@/helper/utils'
 import { collapseGroupMap } from '@/store/settings'
 import { computed } from 'vue'

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <CollapseCard :name="proxyProvider.name">
     <template v-slot:title>
       <div class="flex items-center justify-between gap-2">
@@ -71,10 +71,10 @@
 
 <script setup lang="ts">
 import { captureBackendSession } from '@/helper/backendSession'
-import { notifyRequestErrorForSession } from '@/helper/requestError'
+import { notifyRequestErrorForSession } from '@/helper/request-error'
 import { proxyProviderHealthCheckAPI, updateProxyProviderAPI } from '@/assembly/proxies'
-import { useBounceOnVisible } from '@/composables/bouncein'
-import { useRenderProxyList } from '@/composables/renderProxies'
+import { useBounceOnVisible } from '@/composables/use-bounce-on-visible'
+import { useRenderProxyList } from '@/composables/use-render-proxy-list'
 import { fromNow, prettyBytesHelper } from '@/helper/utils'
 import { fetchProxies } from '@/assembly/proxies'
 import { proxyProviederList } from '@/assembly/proxies'

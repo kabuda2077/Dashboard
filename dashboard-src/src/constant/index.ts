@@ -1,5 +1,3 @@
-export const IS_APPLE_DEVICE = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-
 export const GLOBAL = 'GLOBAL'
 export const TEST_URL = 'https://www.gstatic.com/generate_204'
 export const IPV6_TEST_URL = 'https://ipv6.google.com/generate_204'
@@ -131,7 +129,6 @@ export enum SORT_DIRECTION {
 
 export enum CONNECTION_TAB_TYPE {
   ACTIVE = 'activeConnections',
-  CLOSED = 'closedConnections',
   ALL = 'allConnections',
 }
 
@@ -144,6 +141,12 @@ export enum LOG_LEVEL {
   Fatal = 'fatal',
   Panic = 'panic',
   Silent = 'silent',
+}
+
+export enum TUN_STACK {
+  System = 'system',
+  gVisor = 'gvisor',
+  Mixed = 'mixed',
 }
 
 export enum ROUTE_NAME {
@@ -219,7 +222,6 @@ export const ALL_THEME = [
   'dark',
   'light-neutral',
   'dark-neutral',
-  ...(window.ksu ? ['light-monet', 'dark-monet'] : []),
   'halloween',
   'forest',
   'dracula',

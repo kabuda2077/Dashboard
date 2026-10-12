@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { createVirtualRowShift, provideVirtualRowShift } from '@/composables/virtualRowShift'
+import { createVirtualRowShift, provideVirtualRowShift } from '@/composables/use-virtual-row-shift'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 

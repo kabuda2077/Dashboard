@@ -1,61 +1,12 @@
 /* Complete daisyUI theme palettes. Shared tokens belong in tokens.css. */
 
 @plugin 'daisyui/theme' {
-  name: 'light-monet';
-  --color-primary: var(--primary, oklch(49.12% 0.3096 275.75));
-  --color-primary-content: var(--onPrimary, #d4dbff);
-  --color-secondary: var(--secondary, oklch(69.71% 0.329 342.55));
-  --color-secondary-content: var(--onSecondary, oklch(98.71% 0.0106 342.55));
-  --color-accent: var(--tertiary, oklch(76.76% 0.184 183.61));
-  --color-accent-content: var(--onTertiary, #00100d);
-  --color-neutral: var(--surface, #2b3440);
-  --color-neutral-content: var(--onSurface, #d7dde4);
-  --color-base-100: oklch(100% 0 0);
-  --color-base-200: #f2f2f2;
-  --color-base-300: #e5e6e6;
-  --color-base-content: #1f2937;
-  --radius-selector: 1rem;
-  --radius-field: 0.5rem;
-  --radius-box: 1rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
-}
-
-@plugin 'daisyui/theme' {
-  name: 'dark-monet';
-  --color-primary: var(--primary, oklch(65.69% 0.196 275.75));
-  --color-primary-content: var(--onPrimary, #050617);
-  --color-secondary: var(--secondary, oklch(74.8% 0.26 342.55));
-  --color-secondary-content: var(--onSecondary, #190211);
-  --color-accent: var(--tertiary, oklch(74.51% 0.167 183.61));
-  --color-accent-content: var(--onTertiary, #000e0c);
-  --color-neutral: var(--surface, #2a323c);
-  --color-neutral-content: var(--onSurface, #a6adbb);
-  --color-base-100: #1d232a;
-  --color-base-200: #191e24;
-  --color-base-300: #15191e;
-  --color-base-content: #a6adbb;
-  --radius-selector: 1rem;
-  --radius-field: 0.5rem;
-  --radius-box: 1rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
-  color-scheme: dark;
-}
-
-@plugin 'daisyui/theme' {
   name: 'light';
-  --color-primary: #1d1d1f;
+  --color-primary: #454a51;
   --color-primary-content: #ffffff;
   --color-secondary: #6e6e73;
   --color-secondary-content: #ffffff;
-  --color-accent: #d2d2d7;
+  --color-accent: #86868b;
   --color-accent-content: #1d1d1f;
   --color-neutral: #3a3a3a;
   --color-neutral-content: #f5f5f7;
@@ -87,8 +38,8 @@
   --color-primary-content: #1d1d1f;
   --color-secondary: #a1a1a6;
   --color-secondary-content: #1d1d1f;
-  --color-accent: #636366;
-  --color-accent-content: #ffffff;
+  --color-accent: #86868b;
+  --color-accent-content: #1d1d1f;
   --color-neutral: #5e5e5e;
   --color-neutral-content: #f5f5f7;
   --color-base-100: #1d1d1f;
@@ -148,12 +99,12 @@
 
 @plugin 'daisyui/theme' {
   name: 'dark-neutral';
-  --color-primary: #6c6c70;
-  --color-primary-content: #fafafa;
-  --color-secondary: #57575c;
-  --color-secondary-content: #fafafa;
-  --color-accent: #45454a;
-  --color-accent-content: #fafafa;
+  --color-primary: #c1bcb6;
+  --color-primary-content: #1c1c1e;
+  --color-secondary: #9f9b95;
+  --color-secondary-content: #1c1c1e;
+  --color-accent: #88847e;
+  --color-accent-content: #1c1c1e;
   --color-neutral: #6c6c6c;
   --color-neutral-content: #fafafa;
   --color-base-100: #262626;

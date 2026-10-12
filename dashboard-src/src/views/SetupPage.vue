@@ -79,6 +79,7 @@
       <button
         class="btn btn-primary btn-sm w-full"
         @click="handleSubmit(form)"
+        :disabled="isSubmitting"
       >
         {{ $t('submit') }}
       </button>
@@ -140,14 +141,16 @@
 </template>
 
 <script setup lang="ts">
-import { isBackendAvailable } from '@/assembly/backend'
+import { probeBackend } from '@/assembly/backend'
 import DashboardSettings from '@/components/common/DashboardSettings.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import EditBackendModal from '@/components/settings/backend/EditBackendModal.vue'
 import LanguageSelect from '@/components/settings/general/LanguageSelect.vue'
 import { ROUTE_NAME } from '@/constant'
-import { syncSettingsFromCore } from '@/helper/autoImportSettings'
+import { syncSettingsFromCore } from '@/helper/auto-import-settings'
 import { showNotification } from '@/helper/notification'
+import { describeProbeFailure, getBackendProbeUrl } from '@/helper/connectivity'
+import { backendSessionGeneration } from '@/helper/backendSession'
 import { getBackendFromUrl, getLabelFromBackend } from '@/helper/utils'
 import router from '@/router'
 import { activeUuid, addBackend, backendList, removeBackend } from '@/store/setup'
@@ -158,11 +161,8 @@ import {
   QuestionMarkCircleIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
-import { reactive, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
-
-const { t } = useI18n()
 
 const form = reactive({
   type: 'clash' as const,
@@ -174,6 +174,13 @@ const form = reactive({
   label: '',
 })
 
+const isSubmitting = ref(false)
+let disposed = false
+let pendingProbe: AbortController | undefined
+onBeforeUnmount(() => {
+  disposed = true
+  pendingProbe?.abort()
+})
 const showEditModal = ref(false)
 const editingBackendUuid = ref('')
 const isManualSetupRoute = () => router.currentRoute.value.query.setupMode === 'manual'
@@ -214,6 +221,7 @@ const finishLogin = async () => {
 }
 
 const handleSubmit = async (setupForm: SetupForm, quiet = false) => {
+  if (isSubmitting.value) return
   const { protocol, host, port } = setupForm
 
   if (!protocol || !host || !port) {
@@ -230,18 +238,52 @@ const handleSubmit = async (setupForm: SetupForm, quiet = false) => {
     showNotification({ content: 'protocolTips' })
   }
 
-  const candidate: Backend = { uuid: '', ...setupForm }
+  const draft = { ...setupForm }
+  const candidate: Backend = { uuid: '', ...draft }
+  isSubmitting.value = true
+  const controller = new AbortController()
+  pendingProbe = controller
+  const stopWatching = watch(
+    [
+      () => ({ ...setupForm }),
+      activeUuid,
+      backendSessionGeneration,
+      () => router.currentRoute.value,
+    ],
+    () => controller.abort(),
+    { deep: true, flush: 'sync' },
+  )
+  const isCurrent = () =>
+    !disposed &&
+    !controller.signal.aborted &&
+    !Object.keys(draft).some(
+      (key) => draft[key as keyof SetupForm] !== setupForm[key as keyof SetupForm],
+    )
 
   try {
-    if (!(await isBackendAvailable(candidate, 10000))) {
-      if (!quiet) alert(t('backendConnectionFailed'))
+    const result = await probeBackend(candidate, 10000, controller.signal)
+    if (!isCurrent()) return
+    if (!result.ok) {
+      if (!quiet) {
+        const content = await describeProbeFailure(
+          result,
+          getBackendProbeUrl(candidate),
+          controller.signal,
+        )
+        if (isCurrent()) showNotification({ content, type: 'alert-error' })
+      }
       return
     }
 
-    addBackend(setupForm)
+    stopWatching()
+    addBackend(draft)
     await finishLogin()
   } catch (error) {
-    if (!quiet) alert(error)
+    if (!quiet && isCurrent()) alert(error)
+  } finally {
+    stopWatching()
+    if (pendingProbe === controller) pendingProbe = undefined
+    isSubmitting.value = false
   }
 }
 

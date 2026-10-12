@@ -4,7 +4,7 @@
  * 就得把标题也当成行、行号跨段累加;分开挂则每段自己算自己的,列数一样、共用外面同一个
  * 滚动容器,视觉上和一整片网格没区别。
  */
-import { groupProxiesByProviderName } from '@/composables/renderProxies'
+import { groupProxiesByProviderName } from '@/composables/use-render-proxy-list'
 import { computed, onBeforeUnmount, onBeforeUpdate, ref } from 'vue'
 import ProxiesContent from './ProxiesContent.vue'
 

@@ -48,7 +48,7 @@
     </div>
   </DialogWrapper>
 
-  <SettingItem :when="!isMiddleScreen">
+  <SettingItem>
     <div class="setting-item-label">
       {{ $t('keyboardShortcuts') }}
     </div>
@@ -71,10 +71,9 @@ import {
   PAGE_SHORTCUT_ACTIONS,
   serializeShortcutEvent,
   useKeyboardShortcuts,
-} from '@/composables/keyboard'
+} from '@/composables/use-keyboard'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import { renderRoutes } from '@/helper'
-import { isMiddleScreen } from '@/helper/utils'
 import { keyboardShortcuts } from '@/store/settings'
 import { PencilSquareIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'

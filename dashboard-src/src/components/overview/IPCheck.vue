@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { getIPs, ipForChina, ipForGlobal, isCheckingIPs } from '@/composables/overview'
+import { getIPs, ipForChina, ipForGlobal, isCheckingIPs } from '@/helper/overview'
 import { useTooltip } from '@/helper/tooltip'
 import { autoIPCheck, IPInfoAPI } from '@/store/settings'
 import { BoltIcon, EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'

@@ -29,7 +29,7 @@
 
 <script setup lang="ts">
 import { configs, updateConfigs } from '@/assembly/config'
-import { runManualRequest } from '@/helper/requestError'
+import { runManualRequest } from '@/helper/request-error'
 
 type PortKey = 'mixed-port' | 'port' | 'socks-port' | 'redir-port' | 'tproxy-port'
 

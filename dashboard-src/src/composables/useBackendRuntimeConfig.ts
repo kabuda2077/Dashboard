@@ -7,9 +7,20 @@ import {
   isConfigLoading,
   updateConfigs,
 } from '@/assembly/config'
-import { backendConnectionStatus } from '@/helper/backendSession'
+import { hasHostBridge, hostState } from '@/composables/hostBridge'
+import { TUN_STACK } from '@/constant'
+import {
+  backendConnectionStatus,
+  backendSessionReady,
+  captureBackendSession,
+} from '@/helper/backendSession'
 import { activeBackend } from '@/store/setup'
-import { computed } from 'vue'
+import { computed, shallowRef } from 'vue'
+
+const pendingTunWrite = shallowRef<ReturnType<typeof captureBackendSession>>()
+const supportedTunStacks: string[] = Object.values(TUN_STACK)
+const normalizeTunStack = (stack: string) =>
+  supportedTunStacks.includes(stack.toLowerCase()) ? stack.toLowerCase() : stack
 
 export type RuntimeTunState = {
   visible: boolean
@@ -33,8 +44,17 @@ export const useBackendRuntimeConfig = () => {
     if (configError.value) return 'error'
     return isActiveConfigLoaded.value ? 'ready' : 'idle'
   })
+  const isTunUpdating = computed(() => pendingTunWrite.value?.isCurrent() ?? false)
+  const isDesktopSingBox = computed(() => hasHostBridge && hostState.value.coreType === 'sing-box')
+  const isHostBusy = computed(
+    () => hasHostBridge && (
+      !!hostState.value.isCoreUpgrading || !!hostState.value.isCoreSwitching ||
+      (hostState.value.operation !== undefined && hostState.value.operation !== 'idle')
+    ),
+  )
   const apiTunEnabled = computed(() =>
-    configStatus.value === 'ready' && typeof configs.value.tun?.enable === 'boolean'
+    (configStatus.value === 'ready' || (isTunUpdating.value && isActiveConfigLoaded.value)) &&
+    typeof configs.value.tun?.enable === 'boolean'
       ? configs.value.tun.enable
       : undefined,
   )
@@ -44,13 +64,49 @@ export const useBackendRuntimeConfig = () => {
       : undefined,
   )
   const hasWritableApiTun = computed(
-    () => typeof apiTunEnabled.value === 'boolean' && !activeBackend.value?.disableTunMode,
+    () =>
+      typeof apiTunEnabled.value === 'boolean' && backendSessionReady.value &&
+      !isDesktopSingBox.value && !activeBackend.value?.disableTunMode,
   )
+  const isTunBusy = computed(() => isTunUpdating.value || isHostBusy.value)
+  const canWriteTun = computed(() => hasWritableApiTun.value && !isTunBusy.value)
+  const tunStack = computed(() => {
+    const stack = configs.value.tun?.stack
+    return isActiveConfigLoaded.value && typeof stack === 'string' && stack.trim()
+      ? normalizeTunStack(stack)
+      : ''
+  })
+  const canShowTunStack = computed(() => hasWritableApiTun.value && !!tunStack.value)
+  const tunStackOptions = computed(() => {
+    const options: { value: string; label: string; disabled?: boolean }[] =
+      supportedTunStacks.map((value) => ({ value, label: value }))
+    if (tunStack.value && !supportedTunStacks.includes(tunStack.value))
+      options.unshift({ value: tunStack.value, label: tunStack.value, disabled: true })
+    return options
+  })
+  const writeTun = async (enable: boolean, stack?: string) => {
+    const session = captureBackendSession()
+    pendingTunWrite.value = session
+    try {
+      // mihomo treats omitted tun.enable as false, even for a stack-only change.
+      await updateConfigs({ tun: stack === undefined ? { enable } : { enable, stack } })
+      if (!session.isCurrent()) return
+      return (
+        configStatus.value === 'ready' && configs.value.tun?.enable === enable &&
+        (stack === undefined || (
+          typeof configs.value.tun.stack === 'string' &&
+          normalizeTunStack(configs.value.tun.stack) === stack
+        ))
+      )
+    } finally {
+      if (pendingTunWrite.value === session) pendingTunWrite.value = undefined
+    }
+  }
   const tunState = computed<RuntimeTunState>(() => {
     if (hasWritableApiTun.value)
       return {
         visible: true,
-        writable: true,
+        writable: canWriteTun.value,
         loading: false,
         enabled: apiTunEnabled.value,
         source: 'api',
@@ -79,10 +135,23 @@ export const useBackendRuntimeConfig = () => {
     isActiveConfigLoaded,
     configStatus,
     tunState,
+    tunStack,
+    tunStackOptions,
+    canShowTunStack,
+    isTunUpdating,
+    isTunBusy,
+    canWriteTun,
     allowLanEnabled,
     ensureConfigLoaded: () => fetchConfigs(true),
     updateTunEnabled: async (enabled: boolean) => {
-      if (hasWritableApiTun.value) await updateConfigs({ tun: { enable: enabled } })
+      if (canWriteTun.value) await writeTun(enabled)
+    },
+    updateTunStack: async (stack: string) => {
+      if (
+        !canWriteTun.value || !canShowTunStack.value || !supportedTunStacks.includes(stack) ||
+        stack === tunStack.value
+      ) return
+      return writeTun(apiTunEnabled.value!, stack)
     },
     updateAllowLan: async (enabled: boolean) => {
       if (typeof allowLanEnabled.value === 'boolean') await updateConfigs({ 'allow-lan': enabled })

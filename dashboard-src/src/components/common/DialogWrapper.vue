@@ -1,7 +1,7 @@
 <template>
   <Teleport to="#app-content">
     <!--
-      :duration 必须显式给：Vue 只测量根元素上的 transition，而移动端抽屉的滑入
+      :duration 必须显式给：Vue 只测量根元素上的 transition，而窄布局抽屉的滑入
       (0.35s) 比遮罩淡出 (0.25s) 长，自动推断会在 0.25s 就掐断离场动画。
     -->
     <Transition
@@ -59,12 +59,8 @@
             </button>
           </div>
           <!--
-            高度区间在移动端由 .modal-box 统一约束（见上面的 max-h-[85dvh] / min-h-[40dvh]），
-            这里只负责吃掉剩余空间；桌面端维持原本加在滚动容器上的 90dvh 不变。
-            软键盘弹起时 dvh 会跟着 layout viewport 一起收缩（见 index.html 的
-            interactive-widget=resizes-content），所以上下限都不会撑破可视高度。
-            safe-area 补在滚动容器的 padding 上而不是 .modal-box 上，这样最后一条内容能
-            滚到 home indicator 上方，抽屉背景仍然铺满到屏幕物理下缘。
+            窄布局由 .modal-box 约束高度，滚动容器填满剩余空间；宽布局上限为 90dvh。
+            安全区补偿留在内部 padding，保持背景连续及最后一条内容可滚动到达。
           -->
           <div
             v-if="isOpen"
@@ -86,14 +82,15 @@
 <script setup lang="ts">
 import { blurIntensity } from '@/store/settings'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
-import { computed, ref, watch, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
 
-const MOBILE_MEDIA_QUERY = '(width < 48rem)'
+const NARROW_MEDIA_QUERY = '(width < 48rem)'
 const DIRECTION_LOCK_DISTANCE = 10
 const VERTICAL_DOMINANCE_RATIO = 1.2
 const MIN_FLING_DISTANCE = 48
 const CLOSE_VELOCITY = 0.5
 const SWIPE_TRANSITION = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
+const SETTLE_TIMEOUT = 450
 
 type SwipeState = 'idle' | 'pending' | 'dragging' | 'settling' | 'dismissing' | 'rejected'
 
@@ -116,6 +113,7 @@ let startX = 0
 let startY = 0
 let startTime = 0
 let endY = 0
+let settleTimer: ReturnType<typeof setTimeout> | undefined
 
 const swipeProgress = computed(() => {
   const height = modalBoxRef.value?.offsetHeight || 1
@@ -157,8 +155,7 @@ const backdropSwipeStyle = computed<CSSProperties | undefined>(() => {
  *
  * 不能直接用静态 class —— 弹窗是 v-show 收起的，元素始终留在 DOM 里，而 daisyUI 的
  * :root:has(.modal-open) 整页滚动锁（base/rootscrolllock.css）不看 display，常挂的
- * .modal-open 会让 <html> 永久 overflow: hidden，移动端浏览器的原生下拉刷新就再也
- * 触发不了（「禁用下拉刷新」只管 body，关掉也没用，见 App.vue）。
+ * .modal-open 会让 <html> 永久 overflow: hidden，关闭后也无法恢复正常滚动。
  *
  * 也不能直接绑 isOpen：daisyUI 的 .modal 基础态是 visibility: hidden + opacity: 0，
  * 关闭瞬间摘掉 .modal-open，离场动画会被一帧掐断。所以摘除推迟到 after-leave。
@@ -209,11 +206,12 @@ function onTouchStart(event: TouchEvent) {
     settleSwipe()
     return
   }
+  if (swipeState.value === 'settling') resetSwipe()
   if (swipeState.value !== 'idle') return
 
   if (
     !isOpen.value ||
-    !window.matchMedia(MOBILE_MEDIA_QUERY).matches ||
+    !window.matchMedia(NARROW_MEDIA_QUERY).matches ||
     event.touches.length !== 1
   ) {
     swipeState.value = 'rejected'
@@ -309,7 +307,7 @@ function onTouchCancel() {
 }
 
 function settleSwipe() {
-  if (prefersReducedMotion()) {
+  if (prefersReducedMotion() || swipeOffset.value === 0) {
     resetSwipe()
     return
   }
@@ -317,6 +315,7 @@ function settleSwipe() {
   swipeState.value = 'settling'
   swipeAnimating.value = true
   swipeOffset.value = 0
+  settleTimer = setTimeout(resetSwipe, SETTLE_TIMEOUT)
 }
 
 function onBoxTransitionEnd(event: TransitionEvent) {
@@ -324,6 +323,8 @@ function onBoxTransitionEnd(event: TransitionEvent) {
 }
 
 function resetSwipe() {
+  clearTimeout(settleTimer)
+  settleTimer = undefined
   swipeState.value = 'idle'
   swipeOffset.value = 0
   swipeAnimating.value = false
@@ -339,6 +340,8 @@ function close() {
 function enter() {
   emits('enter')
 }
+
+onBeforeUnmount(resetSwipe)
 </script>
 
 <style scoped>
@@ -368,7 +371,7 @@ function enter() {
   transform: scale(0.95);
 }
 
-/* 移动端底部抽屉：从屏幕下缘滑入，时长与曲线和路由切换保持一致 */
+/* 窄布局底部抽屉：从窗口下缘滑入，时长与曲线和路由切换保持一致 */
 @media (width < 48rem) {
   .modal-enter-from .modal-box,
   .modal-leave-to .modal-box {

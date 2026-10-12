@@ -7,7 +7,7 @@ const dialog = vi.hoisted(() => ({
   resolve: undefined as undefined | ((value: { confirmed: boolean; checked: boolean }) => void),
 }))
 vi.mock('@/composables/coreHostActions', () => ({ coreHostActionsKey: dialog.key }))
-vi.mock('@/helper/confirmDialog', () => ({
+vi.mock('@/helper/confirm-dialog', () => ({
   showConfirmDialog: vi.fn(
     () =>
       new Promise((resolve) => {

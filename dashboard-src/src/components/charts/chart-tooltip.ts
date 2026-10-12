@@ -1,7 +1,7 @@
 import { prettyBytesHelper } from '@/helper/utils'
 import dayjs from 'dayjs'
-import type { ChartTooltipParam } from './chartTypes'
-import { getChartPointValue, isInitialChartPoint } from './chartTypes'
+import type { ChartTooltipParam } from './chart-types'
+import { getChartPointValue, isInitialChartPoint } from './chart-types'
 
 export const escapeChartHtml = (value: unknown) =>
   String(value)

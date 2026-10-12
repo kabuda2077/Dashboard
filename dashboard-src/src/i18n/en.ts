@@ -143,6 +143,10 @@ const en = {
   automaticDisconnection: 'Auto disconnect on node switch',
   backend: 'Backend',
   tunMode: 'TUN mode',
+  tunStack: 'TUN stack',
+  tunStackHelp: 'Changing the stack rebuilds TUN and may interrupt connections.',
+  tunStackUpdateFailed:
+    'The TUN stack change was not confirmed. Check the current state and core logs.',
   upgradeCore: 'Upgrade core',
   upgradeCoreConfirm:
     'Upgrade the core now? The core will restart and the proxy service will be briefly interrupted.',
@@ -293,9 +297,6 @@ const en = {
   moreSettings: 'More settings',
   customIcon: 'Custom icon',
   dropOrClickUpload: 'Drop an image or paste a URL',
-  disablePullToRefresh: 'Disable pull to refresh',
-  disablePullToRefreshTip:
-    'Pull-to-refresh and virtual scrolling components may conflict. If you experience lag or accidentally trigger pull-to-refresh while scrolling, try disabling this feature.',
   keyboardShortcuts: 'Keyboard shortcuts',
   keyboardShortcutsTip:
     'Click the input and press a key or key combination to set a shortcut. Press Backspace or Delete to clear it.',
@@ -355,6 +356,18 @@ const en = {
   manageBackends: 'Manage backends',
   noBackendYet: 'No backend yet',
   backendConnectionFailed: 'Backend connection failed. Please check your configuration.',
+  diagnosisUnauthorized: 'Authentication failed (HTTP 401). Check the API secret.',
+  diagnosisTimeout: 'The backend did not respond in time.',
+  diagnosisBadEndpoint: 'the address is reachable but is not this API, or the path is wrong.',
+  diagnosisOffline: 'The browser is offline; check your network connection.',
+  diagnosisCorsBlocked:
+    'The backend is reachable, but the browser could not read the response. Check that the backend allows this origin (CORS), using external-controller-cors in the core config.',
+  diagnosisMixedContent:
+    'The browser blocked the request: an HTTPS page cannot access an HTTP backend. Open the dashboard over HTTP, or serve the API over HTTPS.',
+  diagnosisMixedContentOrUnreachable:
+    'The backend is unreachable — or, if it is running, the browser blocked this HTTPS page from accessing the HTTP backend; try opening the dashboard over HTTP.',
+  diagnosisUnreachable:
+    'The backend is unreachable; check that the address and port are correct and that the core is running.',
   backendConfigSaved: 'Backend configuration saved successfully',
   saveFailed: 'Save failed',
   checking: 'Checking...',

@@ -7,7 +7,7 @@ vi.mock('@/components/settings/SettingsContent.vue', () => ({ default: { templat
 vi.mock('@/components/common/CtrlsBar.vue', () => ({
   default: { template: '<div><slot /></div>' },
 }))
-vi.mock('@/helper/confirmDialog', () => ({ showConfirmDialog: vi.fn() }))
+vi.mock('@/helper/confirm-dialog', () => ({ showConfirmDialog: vi.fn() }))
 let app: App | undefined
 let root: HTMLDivElement
 beforeEach(() => {
@@ -145,7 +145,7 @@ it('setup failure remains in the dialog and never declares setup complete', asyn
 
 it.each([false, true])('discarding a draft requires confirmation (%s) and never writes the profile', async (confirmed) => {
   const host = await mount({ setupCompleted: true })
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
+  const { showConfirmDialog } = await import('@/helper/confirm-dialog')
   vi.mocked(showConfirmDialog).mockResolvedValue({ confirmed, checked: false })
   const original = root.querySelector<HTMLInputElement>('#core-exe')!.value
   await edit('#core-exe', 'C:/unsaved.exe')
@@ -157,7 +157,7 @@ it.each([false, true])('discarding a draft requires confirmation (%s) and never 
 })
 it('a delayed discard cannot reset the target after opening the switch editor', async () => {
   await mount({ setupCompleted: true })
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
+  const { showConfirmDialog } = await import('@/helper/confirm-dialog')
   let confirm!: (value: { confirmed: boolean; checked: boolean }) => void
   vi.mocked(showConfirmDialog).mockImplementation(() => new Promise(resolve => { confirm = resolve }))
   await edit('#core-exe', 'C:/unsaved.exe')
@@ -266,7 +266,7 @@ it.each([false, true])('reload confirmation stays inside the native switch dialo
   next.profiles['sing-box'] = { ...next.profiles['sing-box'], revision: 1, exePath: 'C:/remote.exe' }
   host.setState(next)
   await nextTick()
-  const { showConfirmDialog } = await import('@/helper/confirmDialog')
+  const { showConfirmDialog } = await import('@/helper/confirm-dialog')
   vi.mocked(showConfirmDialog).mockClear()
   root.querySelector<HTMLButtonElement>('[data-testid=reload-dialog-draft]')!.click()
   await nextTick()

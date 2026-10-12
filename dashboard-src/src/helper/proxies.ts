@@ -9,7 +9,7 @@ import {
 import { isSingBoxCore } from '@/assembly/version'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup } from '@/helper'
-import { groupsInActiveFolder, isProxyFolderModeActive } from '@/store/proxyFolders'
+import { groupsInActiveFolder, isProxyFolderModeActive } from '@/store/proxy-folders'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
 import { isEmpty } from 'lodash'
 import { computed, ref } from 'vue'
@@ -19,7 +19,7 @@ import {
   proxyGroupContainsMatchingNode,
   proxyProviderContainsMatchingNode,
   proxySearchKeyword,
-} from './proxySearch'
+} from './proxy-search'
 
 const filterProxyGroups = (groups: string[], respectHiddenGroups = true) => {
   if (!proxySearchKeyword.value) {

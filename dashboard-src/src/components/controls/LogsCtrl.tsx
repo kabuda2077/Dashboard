@@ -1,5 +1,5 @@
 import { isSingBoxCore } from '@/assembly/version'
-import { useCtrlsBar } from '@/composables/useCtrlsBar'
+import { useCtrlsBar } from '@/composables/use-ctrls-bar'
 import { LIST_DISPLAY_STYLE, LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {

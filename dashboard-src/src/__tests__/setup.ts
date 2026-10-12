@@ -38,11 +38,6 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
-Object.defineProperty(navigator, 'standalone', {
-  configurable: true,
-  value: false,
-})
-
 const createSuccessRequest = <T>(result: T, complete?: () => void): IDBRequest<T> => {
   const request = {
     result,

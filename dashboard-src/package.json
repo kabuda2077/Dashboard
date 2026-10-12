@@ -17,6 +17,9 @@
     "lint": "eslint . --fix",
     "preview": "vite preview",
     "test:unit": "vitest run",
+    "test:proxy:verify": "node test/verify.mjs",
+    "test:proxy:collapse": "node test/collapse.mjs",
+    "test:proxy:bench": "node test/bench.mjs",
     "type-check": "vue-tsc --build --force"
   },
   "dependencies": {

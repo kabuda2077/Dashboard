@@ -110,20 +110,6 @@
         class="toggle"
       />
     </SettingItem>
-    <SettingItem class="md:hidden!">
-      <div class="setting-item-label">
-        {{ $t('disablePullToRefresh') }}
-        <QuestionMarkCircleIcon
-          class="h-4 w-4 cursor-pointer"
-          @mouseenter="showTip($event, $t('disablePullToRefreshTip'))"
-        />
-      </div>
-      <input
-        type="checkbox"
-        v-model="disablePullToRefresh"
-        class="toggle"
-      />
-    </SettingItem>
     <KeyboardShortcutsSettings />
   </div>
 </template>
@@ -140,7 +126,6 @@ import { useTooltip } from '@/helper/tooltip'
 import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
-  disablePullToRefresh,
   geoipASNDatabaseURL,
   geoipCountryDatabaseURL,
   IPInfoAPI,

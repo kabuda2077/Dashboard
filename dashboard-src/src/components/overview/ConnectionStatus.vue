@@ -72,7 +72,7 @@ import {
   isTestingLatency as isTesting,
   LATENCY_ROUNDS as ROUNDS,
   latencyTargets as targets,
-} from '@/composables/overview'
+} from '@/helper/overview'
 import { getColorForLatency } from '@/helper'
 import { autoConnectionCheck } from '@/store/settings'
 import { BoltIcon } from '@heroicons/vue/24/outline'

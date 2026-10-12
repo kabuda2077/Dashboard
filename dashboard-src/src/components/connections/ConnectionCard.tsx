@@ -3,16 +3,21 @@ import {
   disconnectByIdAPI,
   getConnectionDisplayValue,
 } from '@/assembly/connections'
-import { useBounceOnVisible } from '@/composables/bouncein'
-import { useConnections } from '@/composables/connections'
+import { useBounceOnVisible } from '@/composables/use-bounce-on-visible'
+import { useConnections } from '@/composables/use-connections'
 import {
   CONNECTION_TAB_TYPE,
   CONNECTIONS_TABLE_ACCESSOR_KEY,
   PROXY_CHAIN_DIRECTION,
 } from '@/constant'
 import { getConnectionChains, getConnectionSmartBlock } from '@/helper'
-import { runManualRequest } from '@/helper/requestError'
-import { connectionFilter, connectionTabShow, isClosedConnection } from '@/store/connections'
+import { runManualRequest } from '@/helper/request-error'
+import {
+  connectionFilter,
+  connectionTabShow,
+  isClosedConnection,
+  showClosedOnly,
+} from '@/store/connections'
 import { connectionCardLines, proxyChainDirection, showFullProxyChain } from '@/store/settings'
 import type { Connection } from '@/types'
 import {
@@ -221,7 +226,8 @@ export default defineComponent<{
         },
       }
       const isClosed = isClosedConnection(conn)
-      const dimmed = isClosed && connectionTabShow.value === CONNECTION_TAB_TYPE.ALL
+      const dimmed =
+        isClosed && connectionTabShow.value === CONNECTION_TAB_TYPE.ALL && !showClosedOnly.value
 
       return (
         <div

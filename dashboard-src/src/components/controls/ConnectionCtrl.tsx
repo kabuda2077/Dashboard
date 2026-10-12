@@ -6,16 +6,24 @@ import {
   hasExpandedConnectionCardGroups,
   toggleAllConnectionCardGroups,
   type ConnectionCardGroupKey,
-} from '@/composables/connectionCardGroups'
-import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
-import { runManualRequest } from '@/helper/requestError'
+} from '@/helper/connection-card-groups'
+import { useCtrlsBar } from '@/composables/use-ctrls-bar'
+import {
+  ROUTE_NAME,
+  SETTINGS_MENU_KEY,
+  SORT_DIRECTION,
+  SORT_TYPE,
+} from '@/constant'
+import { captureBackendSession } from '@/helper/backendSession'
+import { runManualRequest } from '@/helper/request-error'
 import { useTooltip } from '@/helper/tooltip'
 import {
+  activeConnections,
   connectionFilter,
-  connections,
   connectionSortDirection,
   connectionSortType,
+  isClosedConnection,
+  isClosedOnlyView,
   isPaused,
   quickFilterEnabled,
   quickFilterRegex,
@@ -37,7 +45,7 @@ import {
   WrenchScrewdriverIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
-import { defineComponent, ref } from 'vue'
+import { computed, defineComponent, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CtrlsBar from '../common/CtrlsBar.vue'
@@ -49,11 +57,40 @@ import TableSettings from '../settings/connections/TableSettings.vue'
 import ConnectionTabs from './ConnectionTabs.vue'
 import SourceIPFilter from './SourceIPFilter.vue'
 
+const pausedSnapshot = shallowRef<typeof activeConnections.value>()
+watch(
+  isPaused,
+  (paused) => {
+    if (paused || pausedSnapshot.value) pausedSnapshot.value = activeConnections.value
+  },
+  { flush: 'sync', immediate: true },
+)
+
+const closeTargets = computed(() => {
+  // Wait for a fresh list after resuming: frozen snapshots cannot prove current identity.
+  if (
+    isPaused.value ||
+    pausedSnapshot.value === activeConnections.value ||
+    isClosedOnlyView.value
+  ) return []
+
+  const active = new Set(activeConnections.value)
+
+  return [...new Set(
+    renderConnections.value.filter((conn) => active.has(conn) && !isClosedConnection(conn)),
+  )]
+})
+
 const handlerClickCloseAll = () => {
-  if (renderConnections.value.length === connections.value.length) {
+  const targets = closeTargets.value
+  if (!targets.length) return
+
+  const session = captureBackendSession()
+  if (targets.length === new Set(activeConnections.value).size) {
     void runManualRequest(() => disconnectAllAPI())
   } else {
-    renderConnections.value.forEach((conn) => {
+    targets.forEach((conn) => {
+      if (!session.isCurrent() || !closeTargets.value.includes(conn)) return
       void runManualRequest(() => disconnectByIdAPI(conn.id))
     })
   }
@@ -265,6 +302,7 @@ export default defineComponent({
           </button>
           <button
             class="btn btn-circle btn-sm"
+            disabled={!closeTargets.value.length}
             onClick={handlerClickCloseAll}
           >
             <XMarkIcon class="h-4 w-4" />

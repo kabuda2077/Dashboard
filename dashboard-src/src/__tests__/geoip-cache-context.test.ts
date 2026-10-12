@@ -5,7 +5,7 @@ vi.mock('@/store/settings', async () => {
   const { ref } = await import('vue')
   return { language: ref('zh-CN'), geoipCountryDatabaseURL: ref('country-old'), geoipASNDatabaseURL: ref('asn') }
 })
-vi.mock('@/helper/geoipChunkStore', () => ({ geoIPChunkStore: {
+vi.mock('@/helper/geoip-chunk-store', () => ({ geoIPChunkStore: {
   getManifest: async () => ({ updatedAt: Date.now(), generation: 'test' }),
   createSource: (url: string) => url,
 } }))
@@ -24,7 +24,7 @@ it('refreshes cached localized country names after a language change', async () 
   calls.lookup.mockImplementation(async (url: string) => url === 'asn' ? {} : {
     country: { names: { en: 'China', 'zh-CN': '中国' } },
   })
-  const { getConnectionGeoIPInfoSync: info } = await import('@/api/connectionGeoipDatabase')
+  const { getConnectionGeoIPInfoSync: info } = await import('@/api/connection-geoip-database')
   info('8.8.8.8')
   await settle()
   expect(info('8.8.8.8').country).toBe('中国')
@@ -41,7 +41,7 @@ it('an old database lookup cannot populate the new cache or release its pending 
   calls.lookup.mockImplementation((url: string) => url === 'asn' ? Promise.resolve({}) :
     new Promise((resolve) => { if (url === 'country-old') oldResult = resolve; else newResult = resolve }))
   const settings = await import('@/store/settings')
-  const { getConnectionGeoIPInfoSync: info } = await import('@/api/connectionGeoipDatabase')
+  const { getConnectionGeoIPInfoSync: info } = await import('@/api/connection-geoip-database')
   info('8.8.8.8')
   await settle()
   settings.geoipCountryDatabaseURL.value = 'country-new'

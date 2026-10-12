@@ -54,6 +54,44 @@
     inset 0 0 0 1px color-mix(in srgb, white 6%, transparent);
 }
 
+.nav-menu {
+  @apply flex min-w-0;
+}
+.nav-item {
+  @apply relative z-10 flex min-w-0 items-center rounded-lg outline-none select-none;
+  color: var(--color-base-content);
+}
+.nav-item-icon {
+  @apply shrink-0;
+  color: var(--color-base-content);
+  stroke-width: 1.75;
+}
+.nav-indicator {
+  border-radius: 0.5rem;
+}
+.nav-item[aria-current='page'],
+.nav-item[aria-selected='true'] {
+  color: var(--color-base-content);
+  font-weight: 500;
+}
+@media (hover: hover) {
+  .nav-item:not([aria-current='page'], [aria-selected='true']):hover {
+    background-color: color-mix(in srgb, var(--color-base-content) 5%, transparent);
+  }
+}
+.nav-item:not([aria-current='page'], [aria-selected='true']):active {
+  background-color: color-mix(in srgb, var(--color-base-content) 10%, transparent);
+  transition-duration: 0s;
+}
+.nav-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.nav-item-count {
+  @apply shrink-0 font-normal whitespace-nowrap tabular-nums;
+  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
+}
+
 /* ---------- 侧栏 ---------- */
 
 /* 高亮完全交给滑动指示器（见 utilities/motion.css），因此清掉 daisyUI menu 自带的态背景 */

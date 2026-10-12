@@ -158,7 +158,7 @@ import {
   removeManualInclude,
   updateFolder,
   type FolderRule,
-} from '@/store/proxyFolders'
+} from '@/store/proxy-folders'
 import { ArrowLeftIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

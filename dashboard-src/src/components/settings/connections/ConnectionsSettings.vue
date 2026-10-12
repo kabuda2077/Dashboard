@@ -74,6 +74,19 @@
           </select>
         </div>
       </template>
+      <div class="setting-item">
+        <label
+          class="setting-item-label"
+          for="resolve-client-hostname"
+          >{{ $t('resolveClientHostname') }}</label
+        >
+        <input
+          id="resolve-client-hostname"
+          v-model="resolveClientHostname"
+          type="checkbox"
+          class="toggle toggle-sm"
+        />
+      </div>
       <SourceIPLabels />
     </div>
 
@@ -101,6 +114,7 @@ import {
   connectionDisplayStyle,
   isConnectionCard,
   proxyChainDirection,
+  resolveClientHostname,
   tableSize,
   tableWidthMode,
 } from '@/store/settings'

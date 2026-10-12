@@ -8,9 +8,9 @@
 </template>
 
 <script setup lang="ts">
-import type { ChartPoint, ChartTooltipParam } from '@/components/charts/chartTypes'
-import { getChartPointValue, isTimestampedChartPoint } from '@/components/charts/chartTypes'
-import { echarts, useChartTheme, useEChart, type EChartOption } from '@/composables/useEChart'
+import type { ChartPoint, ChartTooltipParam } from '@/components/charts/chart-types'
+import { getChartPointValue, isTimestampedChartPoint } from '@/components/charts/chart-types'
+import { echarts, useChartTheme, useEChart, type EChartOption } from '@/composables/use-echart'
 import { timeSaved } from '@/store/overview'
 import { computed, ref } from 'vue'
 
@@ -36,7 +36,7 @@ const { colors, fontFamily } = useChartTheme(chartRef)
 const getSeriesColors = (color: SparklineColor) => {
   switch (color) {
     case 'info':
-      return [colors.info60, colors.info30]
+      return [colors.seriesSecondary, colors.seriesSecondaryMuted]
     case 'lowLatency':
       return [colors.lowLatency60, colors.lowLatency30]
     case 'mediumLatency':
@@ -44,7 +44,7 @@ const getSeriesColors = (color: SparklineColor) => {
     case 'highLatency':
       return [colors.highLatency60, colors.highLatency30]
     default:
-      return [colors.primary60, colors.primary30]
+      return [colors.seriesPrimary, colors.seriesPrimaryMuted]
   }
 }
 
@@ -76,12 +76,12 @@ const options = computed<EChartOption>(() => {
       ? {
           show: true,
           trigger: 'axis',
-          backgroundColor: colors.base70,
-          borderColor: colors.base70,
+          backgroundColor: colors.surface,
+          borderColor: colors.surface,
           confine: true,
           padding: [0, 5],
           textStyle: {
-            color: colors.baseContent,
+            color: colors.text,
             fontFamily: fontFamily.value,
             fontSize: 11,
           },
@@ -104,7 +104,7 @@ const options = computed<EChartOption>(() => {
             show: true,
             inside: false,
             fontSize: 9,
-            color: colors.baseContent60,
+            color: colors.textMuted,
             fontFamily: fontFamily.value,
             margin: 4,
             formatter: (value: number) => (value === 0 ? '' : props.labelFormatter!(value)),

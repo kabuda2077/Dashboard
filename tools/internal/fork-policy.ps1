@@ -116,9 +116,9 @@ function Read-ForkPolicy {
 
 function Get-ForkUpstreamHash {
     param([string]$Root, [string]$Revision, [string]$Path)
-    $exists = @(git --no-replace-objects -C $Root ls-tree $Revision -- $Path)
+    $exists = @(git --no-replace-objects --literal-pathspecs -C $Root ls-tree $Revision -- $Path)
     if ($LASTEXITCODE) { throw "Cannot read upstream tree $Revision." }
-    if (-not $exists.Count) { return 'MISSING' }
+    if ($exists.Count -ne 1 -or $exists[0] -cnotmatch '^[0-9]{6} blob [0-9a-f]{40}\t') { return 'MISSING' }
     $info = [Diagnostics.ProcessStartInfo]::new('git')
     $info.UseShellExecute = $false
     $info.RedirectStandardOutput = $true

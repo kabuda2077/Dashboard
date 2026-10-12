@@ -1,5 +1,5 @@
 import { showNotification } from './notification'
-import { notifyRequestError } from './requestError'
+import { notifyRequestError } from './request-error'
 
 export const copyText = async (text: string) => {
   try {

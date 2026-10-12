@@ -81,7 +81,7 @@ const fixture = async () => {
     queueMicrotask(() => value.onsuccess?.({ target: value } as unknown as Event))
     return value
   }
-  const history = await import('@/store/connHistory')
+  const history = await import('@/store/conn-history')
   const { activeBackend } = await import('@/store/setup')
   const { flushLocalPersistence } = await import('@/helper/persistenceBarrier')
   const { ConnectionHistoryType } = await import('@/helper/indexeddb')

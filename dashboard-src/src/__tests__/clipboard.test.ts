@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { copyToClipboard } from '@/helper/clipboard'
 import { showNotification } from '@/helper/notification'
-import { notifyRequestError } from '@/helper/requestError'
+import { notifyRequestError } from '@/helper/request-error'
 vi.mock('@/helper/notification', () => ({ showNotification: vi.fn() }))
-vi.mock('@/helper/requestError', () => ({ notifyRequestError: vi.fn() }))
+vi.mock('@/helper/request-error', () => ({ notifyRequestError: vi.fn() }))
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); document.body.innerHTML = '' })
 it('reports success only after the native clipboard acknowledges the write', async () => {
   vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()

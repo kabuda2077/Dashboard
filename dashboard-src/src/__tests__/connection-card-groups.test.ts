@@ -6,7 +6,7 @@ import {
   syncConnectionCardGroupIds,
   toggleAllConnectionCardGroups,
   toggleConnectionCardGroup,
-} from '@/composables/connectionCardGroups'
+} from '@/helper/connection-card-groups'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 beforeEach(() => {

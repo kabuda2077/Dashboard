@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="relative flex h-18 shrink-0 flex-col justify-between">
     <div
       class="text-md truncate"
@@ -56,8 +56,8 @@
 </template>
 
 <script setup lang="ts">
-import { KEYBOARD_SHORTCUT_ACTION, useKeyboardShortcuts } from '@/composables/keyboard'
-import { getDownloadSpeedByProxyGroup } from '@/composables/proxyGroupTraffic'
+import { KEYBOARD_SHORTCUT_ACTION, useKeyboardShortcuts } from '@/composables/use-keyboard'
+import { getDownloadSpeedByProxyGroup } from '@/helper/proxy-group-traffic'
 import { isHiddenGroup } from '@/helper'
 import { hiddenGroupMap, proxyMap } from '@/assembly/proxies'
 import { useTooltip } from '@/helper/tooltip'

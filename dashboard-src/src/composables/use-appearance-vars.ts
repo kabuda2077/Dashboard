@@ -2,6 +2,7 @@ import { blurIntensity, customCSS, dashboardTransparent } from '@/store/settings
 import { watchEffect } from 'vue'
 
 const CUSTOM_CSS_STYLE_ID = 'zashboard-custom-css'
+const OVERLAY_BLUR_MIN = 12
 
 export const applyCustomCSS = (css: string) => {
   let style = document.getElementById(CUSTOM_CSS_STYLE_ID) as HTMLStyleElement | null
@@ -31,6 +32,10 @@ export const useAppearanceVars = () => {
     root.style.setProperty(
       '--app-glass',
       Number(blurIntensity.value) > 0 ? `blur(${blurIntensity.value}px)` : 'none',
+    )
+    root.style.setProperty(
+      '--app-glass-overlay',
+      `blur(${Math.max(Number(blurIntensity.value) || 0, OVERLAY_BLUR_MIN)}px)`,
     )
   })
 }

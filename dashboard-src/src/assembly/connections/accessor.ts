@@ -3,7 +3,7 @@
 // accessor 仅从当前 Clash 快照读取/派生支持的展示字段。
 import { getGeoIPInfoSync } from '@/api/geoip'
 import { CONNECTIONS_TABLE_ACCESSOR_KEY, PROXY_CHAIN_DIRECTION } from '@/constant'
-import { getIPLabelFromMap } from '@/helper/sourceip'
+import { getIPLabelFromMap } from '@/helper/source-ip'
 import { fromNow, prettyBytesHelper } from '@/helper/utils'
 import type { Connection } from '@/types'
 import * as ipaddr from 'ipaddr.js'

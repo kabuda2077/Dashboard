@@ -9,7 +9,7 @@ vi.mock('@/store/settings', () => ({
   defaultTheme: ref('light'),
   theme: ref('light'),
 }))
-vi.mock('@/helper/requestError', () => ({ notifyRequestError: vi.fn() }))
+vi.mock('@/helper/request-error', () => ({ notifyRequestError: vi.fn() }))
 vi.mock('@/components/settings/SettingItem.vue', () => ({
   default: defineComponent({
     setup:
@@ -120,7 +120,7 @@ it('an undecodable file leaves the previous committed image and preference intac
   const { default: Background } = await import('@/components/settings/general/BackgroundSettings.vue')
   const { customBackgroundURL } = await import('@/store/settings')
   const previousUrl = customBackgroundURL.value
-  const { notifyRequestError } = await import('@/helper/requestError')
+  const { notifyRequestError } = await import('@/helper/request-error')
   vi.mocked(notifyRequestError).mockClear()
   const root = document.createElement('div'); document.body.append(root)
   const app = createApp(Background)

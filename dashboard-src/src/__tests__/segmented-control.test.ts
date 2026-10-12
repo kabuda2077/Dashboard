@@ -1,11 +1,13 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 it('tabs expose selection and support arrows, Home and End with roving focus', async () => {
   const selected = ref('a')
+  const reselect = vi.fn()
   const root = document.createElement('div'); document.body.append(root)
   const app = createApp({ render: () => h(SegmentedControl, {
     modelValue: selected.value, 'onUpdate:modelValue': (value: string) => { selected.value = value },
+    onReselect: reselect,
     options: ['a', 'b', 'c'].map((value) => ({ value, label: value })),
   }) })
   app.mount(root)
@@ -13,6 +15,9 @@ it('tabs expose selection and support arrows, Home and End with roving focus', a
     const buttons = [...root.querySelectorAll<HTMLButtonElement>('[role=tab]')]
     expect(buttons.map((button) => button.tabIndex)).toEqual([0, -1, -1])
     buttons[0].focus()
+    buttons[0].click()
+    expect(reselect).toHaveBeenCalledWith('a', expect.any(MouseEvent))
+    expect(selected.value).toBe('a')
     for (const [key, value] of [['ArrowRight', 'b'], ['End', 'c'], ['Home', 'a'], ['ArrowLeft', 'c']]) {
       document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
       await nextTick(); await nextTick()

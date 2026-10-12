@@ -16,7 +16,7 @@ beforeEach(() => { vi.resetModules(); vi.useFakeTimers() })
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
 
 it('aggregates subdomains without merging unrelated public or private suffix domains', async () => {
-  const { aggregateConnections } = await import('@/store/connHistory')
+  const { aggregateConnections } = await import('@/store/conn-history')
   const { ConnectionHistoryType } = await import('@/helper/indexeddb')
   const hosts = ['www.bbc.co.uk', 'news.bbc.co.uk', 'www.amazon.co.uk', 'a.github.io', 'b.github.io']
   const connections = hosts.map((host, index) => ({
@@ -31,7 +31,7 @@ it('aggregates subdomains without merging unrelated public or private suffix dom
 })
 
 it('preserves IP addresses and single-label hosts', async () => {
-  const { aggregateConnections } = await import('@/store/connHistory')
+  const { aggregateConnections } = await import('@/store/conn-history')
   const { ConnectionHistoryType } = await import('@/helper/indexeddb')
   for (const host of ['192.0.2.1', '2001:db8::1', 'localhost', '']) {
     const connection = { id: host, metadata: { host }, download: 1, upload: 0 } as Connection

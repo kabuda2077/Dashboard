@@ -7,7 +7,7 @@ import App from './App.vue'
 import { loadFonts } from './assets/load-fonts'
 import './assets/main.css'
 import { postHostMessage } from './composables/hostBridge'
-import { applyCustomThemes, applyKsuTheme } from './helper'
+import { applyCustomThemes } from './helper'
 import { installDashboardSettingsSync } from './helper/dashboardSettingsSync'
 import './hostBootstrap'
 import { i18n } from './i18n'
@@ -15,7 +15,6 @@ import router from './router'
 
 performance.mark('application-imports-ready')
 applyCustomThemes()
-applyKsuTheme()
 loadFonts()
 installDashboardSettingsSync()
 window.addEventListener('pageshow', (event) => {

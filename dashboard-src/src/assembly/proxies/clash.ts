@@ -13,7 +13,7 @@ import { disconnectByIdAPI } from '@/assembly/connections'
 import { GLOBAL, IPV6_TEST_URL, NOT_CONNECTED, PROXY_TYPE, SPEEDTEST_MODE } from '@/constant'
 import { getConnectionChains, isProxyGroup } from '@/helper'
 import { showNotification } from '@/helper/notification'
-import { notifyRequestErrorForSession, runManualRequest } from '@/helper/requestError'
+import { notifyRequestErrorForSession, runManualRequest } from '@/helper/request-error'
 import { i18n } from '@/i18n'
 import { activeConnections } from '@/store/connections'
 import {

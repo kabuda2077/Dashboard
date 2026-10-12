@@ -1,7 +1,7 @@
 import { isSingBoxCore } from '@/assembly/version'
 import { LOG_LEVEL } from '@/constant'
 import { captureBackendSession } from '@/helper/backendSession'
-import { useStorage } from '@/helper/storage'
+import { useStorage } from '@/composables/use-storage'
 import type { LogWithSeq } from '@/types'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { createLogsAccumulator } from './accumulator'
