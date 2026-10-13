@@ -300,11 +300,11 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                               const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
                               let stack=null;
                               if (select) {
-                                const row=select.closest('.setting-item'),label=row.querySelector('.setting-item-label'),help=label.querySelector('.setting-item-summary');
-                                const card=row.closest('.settings-grid'),r=rect(row),c=rect(card),s=rect(select),l=rect(label),h=rect(help);
-                                stack={value:select.textContent.trim(),disabled:select.disabled,label:label.textContent.trim(),help:help.textContent.trim(),row:r,select:s,labelRect:l,helpRect:h,
-                                  bounded:r.left>=c.left-1 && r.right<=c.right+1 && s.left>=r.left-1 && s.right<=r.right+1 && l.right<=s.left+1 && h.right<=s.left+1 &&
-                                    [s,l,h].every(box=>box.top>=r.top-1 && box.bottom<=r.bottom+1) && row.scrollWidth<=row.clientWidth+1 && label.scrollWidth<=label.clientWidth+1 && help.scrollWidth<=help.clientWidth+1 &&
+                                const row=select.closest('.setting-item'),label=row.querySelector('.setting-item-label');
+                                const card=row.closest('.settings-grid'),r=rect(row),c=rect(card),s=rect(select),l=rect(label);
+                                stack={value:select.textContent.trim(),disabled:select.disabled,label:label.textContent.trim(),help:select.getAttribute('aria-description'),row:r,select:s,labelRect:l,
+                                  bounded:r.left>=c.left-1 && r.right<=c.right+1 && s.left>=r.left-1 && s.right<=r.right+1 && l.right<=s.left+1 &&
+                                    [s,l].every(box=>box.top>=r.top-1 && box.bottom<=r.bottom+1) && row.scrollWidth<=row.clientWidth+1 && label.scrollWidth<=label.clientWidth+1 &&
                                     r.top>=0 && r.bottom<=innerHeight};
                               }
                               return {text:root.innerText,stack,controls:[...root.querySelectorAll('input[type=checkbox]')].map(e=>({label:e.getAttribute('aria-label'),checked:e.checked,disabled:e.disabled}))};
@@ -332,12 +332,12 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     {
                         api.ConfigResponse = new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false, stack = "System" } };
                         SendBackendState();
-                        await Until(async () => await Script("!!document.querySelector('#core-settings-backendSettings .settings-dependent-item [role=combobox]:not(:disabled)')") == "true");
+                        await Until(async () => await Script("!!document.querySelector('#core-settings-backendSettings [role=combobox][aria-description]:not(:disabled)')") == "true");
                         foreach (var width in new[] { 1500, 640 })
                         {
                             form.Size = new System.Drawing.Size(width, 1000);
                             await Until(async () => await Script($"innerWidth==={width}") == "true");
-                            await Script("document.querySelector('#core-settings-backendSettings .settings-dependent-item').scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+                            await Script("document.querySelector('#core-settings-backendSettings [role=combobox][aria-description]').closest('.setting-item').scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
                             var json = await RecordBackendState($"tun-stack-{width}");
                             using var measured = JsonDocument.Parse(json);
                             var stack = measured.RootElement.GetProperty("stack");
@@ -346,7 +346,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             Assert.Contains(stackLabel, stack.GetProperty("label").GetString());
                             Assert.Equal(stackHelp, stack.GetProperty("help").GetString());
                             Assert.True(stack.GetProperty("bounded").GetBoolean(), json);
-                            foreach (var box in new[] { "select", "labelRect", "helpRect" })
+                            foreach (var box in new[] { "select", "labelRect" })
                             {
                                 Assert.True(stack.GetProperty(box).GetProperty("width").GetDouble() > 0, json);
                                 Assert.True(stack.GetProperty(box).GetProperty("height").GetDouble() > 0, json);
@@ -355,7 +355,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         form.ClientSize = new System.Drawing.Size(1360, 1000);
                         api.ConfigResponse = null;
                         SendBackendState();
-                        await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2 && !document.querySelector('#core-settings-backendSettings .settings-dependent-item [role=combobox]')") == "true");
+                        await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2 && !document.querySelector('#core-settings-backendSettings [role=combobox][aria-description]')") == "true");
                     }
                     if (language == "en-US")
                     {
