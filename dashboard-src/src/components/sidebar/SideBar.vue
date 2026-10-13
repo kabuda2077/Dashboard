@@ -8,7 +8,7 @@
     <div :class="twMerge('flex h-full flex-col gap-2', isSidebarCollapsed ? 'w-18 px-0' : 'w-60')">
       <NavMenu
         ref="navMenuRef"
-        class="flex-1"
+        class="sidebar-navigation flex-1"
         :items="navItems"
         :active-key="activeRouteName"
         :collapsed="isSidebarCollapsed"
@@ -69,3 +69,49 @@ const handleTransitionEnd = (e: TransitionEvent) => {
   emit('transitionend')
 }
 </script>
+
+<style scoped>
+.sidebar-navigation :deep(.nav-menu) {
+  gap: 0.25rem;
+  padding: 0.5rem;
+}
+
+.sidebar-navigation :deep(.nav-menu-collapsed) {
+  align-items: stretch;
+}
+
+.sidebar-navigation :deep(.nav-item) {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-field);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.sidebar-navigation :deep(.nav-item-icon) {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: inherit;
+  stroke-width: 1.5;
+}
+
+.sidebar-navigation :deep(.nav-indicator) {
+  border-radius: var(--radius-field);
+  background-color: var(--color-neutral);
+  box-shadow: none;
+}
+
+.sidebar-navigation :deep(.nav-item[aria-current='page']) {
+  color: var(--color-neutral-content);
+}
+
+@media (hover: hover) {
+  .sidebar-navigation :deep(.nav-item:not([aria-current='page']):hover) {
+    background-color: var(--color-base-300);
+  }
+}
+</style>

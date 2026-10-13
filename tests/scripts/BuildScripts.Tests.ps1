@@ -33,12 +33,11 @@ $script:RepositoryRoot = $temp
 $publish = Join-Path $temp 'publish'
 New-Item -ItemType Directory -Force (Join-Path $publish 'resources\dashboard\assets') | Out-Null
 try {
-    # The new browser icon has an opaque background. Desktop recoloring must
-    # retain the three foreground blocks, rather than producing a solid square.
+    # The restored favicon remains the source for desktop icon size variants.
     $generator = Join-Path $temp 'tools/internal/create-app-icon.ps1'
     New-Item -ItemType Directory -Force (Split-Path $generator), (Join-Path $temp 'resources/dashboard') | Out-Null
     Copy-Item (Join-Path $PSScriptRoot '../../tools/internal/create-app-icon.ps1') $generator
-    Copy-Item (Join-Path $PSScriptRoot '../../dashboard-src/public/favicon.svg') (Join-Path $temp 'resources/dashboard/favicon.svg')
+    Copy-Item (Join-Path $PSScriptRoot '../../dashboard-src/public/favicon.ico') (Join-Path $temp 'resources/dashboard/favicon.ico')
     & $generator
     foreach ($kind in @('app', 'tray')) {
         $bytes = [IO.File]::ReadAllBytes((Join-Path $temp "resources/$kind.ico"))
@@ -48,10 +47,6 @@ try {
         $bitmap = [Drawing.Bitmap]::new($stream)
         try {
             Assert-True ($bitmap.Width -eq 128 -and $bitmap.Height -eq 128) 'Icon frame cannot be decoded at its declared size.'
-            $block = $bitmap.GetPixel($(if ($kind -eq 'app') { 46 } else { 20 }), 64)
-            $gap = $bitmap.GetPixel(64, 64)
-            Assert-True ($block.A -gt 240 -and $block.R -gt 240) 'The brand foreground is missing.'
-            Assert-True $(if ($kind -eq 'app') { $gap.R -lt 80 } else { $gap.A -lt 16 }) 'The separate brand blocks collapsed into a solid square.'
         }
         finally { $bitmap.Dispose(); $stream.Dispose() }
     }

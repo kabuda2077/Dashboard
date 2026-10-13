@@ -4,7 +4,7 @@ Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = "Stop"
 
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$sourceFile = Join-Path $root "resources\dashboard\favicon.svg"
+$sourceFile = Join-Path $root "resources\dashboard\favicon.ico"
 $outDir = Join-Path $root "resources"
 $appIconFile = Join-Path $outDir "app.ico"
 $trayIconFile = Join-Path $outDir "tray.ico"
@@ -13,48 +13,26 @@ if (-not (Test-Path $sourceFile)) {
     throw "zashboard favicon not found: $sourceFile"
 }
 
-function Get-BrandPngBytes {
+function Get-IcoImages {
     param([string]$Path)
 
-    # Read the foreground rectangles from the upstream SVG. Its opaque rounded
-    # background belongs to the browser icon; recoloring it would hide the mark.
-    [xml]$svg = [IO.File]::ReadAllText($Path)
-    $shapes = @($svg.DocumentElement.ChildNodes | Where-Object LocalName -eq 'g' |
-        ForEach-Object ChildNodes | Where-Object LocalName -eq 'rect')
-    if ($shapes.Count -ne 3) { throw "Unsupported upstream brand geometry: $Path" }
-    $left = ($shapes | ForEach-Object { [float]$_.x } | Measure-Object -Minimum).Minimum
-    $right = ($shapes | ForEach-Object { [float]$_.x + [float]$_.width } | Measure-Object -Maximum).Maximum
-    $top = ($shapes | ForEach-Object { [float]$_.y } | Measure-Object -Minimum).Minimum
-    $bottom = ($shapes | ForEach-Object { [float]$_.y + [float]$_.height } | Measure-Object -Maximum).Maximum
-    $side = [int][Math]::Ceiling([Math]::Max($right - $left, $bottom - $top))
-    $bitmap = [Drawing.Bitmap]::new($side, $side, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $graphics = [Drawing.Graphics]::FromImage($bitmap)
-    $brush = [Drawing.SolidBrush]::new([Drawing.Color]::White)
-    $stream = [IO.MemoryStream]::new()
-    try {
-        $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $graphics.Clear([Drawing.Color]::Transparent)
-        foreach ($shape in $shapes) {
-            $x = [float]$shape.x - $left + ($side - ($right - $left)) / 2
-            $y = [float]$shape.y - $top + ($side - ($bottom - $top)) / 2
-            $width = [float]$shape.width
-            $height = [float]$shape.height
-            $diameter = [float]$shape.rx * 2
-            $outline = [Drawing.Drawing2D.GraphicsPath]::new()
-            try {
-                $outline.AddArc($x, $y, $diameter, $diameter, 180, 90)
-                $outline.AddArc($x + $width - $diameter, $y, $diameter, $diameter, 270, 90)
-                $outline.AddArc($x + $width - $diameter, $y + $height - $diameter, $diameter, $diameter, 0, 90)
-                $outline.AddArc($x, $y + $height - $diameter, $diameter, $diameter, 90, 90)
-                $outline.CloseFigure()
-                $graphics.FillPath($brush, $outline)
-            }
-            finally { $outline.Dispose() }
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $count = [BitConverter]::ToUInt16($bytes, 4)
+    for ($i = 0; $i -lt $count; $i++) {
+        $entry = 6 + ($i * 16)
+        $width = if ($bytes[$entry] -eq 0) { 256 } else { [int]$bytes[$entry] }
+        $height = if ($bytes[$entry + 1] -eq 0) { 256 } else { [int]$bytes[$entry + 1] }
+        $length = [BitConverter]::ToInt32($bytes, $entry + 8)
+        $offset = [BitConverter]::ToInt32($bytes, $entry + 12)
+        $imageBytes = New-Object byte[] $length
+        [Array]::Copy($bytes, $offset, $imageBytes, 0, $length)
+
+        [PSCustomObject]@{
+            Width = $width
+            Height = $height
+            Bytes = $imageBytes
         }
-        $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png)
-        return ,$stream.ToArray()
     }
-    finally { $stream.Dispose(); $brush.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
 }
 
 function Resize-PngBytes {
@@ -199,13 +177,17 @@ function Write-IcoFile {
     $writerStream.Dispose()
 }
 
-$brandBytes = Get-BrandPngBytes -Path $sourceFile
+$sourceImages = @(Get-IcoImages -Path $sourceFile)
+$largest = $sourceImages | Sort-Object Width -Descending | Select-Object -First 1
+if ($null -eq $largest) {
+    throw "No images found in zashboard favicon: $sourceFile"
+}
 
 $sizes = @(16, 24, 32, 48, 64, 128, 256)
 $images = foreach ($size in $sizes) {
     [PSCustomObject]@{
         Size = $size
-        Bytes = Resize-PngBytes -SourceBytes $brandBytes -Size $size
+        Bytes = Resize-PngBytes -SourceBytes $largest.Bytes -Size $size
     }
 }
 

@@ -227,10 +227,16 @@
 .ctrls-bar .btn.btn-sm,
 .ctrls-bar .select,
 .ctrls-bar .input.input-sm,
+.ctrls-bar .nav-menu-horizontal,
 .ctrls-bar .tabs.tabs-xs,
 .ctrls-bar .tabs.tabs-xs .tab {
   height: 2.25rem;
   min-height: 2.25rem;
+}
+
+.ctrls-bar .nav-menu-horizontal > .nav-item {
+  height: 1.875rem;
+  min-height: 1.875rem;
 }
 
 .ctrls-bar .ctrls-search {

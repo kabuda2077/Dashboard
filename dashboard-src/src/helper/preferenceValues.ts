@@ -42,6 +42,13 @@ const enumValues: Record<string, readonly string[]> = {
   'config/rule-display-style': Object.values(LIST_DISPLAY_STYLE),
   'config/log-display-style': Object.values(LIST_DISPLAY_STYLE),
   'config/log-level': Object.values(LOG_LEVEL),
+  'config/connection-history-aggregation-type': [
+    'sourceIP',
+    'destination',
+    'process',
+    'outbound',
+    'proxyGroup',
+  ],
 }
 
 export const isValidPreferenceEnum = (key: string, value: unknown) =>
@@ -78,13 +85,31 @@ const validFolderState = (value: unknown) =>
       ),
   )
 
+const validHistorySorting = (value: unknown) =>
+  Array.isArray(value) &&
+  value.every(
+    (item) =>
+      record(item) &&
+      typeof item.id === 'string' &&
+      ['key', 'download', 'upload', 'total', 'count'].includes(item.id) &&
+      typeof item.desc === 'boolean',
+  ) &&
+  new Set(value.map((item) => item.id)).size === value.length
+
 export const isValidPreferenceValue = (key: string, value: unknown) =>
-  key === 'config/proxy-folders' ? validFolderState(value) : isValidPreferenceEnum(key, value)
+  key === 'config/proxy-folders'
+    ? validFolderState(value)
+    : key === 'config/connection-history-sorting'
+      ? validHistorySorting(value)
+      : isValidPreferenceEnum(key, value)
 
 export const validatePreferenceValues = (values: Record<string, unknown>) => {
   for (const [key, value] of Object.entries(values)) {
     let decoded = value
-    if (key === 'config/proxy-folders' && typeof value === 'string') {
+    if (
+      (key === 'config/proxy-folders' || key === 'config/connection-history-sorting') &&
+      typeof value === 'string'
+    ) {
       try {
         decoded = JSON.parse(value)
       } catch {

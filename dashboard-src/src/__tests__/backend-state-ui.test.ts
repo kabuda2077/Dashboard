@@ -131,7 +131,9 @@ it.each([false, true])(
     await nextTick()
     expect(toggle('TUN mode')?.checked).toBe(enabled)
     expect(toggle('TUN mode')?.disabled).toBe(true)
-    expect(root.textContent).toContain('Read-only · core configuration file')
+    expect(root.textContent).not.toContain('Read-only · core configuration file')
+    expect(toggle('TUN mode')?.parentElement?.title).toBe('Read-only · core configuration file')
+    expect(toggle('TUN mode')?.getAttribute('aria-description')).toBe('Read-only · core configuration file')
     expect(toggle('Allow LAN')).toBeNull()
     expect(root.querySelector('.loading-spinner')).toBeNull()
     await view.updateTunEnabled(!enabled)
@@ -184,12 +186,11 @@ const chooseStack = async (label: string) => {
   await nextTick()
 }
 
-it('shows normalized confirmed stacks, all three supported choices and the interruption help', async () => {
+it('shows normalized confirmed stacks and all three supported choices', async () => {
   const { load } = await mount()
   expect(stackSelect()).toBeNull()
   await load({ tun: { enable: true, stack: 'gVisor' } })
   expect(stackSelect()?.textContent?.trim()).toBe('gvisor')
-  expect(root.textContent).toContain('Changing the stack rebuilds TUN and may interrupt connections.')
   stackSelect()!.click()
   await nextTick()
   expect([...root.querySelectorAll('[role=option]')].map((item) => item.textContent?.trim())).toEqual(['system', 'gvisor', 'mixed'])
@@ -271,12 +272,17 @@ it.each([
   ['zh-CN', '切换协议栈会重建 TUN，可能中断连接。'],
   ['zh-TW', '切換協定堆疊會重建 TUN，可能中斷連線。'],
   ['ru-RU', 'Смена стека пересоздаёт TUN и может прервать соединения.'],
-] as const)('renders the interruption help in %s', async (locale, help) => {
+] as const)('exposes the interruption help on focus without a summary row in %s', async (locale, help) => {
   const { load } = await mount()
   const { i18n } = await import('@/i18n')
   i18n.global.locale.value = locale
   await load({ tun: { enable: false, stack: 'System' } })
-  expect(root.querySelector('.settings-dependent-item .setting-item-summary')?.textContent).toBe(help)
+  const select = root.querySelector<HTMLButtonElement>('[role=combobox]')!
+  expect(select.getAttribute('aria-description')).toBe(help)
+  expect(select.closest('.setting-item')?.textContent).not.toContain(help)
+  select.focus()
+  await vi.waitFor(() => expect(root.querySelector('[role=tooltip]')?.textContent).toBe(help))
+  select.blur()
 })
 
 it('hides the stack for missing capability, failed configuration and desktop sing-box', async () => {

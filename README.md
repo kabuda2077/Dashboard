@@ -22,7 +22,7 @@
 
 mihomo 使用 `external-controller`，sing-box 使用 `experimental.clash_api.external_controller`。例如 API 地址为 `http://127.0.0.1:9090`，Secret 应与核心配置一致。启动后仍无法连接时，检查 API 地址和 Secret。
 
-设置位于 Core 页面。连接页面可切换活跃／全部连接；再次点击“全部”可选择仅已关闭。
+设置位于 Core 页面。连接页面可切换活跃／全部连接；再次点击“全部”可选择仅已关闭。连接统计的聚合方式和表格排序作为界面偏好保存，可随偏好导入导出；不包含统计数据。
 
 ## 更新与注意事项
 

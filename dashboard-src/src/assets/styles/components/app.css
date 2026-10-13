@@ -135,6 +135,3 @@
     @apply ring-primary ring-2 ring-inset;
   }
 }
-.settings-dependent-item {
-  @apply bg-base-200/25 pl-7;
-}

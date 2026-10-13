@@ -103,7 +103,7 @@
         class="m-0! rounded-t-none!"
         :data="aggregatedData"
         :columns="columns"
-        sorting-key="cache/connection-history-sorting"
+        sorting-key="config/connection-history-sorting"
         :initial-sorting="[{ id: 'download', desc: true }]"
         :estimate-size="36"
       />
@@ -177,7 +177,7 @@ interface ConnectionHistoryData {
 }
 
 const aggregationType = useStorage<ConnectionHistoryType>(
-  'cache/connection-history-aggregation-type',
+  'config/connection-history-aggregation-type',
   ConnectionHistoryType.SourceIP,
 )
 const historicalData = computed(() => aggregatedDataMap.value[aggregationType.value])

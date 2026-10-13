@@ -4,7 +4,7 @@ import type { Connection } from '@/types'
 beforeEach(() => { vi.resetModules(); localStorage.clear() })
 afterEach(() => { localStorage.clear(); window.dispatchEvent(new Event('pagehide')); vi.restoreAllMocks() })
 
-it.each(['connection-sort-type', 'connection-sort-direction', 'connection-display-style', 'proxy-sort-type', 'log-level'])(
+it.each(['connection-sort-type', 'connection-sort-direction', 'connection-display-style', 'proxy-sort-type', 'log-level', 'connection-history-aggregation-type'])(
   'rejects an invalid current enum before import changes storage (%s)', async (key) => {
     const { parseSettingsDocument, applyDashboardSettingsToStorage } = await import('@/helper/utils')
     localStorage.setItem('config/font', 'SystemUI')
@@ -24,6 +24,32 @@ it('valid raw enum preferences round-trip without quoting or legacy migration', 
   expect(() => parseSettingsDocument({ schemaVersion: 1, preferences })).toThrow()
 })
 
+it.each([
+  'not-json',
+  '{}',
+  '[{"id":"download","desc":"true"}]',
+  '[{"id":"unknown","desc":true}]',
+  '[{"id":"download","desc":true},{"id":"download","desc":false}]',
+])('rejects malformed connection history sorting preferences before import (%s)', async (sorting) => {
+  const { parseSettingsDocument } = await import('@/helper/utils')
+  expect(() => parseSettingsDocument({ schemaVersion: 2, preferences: {
+    'config/connection-history-sorting': sorting,
+  } })).toThrow(/Invalid preference value/)
+})
+it.each(['[]', '[{"id":"key","desc":false},{"id":"total","desc":true}]'])(
+  'round-trips connection history preferences through export selection, import and consumers (%s)', async (sorting) => {
+    const { applyDashboardSettingsToStorage, parseSettingsDocument, getDashboardSettingsFromStorage } = await import('@/helper/utils')
+    const preferences = {
+      'config/connection-history-aggregation-type': 'destination',
+      'config/connection-history-sorting': sorting,
+    }
+    applyDashboardSettingsToStorage(parseSettingsDocument({ schemaVersion: 2, preferences }))
+    expect(getDashboardSettingsFromStorage()).toEqual(preferences)
+    const { useStorage } = await import('@/composables/use-storage')
+    expect(useStorage('config/connection-history-aggregation-type', 'sourceIP').value).toBe('destination')
+    expect(useStorage('config/connection-history-sorting', [{ id: 'download', desc: true }]).value).toEqual(JSON.parse(sorting))
+  },
+)
 it.each(['Win32', 'MacIntel', 'iPhone', 'Linux armv8l'])(
   'defaults to Noto without a platform-dependent emoji choice (%s)', async (platform) => {
     vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)

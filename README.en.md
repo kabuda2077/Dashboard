@@ -22,7 +22,7 @@ Requires Windows x64, [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/down
 
 For mihomo, configure `external-controller`; for sing-box, use `experimental.clash_api.external_controller`. An example API address is `http://127.0.0.1:9090`. The Secret must match the core configuration. If the core starts but remains disconnected, check the API address and Secret.
 
-Settings are on the Core page. Connections offers Active and All views; select All again to show only closed connections.
+Settings are on the Core page. Connections offers Active and All views; select All again to show only closed connections. Connection statistics aggregation and table sorting are saved as interface preferences and included in preference imports and exports; statistical data is not included.
 
 ## Updates and limitations
 

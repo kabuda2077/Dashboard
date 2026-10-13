@@ -41,23 +41,13 @@
             <div
               v-else-if="typeof tunState.enabled === 'boolean'"
               class="flex min-w-0 flex-wrap items-center justify-end gap-2"
+              :title="tunReadOnlyHint"
             >
-              <span
-                v-if="!tunState.writable && !isTunBusy"
-                class="text-base-content/60 text-xs"
-              >
-                {{
-                  $t(
-                    tunState.source === 'host'
-                      ? 'desktop.tunReadOnlyHost'
-                      : 'desktop.tunReadOnlyApi',
-                  )
-                }}
-              </span>
               <input
                 class="toggle shrink-0"
                 type="checkbox"
                 :aria-label="$t('tunMode')"
+                :aria-description="tunReadOnlyHint"
                 :checked="tunState.enabled"
                 :disabled="!tunState.writable"
                 :aria-busy="isTunBusy"
@@ -75,11 +65,13 @@
           </div>
           <div
             v-if="canShowTunStack"
-            class="setting-item settings-dependent-item"
+            class="setting-item"
           >
-            <div class="setting-item-label">
+            <div
+              class="setting-item-label"
+              @mouseenter="(event) => showTip(event, $t('tunStackHelp'))"
+            >
               {{ $t('tunStack') }}
-              <span class="setting-item-summary">{{ $t('tunStackHelp') }}</span>
             </div>
             <SelectInput
               :model-value="tunStack"
@@ -87,7 +79,10 @@
               :disabled="!canWriteTun"
               :aria-busy="isTunBusy"
               :aria-label="$t('tunStack')"
+              :aria-description="$t('tunStackHelp')"
               class="select-sm min-w-24 shrink-0"
+              @mouseenter="(event: MouseEvent) => showTip(event, $t('tunStackHelp'))"
+              @focus="(event: FocusEvent) => showTip(event, $t('tunStackHelp'))"
               @update:model-value="handlerTunStackChange"
             />
           </div>
@@ -264,6 +259,7 @@ import { hasHostBridge, hostState, postHostMessage } from '@/composables/hostBri
 import { i18n } from '@/i18n'
 import { useBackendRuntimeConfig } from '@/composables/useBackendRuntimeConfig'
 import { showNotification } from '@/helper/notification'
+import { useTooltip } from '@/helper/tooltip'
 import {
   getRequestErrorMessage,
   notifyRequestErrorForSession,
@@ -276,6 +272,7 @@ import { computed, inject, ref } from 'vue'
 
 defineProps<{ embedded?: boolean }>()
 
+const { showTip } = useTooltip()
 const coreHostActions = inject(coreHostActionsKey, null)
 const {
   configStatus,
@@ -292,6 +289,13 @@ const {
   updateTunEnabled,
   updateTunStack,
 } = useBackendRuntimeConfig()
+const tunReadOnlyHint = computed(() =>
+  !tunState.value.writable && !isTunBusy.value
+    ? i18n.global.t(
+        tunState.value.source === 'host' ? 'desktop.tunReadOnlyHost' : 'desktop.tunReadOnlyApi',
+      )
+    : undefined,
+)
 const unknownStateLabel = computed(() =>
   configStatus.value === 'error'
     ? 'desktop.configReadFailed'
