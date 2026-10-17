@@ -246,6 +246,7 @@ const zhTW: LANG_MESSAGE = {
   networkRequestFailed: '請求失敗',
   networkTestLatency: '檢測八個目標的請求耗時',
   networkTestRouting: '觀察目標的分流結果',
+  networkTestTarget: '重新檢測 {name}',
   networkTestIPs: '查詢國內與國際目標出口',
   networkTestsNavigation: '捲動切換延遲與分流測試；聚焦後可用上下方向鍵切換',
   networkSamples: '{success}/{total} 次成功，共 {rounds} 次取樣',

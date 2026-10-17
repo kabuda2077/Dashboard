@@ -245,6 +245,7 @@ const zh: LANG_MESSAGE = {
   networkRequestFailed: '请求失败',
   networkTestLatency: '检测八个目标的请求耗时',
   networkTestRouting: '观察目标的分流结果',
+  networkTestTarget: '重新检测 {name}',
   networkTestIPs: '查询国内和国际目标出口',
   networkTestsNavigation: '滚动切换延迟和分流测试；聚焦后可用上下方向键切换',
   networkSamples: '{success}/{total} 次成功，共 {rounds} 次采样',

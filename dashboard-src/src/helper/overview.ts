@@ -12,6 +12,11 @@ import {
 } from '@/api/latency'
 import { IP_INFO_API } from '@/constant'
 import { backendSessionGeneration, backendSessionReady } from '@/helper/backendSession'
+import {
+  captureNetworkDiagnosticsTask,
+  completeNetworkDiagnostic,
+  registerNetworkDiagnostics,
+} from '@/helper/networkDiagnostics'
 import { i18n } from '@/i18n'
 import { IPInfoAPI } from '@/store/settings'
 import * as ipaddr from 'ipaddr.js'
@@ -188,14 +193,16 @@ watch(
 )
 
 export const LATENCY_ROUNDS = 5
-export const latencyTargets: {
+type LatencyTarget = {
   id: string
   name: string
   region: 'domestic' | 'international'
   url: string
   ref: Ref<number[]>
+  checking: Ref<boolean>
   api: (signal?: AbortSignal) => Promise<number>
-}[] = [
+}
+export const latencyTargets: LatencyTarget[] = [
   {
     id: 'bilibili',
     name: 'Bilibili',
@@ -260,58 +267,98 @@ export const latencyTargets: {
     ref: ref([]),
     api: getYouTubeLatencyAPI,
   },
-]
+].map((target) => ({ ...target, checking: ref(false) })) as LatencyTarget[]
 export const isTestingLatency = ref(false)
-let latencyQueryId = 0
-let latencyController: AbortController | undefined
-export const getLatency = async () => {
-  if (isTestingLatency.value) return
-  const request = ++latencyQueryId
-  const controller = new AbortController()
-  latencyController = controller
-  const isCurrent = () => request === latencyQueryId && !controller.signal.aborted
-  isTestingLatency.value = true
-  latencyTargets.forEach((target) => {
+type LatencyTask = {
+  promise: Promise<void>
+  controller: AbortController
+  isCurrent: () => boolean
+}
+const latencyTasks = new Map<string, LatencyTask>()
+const resetLatency = () => {
+  for (const task of latencyTasks.values()) task.controller.abort()
+  latencyTasks.clear()
+  isTestingLatency.value = false
+  for (const target of latencyTargets) {
     target.ref.value = []
-  })
-  try {
-    await Promise.all(
-      latencyTargets.map(async (target) => {
-        for (let i = 0; i < LATENCY_ROUNDS; i++) {
-          if (!isCurrent()) return
-          let result = 0
-          try {
-            result = await target.api(controller.signal)
-          } catch {
-            /* A failed round is represented by zero. */
-          }
-          if (!isCurrent()) return
-          target.ref.value = [...target.ref.value, Math.round(result)]
-        }
-      }),
-    )
-  } finally {
-    if (isCurrent()) {
-      isTestingLatency.value = false
-      latencyController = undefined
-    }
+    target.checking.value = false
   }
 }
+export const getLatency = (targetIds?: string[]): Promise<void> => {
+  const targets = latencyTargets.filter((target) => !targetIds || targetIds.includes(target.id))
+  return Promise.all(
+    targets.map((target) => {
+      const existing = latencyTasks.get(target.id)
+      if (existing?.isCurrent()) return existing.promise
+      existing?.controller.abort()
+      const token = captureNetworkDiagnosticsTask('latency', [target.id])
+      const controller = new AbortController()
+      const current: LatencyTask = {
+        promise: Promise.resolve(),
+        controller,
+        isCurrent: () => token.isCurrent() && !controller.signal.aborted,
+      }
+      latencyTasks.set(target.id, current)
+      target.checking.value = true
+      isTestingLatency.value = true
+      const hadResult = target.ref.value.length > 0
+      current.promise = (async () => {
+        const samples: number[] = []
+        try {
+          for (let i = 0; i < LATENCY_ROUNDS; i++) {
+            if (!current.isCurrent()) return
+            let result = 0
+            try {
+              result = await target.api(controller.signal)
+            } catch {
+              /* Failed round: zero. */
+            }
+            if (!current.isCurrent()) return
+            samples.push(Number.isFinite(result) ? Math.max(0, Math.round(result)) : 0)
+            if (!hadResult) target.ref.value = [...samples]
+          }
+          target.ref.value = samples
+          completeNetworkDiagnostic(
+            'latency',
+            {
+              id: target.id,
+              samples,
+              testedAt: Date.now(),
+            },
+            samples.some((sample) => sample > 0),
+          )
+        } finally {
+          if (latencyTasks.get(target.id) === current) {
+            latencyTasks.delete(target.id)
+            target.checking.value = false
+            isTestingLatency.value = latencyTasks.size > 0
+          }
+        }
+      })()
+      return current.promise
+    }),
+  ).then(() => undefined)
+}
+registerNetworkDiagnostics('latency', {
+  ids: latencyTargets.map((target) => target.id),
+  reset: resetLatency,
+  restore: (entry) => {
+    if ('samples' in entry) {
+      const target = latencyTargets.find((target) => target.id === entry.id)
+      if (target) target.ref.value = [...entry.samples]
+    }
+  },
+  run: getLatency,
+})
 
 export const resetNetworkChecks = () => {
   ipQueryId++
-  latencyQueryId++
   ipController?.abort()
-  latencyController?.abort()
   ipController = undefined
-  latencyController = undefined
+  resetLatency()
   isCheckingIPs.value = false
-  isTestingLatency.value = false
   ipForChina.value = emptyObservation()
   ipForGlobal.value = emptyObservation()
-  latencyTargets.forEach((target) => {
-    target.ref.value = []
-  })
 }
 
 // Also allow standalone browser preview checks while idle; transitions still invalidate them.

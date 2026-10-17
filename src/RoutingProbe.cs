@@ -31,26 +31,43 @@ internal sealed class RoutingProbe
     ];
     private readonly IReadOnlyList<RoutingProbeTarget> _targets;
     private readonly Func<string, SslClientAuthenticationOptions> _tls;
+    private readonly TimeSpan _batchTimeout;
     public RoutingProbe() : this(Targets, host => new() { TargetHost = host }) { }
     // Fixture-only seam for an owned TLS origin and custom-root trust, never bridge input.
-    internal RoutingProbe(IReadOnlyList<RoutingProbeTarget> targets, Func<string, SslClientAuthenticationOptions> tls)
-    { _targets = targets; _tls = tls; }
+    internal RoutingProbe(IReadOnlyList<RoutingProbeTarget> targets, Func<string, SslClientAuthenticationOptions> tls, TimeSpan? batchTimeout = null)
+    { _targets = targets; _tls = tls; _batchTimeout = batchTimeout ?? TimeSpan.FromSeconds(14); }
 
-    public async Task<IReadOnlyList<RoutingProbeResult>> RunAsync(RoutingProbeSession session, CancellationToken token)
+    internal static bool IsTargetId(string? id) => Targets.Any(target => target.Id == id);
+    internal static bool ValidTargetIds(IReadOnlyList<string>? ids) => ValidTargetIds(ids, IsTargetId);
+    private static bool ValidTargetIds(IReadOnlyList<string>? ids, Func<string, bool> allowed) => ids is null
+        || (ids.Count is > 0 and <= 8 && ids.All(id => !string.IsNullOrWhiteSpace(id) && allowed(id))
+            && ids.Distinct(StringComparer.Ordinal).Count() == ids.Count);
+
+    public async Task<IReadOnlyList<RoutingProbeResult>> RunAsync(RoutingProbeSession session, CancellationToken token,
+        IReadOnlyList<string>? targetIds = null)
     {
+        if (!ValidTargetIds(targetIds, id => _targets.Any(target => target.Id == id)))
+            throw new ArgumentException("Invalid routing targets.", nameof(targetIds));
+        var targets = targetIds is null ? _targets : _targets.Where(target => targetIds.Contains(target.Id, StringComparer.Ordinal)).ToArray();
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
-        budget.CancelAfter(TimeSpan.FromSeconds(14));
-        try { return await RunOwnedAsync(session, budget.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return Unavailable("timeout"); }
+        budget.CancelAfter(_batchTimeout);
+        try
+        {
+            var results = await RunOwnedAsync(session, targets, budget.Token, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            return results;
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return Unavailable(targets, "timeout"); }
     }
 
-    private async Task<IReadOnlyList<RoutingProbeResult>> RunOwnedAsync(RoutingProbeSession session, CancellationToken token)
+    private async Task<IReadOnlyList<RoutingProbeResult>> RunOwnedAsync(RoutingProbeSession session,
+        IReadOnlyList<RoutingProbeTarget> targets, CancellationToken token, CancellationToken lifetime)
     {
         if (!Uri.TryCreate(session.Connection.ApiUrl.TrimEnd('/') + "/", UriKind.Absolute, out var api)
             || api.Scheme is not ("http" or "https") || api.UserInfo.Length != 0 || LocalAddress(api.Host) is null)
-            return Unavailable("apiNotLocal");
+            return Unavailable(targets, "apiNotLocal");
         var apiAddress = LocalAddress(api.Host)!;
-        if (!ManagedCoreListener.Owns(new(apiAddress, api.Port), session.ProcessId)) return Unavailable("apiNotManaged");
+        if (!ManagedCoreListener.Owns(new(apiAddress, api.Port), session.ProcessId)) return Unavailable(targets, "apiNotManaged");
         using var client = new HttpClient(new SocketsHttpHandler {
             UseProxy = false, AllowAutoRedirect = false,
             ConnectCallback = async (_, cancellation) =>
@@ -77,14 +94,15 @@ internal sealed class RoutingProbe
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception error) when (error is IOException or JsonException or HttpRequestException or OperationCanceledException or UnauthorizedAccessException)
-        { return Unavailable("noProxyInbound"); }
-        if (inbound is null) return Unavailable("noProxyInbound");
-        if (inbound.Authentication) return Unavailable("proxyAuthenticationRequired");
-        if (!ManagedCoreListener.Owns(new(inbound.Address, inbound.Port), session.ProcessId)) return Unavailable("noProxyInbound");
-        return await Task.WhenAll(_targets.Select(target => ProbeAsync(client, inbound, target, session.ProcessId, token))).ConfigureAwait(false);
+        { return Unavailable(targets, "noProxyInbound"); }
+        if (inbound is null) return Unavailable(targets, "noProxyInbound");
+        if (inbound.Authentication) return Unavailable(targets, "proxyAuthenticationRequired");
+        if (!ManagedCoreListener.Owns(new(inbound.Address, inbound.Port), session.ProcessId)) return Unavailable(targets, "noProxyInbound");
+        return await Task.WhenAll(targets.Select(target => ProbeAsync(client, inbound, target, session.ProcessId, lifetime, token))).ConfigureAwait(false);
     }
 
-    private IReadOnlyList<RoutingProbeResult> Unavailable(string reason) => _targets.Select(t => new RoutingProbeResult(t.Id, "unavailable", Reason: reason)).ToArray();
+    private static IReadOnlyList<RoutingProbeResult> Unavailable(IReadOnlyList<RoutingProbeTarget> targets, string reason) =>
+        targets.Select(t => new RoutingProbeResult(t.Id, "unavailable", Reason: reason)).ToArray();
     private static async Task<RoutingProbeInbound?> DiscoverAsync(RoutingProbeSession session, HttpClient api, CancellationToken token)
     {
         if (session.Kind == CoreKind.Mihomo)
@@ -142,9 +160,9 @@ internal sealed class RoutingProbe
         && port.ValueKind == JsonValueKind.Number && port.TryGetInt32(out var number) && number is > 0 and <= 65535 ? number : null;
     private static string? Text(JsonElement element, string name) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) ? value.ToString() : null;
 
-    internal async Task<RoutingProbeResult> ProbeAsync(HttpClient api, RoutingProbeInbound inbound, RoutingProbeTarget target, int processId, CancellationToken lifetime)
+    internal async Task<RoutingProbeResult> ProbeAsync(HttpClient api, RoutingProbeInbound inbound, RoutingProbeTarget target, int processId, CancellationToken lifetime, CancellationToken batch = default)
     {
-        using var budget = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(lifetime, batch);
         budget.CancelAfter(TimeSpan.FromSeconds(12));
         var token = budget.Token;
         var httpsCompleted = false;
@@ -167,20 +185,27 @@ internal sealed class RoutingProbe
             }
             using var tls = new SslStream(stream, leaveInnerStreamOpen: true);
             await tls.AuthenticateAsClientAsync(_tls(target.Host), token).ConfigureAwait(false);
+            // Observe while this authenticated stream is still idle: an origin may
+            // close immediately after its response. Publish only after final HTTP.
+            (Observation? Evidence, bool Retry) early;
+            using (var observationBudget = CancellationTokenSource.CreateLinkedTokenSource(token))
+            {
+                observationBudget.CancelAfter(TimeSpan.FromSeconds(1));
+                try { early = await ObserveAsync(api, source, target, oldIds, observationBudget.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested) { early = (null, true); }
+            }
+            var evidence = early.Evidence;
             await SendAsync(tls, $"GET {target.Path} HTTP/1.1\r\nHost: {target.Host}\r\nConnection: keep-alive\r\n\r\n", token).ConfigureAwait(false);
             var headers = await HeadersAsync(tls, token).ConfigureAwait(false);
             if (Status(headers) is < 200 or > 599) throw new IOException("Invalid HTTP response.");
             httpsCompleted = true;
-            // Never follow redirects or consume a potentially large body. Keep the same
-            // independent stream alive through both observations after TLS and HTTP.
-            using var first = await GetAsync(api, "connections", token).ConfigureAwait(false);
-            var a = await MatchAsync(api, first, source, target, oldIds, token).ConfigureAwait(false);
-            await Task.Delay(100, token).ConfigureAwait(false);
-            using var second = await GetAsync(api, "connections", token).ConfigureAwait(false);
-            var b = await MatchAsync(api, second, source, target, oldIds, token).ConfigureAwait(false);
-            if (a is null || b is null || a != b) return new(target.Id, "unconfirmed", Reason: "connectionNotConfirmed");
-            return a.Direct
-                ? new(target.Id, "matched", Direct: true) : new(target.Id, "matched", Node: a.Node, Direct: false);
+            // If early evidence was unavailable, retain the opportunity to observe
+            // a longer-lived connection after HTTP. Never discard stable early evidence.
+            if (early.Retry) evidence = (await ObserveAsync(api, source, target, oldIds, token).ConfigureAwait(false)).Evidence;
+            lifetime.ThrowIfCancellationRequested();
+            if (evidence is null) return new(target.Id, "unconfirmed", Reason: "connectionNotConfirmed");
+            return evidence.Direct
+                ? new(target.Id, "matched", Direct: true) : new(target.Id, "matched", Node: evidence.Node, Direct: false);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { throw; }
         catch (ProxyAuthenticationException) { return new(target.Id, "unavailable", Reason: "proxyAuthenticationRequired"); }
@@ -192,6 +217,25 @@ internal sealed class RoutingProbe
             return httpsCompleted
                 ? new(target.Id, "unconfirmed", Reason: "connectionNotConfirmed")
                 : new(target.Id, "failed", Reason: error is OperationCanceledException ? "timeout" : "probeFailed");
+        }
+    }
+
+    private static async Task<(Observation? Evidence, bool Retry)> ObserveAsync(HttpClient api, IPEndPoint source, RoutingProbeTarget target, HashSet<string?> oldIds, CancellationToken token)
+    {
+        try
+        {
+            using var first = await GetAsync(api, "connections", token).ConfigureAwait(false);
+            var a = await MatchAsync(api, first, source, target, oldIds, token).ConfigureAwait(false);
+            await Task.Delay(100, token).ConfigureAwait(false);
+            using var second = await GetAsync(api, "connections", token).ConfigureAwait(false);
+            var b = await MatchAsync(api, second, source, target, oldIds, token).ConfigureAwait(false);
+            return (a is not null && a == b ? a : null, a is null || b is null);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception error) when (error is IOException or HttpRequestException or JsonException or OperationCanceledException or InvalidOperationException)
+        {
+            // An unavailable observation must not prevent an HTTPS check.
+            return (null, true);
         }
     }
 
@@ -211,7 +255,8 @@ internal sealed class RoutingProbe
         if ((string.IsNullOrEmpty(observedHost) && string.IsNullOrEmpty(sniffHost)) || !HostMatches(observedHost) || !HostMatches(sniffHost)
             || Text(metadata, "destinationPort") != target.Port.ToString(System.Globalization.CultureInfo.InvariantCulture)) return null;
         var id = Text(candidate, "id");
-        if (string.IsNullOrWhiteSpace(id) || oldIds.Contains(id) || !candidate.TryGetProperty("chains", out var chains)
+        if (string.IsNullOrWhiteSpace(id) || oldIds.Contains(id) || Connections(snapshot).Count(c => Text(c, "id") == id) != 1
+            || !candidate.TryGetProperty("chains", out var chains)
             || chains.ValueKind != JsonValueKind.Array || chains.GetArrayLength() == 0) return null;
         if (chains.EnumerateArray().Any(c => c.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(c.GetString()))) return null;
         var node = chains[0].GetString()!;
@@ -296,19 +341,27 @@ internal sealed class RoutingProbe
     private static Task SendAsync(Stream stream, string text, CancellationToken token) => stream.WriteAsync(Encoding.ASCII.GetBytes(text), token).AsTask();
     private static int Status(string header)
     {
-        var parts = header.Split(' ', 3);
-        return parts.Length >= 2 && parts[0] is "HTTP/1.1" or "HTTP/1.0" && int.TryParse(parts[1], out var code) ? code : 0;
+        var lineEnd = header.IndexOf("\r\n", StringComparison.Ordinal);
+        if (lineEnd < 0) return 0;
+        var parts = header[..lineEnd].Split(' ', 3);
+        return parts.Length >= 2 && parts[0] is "HTTP/1.1" or "HTTP/1.0" && parts[1].Length == 3
+            && parts[1].All(c => c is >= '0' and <= '9') && int.TryParse(parts[1], out var code) ? code : 0;
     }
     private static async Task<string> HeadersAsync(Stream stream, CancellationToken token)
     {
-        var bytes = new byte[16384]; var count = 0;
-        // Byte-sized reads avoid eating any TLS bytes beyond a CONNECT header,
-        // and bound origin consumption to headers only.
+        var bytes = new byte[16384]; var count = 0; var start = 0; var informational = 0;
+        // Bound all headers together and read one byte at a time so the final
+        // CONNECT header never consumes any of the following TLS stream.
         while (count < bytes.Length)
         {
             await stream.ReadExactlyAsync(bytes.AsMemory(count++, 1), token).ConfigureAwait(false);
-            if (count >= 4 && bytes[count - 4] == 13 && bytes[count - 3] == 10 && bytes[count - 2] == 13 && bytes[count - 1] == 10)
-                return Encoding.ASCII.GetString(bytes, 0, count);
+            if (count - start < 4 || bytes[count - 4] != 13 || bytes[count - 3] != 10 || bytes[count - 2] != 13 || bytes[count - 1] != 10) continue;
+            var header = Encoding.ASCII.GetString(bytes, start, count - start);
+            var status = Status(header);
+            if (status == 101) throw new IOException("HTTP upgrade unsupported.");
+            if (status is < 100 or >= 200) return header;
+            if (++informational > 8) throw new IOException("Too many informational responses.");
+            start = count;
         }
         throw new IOException("HTTP headers too large.");
     }

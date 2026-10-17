@@ -1,4 +1,6 @@
 import ConnectionStatus from '@/components/overview/ConnectionStatus.vue'
+import { backendSessionGeneration } from '@/helper/backendSession'
+import { markNetworkDiagnosticsDirty } from '@/helper/networkDiagnostics'
 import { getLatency, isTestingLatency, LATENCY_ROUNDS, latencyTargets } from '@/helper/overview'
 import en from '@/i18n/en'
 import { autoConnectionCheck } from '@/store/settings'
@@ -49,6 +51,7 @@ const mount = () => {
   app.mount(root)
 }
 beforeEach(() => {
+  backendSessionGeneration.value++
   autoConnectionCheck.value = false
   for (const target of latencyTargets) {
     target.ref.value = []
@@ -63,6 +66,7 @@ beforeEach(() => {
   mount()
 })
 afterEach(() => {
+  backendSessionGeneration.value++
   app?.unmount()
   app = undefined
   root.remove()
@@ -94,9 +98,10 @@ it('shares one eight-target five-round task across remounts and keeps samples vi
   autoConnectionCheck.value = true
   mount()
   expect(root.querySelector('button')!.disabled).toBe(true)
-  await getLatency()
+  const shared = getLatency()
   for (const mock of Object.values(fixtures)) expect(mock).toHaveBeenCalledTimes(1)
   for (let round = 0; round < LATENCY_ROUNDS; round++) await finishRound(42)
+  await shared
   await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
   for (const target of latencyTargets) {
     expect(target.ref.value).toEqual(Array(5).fill(42))
@@ -122,14 +127,37 @@ it('shows failed and pending samples separately rather than dropping them from t
   }
   await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
 })
-it('resets existing samples on another manual test without launching duplicates', async () => {
+it('merges a single-site task into a whole test and discards an invalidated path reply', async () => {
+  const target = latencyTargets[0]
+  target.ref.value = [12, 12, 12, 12, 12]
+  const old = getLatency([target.id])
+  markNetworkDiagnosticsDirty()
+  const replacement = getLatency([target.id])
+  const all = getLatency()
+  expect(fixtures.bilibili).toHaveBeenCalledTimes(2)
+  for (const mock of Object.values(fixtures).slice(1)) expect(mock).toHaveBeenCalledTimes(1)
+  pending.get(target.id)!.shift()!(999)
+  await old
+  expect(target.ref.value).toEqual([12, 12, 12, 12, 12])
+  expect(target.checking.value).toBe(true)
+  for (let round = 0; round < LATENCY_ROUNDS; round++) await finishRound(32)
+  await Promise.all([replacement, all])
+  expect(target.ref.value).toEqual([32, 32, 32, 32, 32])
+  expect(fixtures.bilibili).toHaveBeenCalledTimes(6)
+  for (const mock of Object.values(fixtures).slice(1)) expect(mock).toHaveBeenCalledTimes(5)
+  expect(isTestingLatency.value).toBe(false)
+})
+
+it('keeps old samples until all five replacements arrive without launching duplicates', async () => {
   for (const target of latencyTargets) target.ref.value = [10, 20]
   root.querySelector('button')!.click()
   await nextTick()
-  expect(latencyTargets.every((target) => target.ref.value.length === 0)).toBe(true)
+  expect(latencyTargets.every((target) => target.ref.value.join(',') === '10,20')).toBe(true)
   root.querySelector('button')!.click()
   for (const mock of Object.values(fixtures)) expect(mock).toHaveBeenCalledTimes(1)
-  for (const value of [10, 0, 20, 40, 1000]) await finishRound(value)
+  await finishRound(10)
+  expect(latencyTargets.every((target) => target.ref.value.join(',') === '10,20')).toBe(true)
+  for (const value of [0, 20, 40, 1000]) await finishRound(value)
   await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
   // The outlier affects the mean, not the displayed successful-sample median.
   for (const target of latencyTargets) {

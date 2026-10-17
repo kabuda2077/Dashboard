@@ -103,6 +103,61 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
     public void UpgradeConfirmationRequiresBoundedContext(string json) => Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(json));
 
     [Fact]
+    public async Task DiagnosticsAcceptOnlyBoundContextAndWhitelistedUniqueSubsets()
+    {
+        var routed = new List<HostRequest>();
+        var router = Router(new(), request => { routed.Add(request); return Task.FromResult(CommandResult.Completed()); });
+        await router.RouteAsync("""{"protocolVersion":2,"type":"testRouting","requestId":"one","coreType":"mihomo","expectedRuntimeEpoch":1,"targetIds":["github"]}""", _ => { });
+        Assert.Equal(["github"], Assert.Single(routed).TargetIds);
+        Assert.Null(HostMessageRouter.Parse("""{"protocolVersion":2,"type":"testRouting","requestId":"all","coreType":"mihomo","expectedRuntimeEpoch":1}""").TargetIds);
+        foreach (var targets in new[] { "null", "[]", "[\"github\",\"github\"]", "[\"\"]", "[null]", "[\"Github\"]", "[\"http://localhost:1234\"]", "[\"github\",\"google\",\"telegram\",\"youtube\",\"alibaba\",\"bilibili\",\"cloudflare\",\"chatgpt\",\"github\"]" })
+            Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse("{\"protocolVersion\":2,\"type\":\"testRouting\",\"requestId\":\"bad\",\"coreType\":\"mihomo\",\"expectedRuntimeEpoch\":1,\"targetIds\":" + targets + "}"));
+        foreach (var type in new[] { "getNetworkDiagnostics", "setNetworkDiagnostics" })
+        {
+            Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(HostBridgeJson.Serialize(new { protocolVersion = 2, type, requestId = "missing" })));
+            Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(HostBridgeJson.Serialize(new { protocolVersion = 2, type, requestId = "url", coreType = CoreKind.Mihomo, expectedRuntimeEpoch = 1, option = "http://localhost:1234" })));
+        }
+        Assert.Equal("getNetworkDiagnostics", HostMessageRouter.Parse("""{"protocolVersion":2,"type":"getNetworkDiagnostics","requestId":"get","coreType":"mihomo","expectedRuntimeEpoch":1}""").Type);
+    }
+
+    [Fact]
+    public void SnapshotParserRejectsInvalidRowsTimesAndRoutingSemantics()
+    {
+        var now = (double)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var latency = new DiagnosticLatencySnapshot("tencent", [0, 1, 2, 3, 60000], now - 1000);
+        var routing = new DiagnosticRoutingSnapshot("github", new("github", "matched", Node: "leaf", Direct: false), now);
+        var snapshot = new NetworkDiagnosticsSnapshot("{\"route\":\"opaque\"}", [latency], [routing]);
+        string Command(NetworkDiagnosticsSnapshot? value) => HostBridgeJson.Serialize(new {
+            protocolVersion = 2, type = "setNetworkDiagnostics", requestId = "set", coreType = CoreKind.Mihomo, expectedRuntimeEpoch = 1, networkDiagnostics = value
+        });
+        Assert.False(HostMessageRouter.Parse(Command(snapshot)).NetworkDiagnostics!.Latency[0].Invalidated);
+        var invalidated = HostMessageRouter.Parse(Command(snapshot with {
+            Latency = [latency with { Invalidated = true }], Routing = [routing with { Invalidated = true }]
+        })).NetworkDiagnostics!;
+        Assert.True(invalidated.Latency[0].Invalidated);
+        Assert.True(invalidated.Routing[0].Invalidated);
+        NetworkDiagnosticsSnapshot?[] invalid = [
+            null, snapshot with { PathKey = new string('x', 65537) }, snapshot with { Latency = null! },
+            snapshot with { Latency = [latency, latency] }, snapshot with { Routing = Enumerable.Repeat(routing, 9).ToArray() },
+            snapshot with { Latency = [latency with { Id = "alibaba" }] }, snapshot with { Routing = [routing with { Id = "tencent" }] },
+            snapshot with { Latency = [latency with { Samples = [1, 2, 3, 4] }] },
+            snapshot with { Latency = [latency with { Samples = [-1, 1, 2, 3, 4] }] },
+            snapshot with { Latency = [latency with { Samples = [60001, 1, 2, 3, 4] }] },
+            snapshot with { Latency = [latency with { TestedAt = now + 60000 }] },
+            snapshot with { Routing = [routing with { TestedAt = now - TimeSpan.FromDays(31).TotalMilliseconds }] },
+            snapshot with { Routing = [routing with { Result = routing.Result with { Id = "google" } }] },
+            snapshot with { Routing = [routing with { Result = routing.Result with { Status = "observed" } }] },
+            snapshot with { Routing = [routing with { Result = routing.Result with { Direct = true } }] },
+            snapshot with { Routing = [routing with { Result = routing.Result with { Node = "bad\nnode" } }] },
+            snapshot with { Routing = [routing with { Result = new("github", "failed", Node: "leaf", Reason: "probeFailed") }] },
+            snapshot with { Routing = [routing with { Result = new("github", "failed", Reason: new string('x', 129)) }] }
+        ];
+        foreach (var value in invalid) Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(Command(value)));
+        Assert.False(NetworkDiagnosticsSnapshots.IsValid(snapshot with { Latency = [latency with { Samples = [double.NaN, 1, 2, 3, 4] }] }));
+        Assert.False(NetworkDiagnosticsSnapshots.IsValid(snapshot with { Routing = [routing with { TestedAt = double.PositiveInfinity }] }));
+    }
+
+    [Fact]
     public async Task LegitimateLargeCssPreferenceIsAccepted()
     {
         var calls = new List<string>();

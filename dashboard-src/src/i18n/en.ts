@@ -248,6 +248,7 @@ const en = {
   networkRequestFailed: 'Request failed',
   networkTestLatency: 'Measure request times for eight targets',
   networkTestRouting: 'Observe target routing results',
+  networkTestTarget: 'Retest {name}',
   networkTestIPs: 'Query domestic and international target exits',
   networkTestsNavigation:
     'Scroll between latency and routing tests; use up/down arrows when focused',

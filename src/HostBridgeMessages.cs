@@ -32,10 +32,13 @@ internal sealed record HostRequest
     public string? Name { get; init; }
     public double? DurationMs { get; init; }
     public bool ConfirmUnverified { get; init; }
+    public IReadOnlyList<string>? TargetIds { get; init; }
+    public NetworkDiagnosticsSnapshot? NetworkDiagnostics { get; init; }
 }
 
 internal sealed record CommandResult(string Status, string Code, string? Message = null,
-    bool Saved = false, string? Path = null, IReadOnlyList<RoutingProbeResult>? Routing = null)
+    bool Saved = false, string? Path = null, IReadOnlyList<RoutingProbeResult>? Routing = null,
+    NetworkDiagnosticsSnapshot? NetworkDiagnostics = null)
 {
     public static CommandResult Completed(string code = "completed", bool saved = false) => new("completed", code, Saved: saved);
     public static CommandResult Rejected(string code) => new("rejected", code);
@@ -64,6 +67,7 @@ internal record DashboardRuntimeState
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)] public int? ProcessId { get; init; }
     public CoreKind CoreType { get; init; }
     public long RuntimeEpoch { get; init; }
+    public long NetworkRevision { get; init; }
     public string CoreTitle { get; init; } = "";
     public string CoreVersion { get; init; } = "";
     public string ApiStatus { get; init; } = "idle";

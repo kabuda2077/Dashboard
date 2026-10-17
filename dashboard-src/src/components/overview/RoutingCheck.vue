@@ -10,9 +10,9 @@
       <button
         class="btn btn-ghost btn-xs btn-circle"
         type="button"
-        :disabled="isTestingRouting || !backendSessionReady"
+        :disabled="routingTargets.every((target) => target.checking.value) || !backendSessionReady"
         :aria-label="$t('networkTestRouting')"
-        @click="getRouting"
+        @click="getRouting()"
       >
         <BoltIcon
           class="h-3.5 w-3.5"
@@ -27,39 +27,55 @@
         class="flex min-w-0 flex-col justify-center gap-2"
         :data-routing-target="target.id"
       >
-        <div class="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          class="network-target-button"
+          :disabled="target.checking.value || !backendSessionReady"
+          :aria-label="$t('networkTestTarget', { name: $t(`networkTarget_${target.id}`) })"
+          :aria-busy="target.checking.value"
+          @click="getRouting([target.id])"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <span
+              class="min-w-0 truncate text-sm font-medium"
+              :title="target.url"
+            >
+              {{ $t(`networkTarget_${target.id}`) }}
+            </span>
+            <span
+              v-if="target.checking.value"
+              class="loading loading-spinner h-3 w-3 shrink-0"
+              aria-hidden="true"
+            />
+            <span class="text-base-content/45 shrink-0 text-[10px]">
+              {{ $t(target.region === 'domestic' ? 'networkDomestic' : 'networkInternational') }}
+            </span>
+          </div>
           <span
-            class="min-w-0 truncate text-sm font-medium"
-            :title="target.url"
+            v-if="target.checking.value && target.result.value.status === 'idle'"
+            class="text-base-content/45 flex h-5 items-center gap-2 text-xs"
+            role="status"
           >
-            {{ $t(`networkTarget_${target.id}`) }}
+            <span class="loading loading-spinner loading-xs" />{{ $t('checking') }}
           </span>
-          <span class="text-base-content/45 shrink-0 text-[10px]">
-            {{ $t(target.region === 'domestic' ? 'networkDomestic' : 'networkInternational') }}
+          <span
+            v-else
+            class="truncate text-sm"
+            :class="
+              target.result.value.status === 'observed'
+                ? 'text-base-content'
+                : 'text-base-content/45'
+            "
+            :title="
+              target.result.value.status === 'observed'
+                ? $t('networkRouteObserved')
+                : resultText(target.result.value)
+            "
+            role="status"
+          >
+            {{ resultText(target.result.value) }}
           </span>
-        </div>
-        <span
-          v-if="target.result.value.status === 'checking'"
-          class="text-base-content/45 flex h-5 items-center gap-2 text-xs"
-          role="status"
-        >
-          <span class="loading loading-spinner loading-xs" />{{ $t('checking') }}
-        </span>
-        <span
-          v-else
-          class="truncate text-sm"
-          :class="
-            target.result.value.status === 'observed' ? 'text-base-content' : 'text-base-content/45'
-          "
-          :title="
-            target.result.value.status === 'observed'
-              ? $t('networkRouteObserved')
-              : resultText(target.result.value)
-          "
-          role="status"
-        >
-          {{ resultText(target.result.value) }}
-        </span>
+        </button>
       </div>
     </div>
   </section>
@@ -68,9 +84,13 @@
 <script setup lang="ts">
 import { backendSessionReady } from '@/helper/backendSession'
 import { getRouting, isTestingRouting, routingTargets } from '@/helper/routing-test'
+import { useNetworkDiagnosticsPage } from '@/helper/networkDiagnostics'
+import { toRef } from 'vue'
 import { BoltIcon } from '@heroicons/vue/24/outline'
 import { useI18n } from 'vue-i18n'
 
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+useNetworkDiagnosticsPage('routing', toRef(props, 'active'))
 const { t } = useI18n()
 type RoutingResult = (typeof routingTargets)[number]['result']['value']
 const resultText = (result: RoutingResult) => {

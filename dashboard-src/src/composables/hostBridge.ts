@@ -28,6 +28,7 @@ export type HostRuntimeState = {
   processId?: number | null
   coreType?: CoreKind
   runtimeEpoch?: number
+  networkRevision?: number
   coreTitle?: string
   coreVersion?: string
   apiStatus?: 'idle' | 'checking' | 'ready' | 'unauthorized' | 'unreachable'
@@ -68,6 +69,11 @@ export type RoutingProbeResult = {
   direct?: boolean
   reason?: string
 }
+export type NetworkDiagnostics = {
+  pathKey: string
+  latency: { id: string; samples: number[]; testedAt: number; invalidated?: boolean }[]
+  routing: { id: string; result: RoutingProbeResult; testedAt: number; invalidated?: boolean }[]
+}
 export type CommandResult = {
   status: 'completed' | 'rejected' | 'failed' | 'cancelled' | 'elevationRequired'
   code: string
@@ -75,6 +81,7 @@ export type CommandResult = {
   saved?: boolean
   path?: string
   routing?: RoutingProbeResult[]
+  networkDiagnostics?: NetworkDiagnostics
 }
 export type HostMessage = {
   protocolVersion?: number
@@ -122,7 +129,19 @@ export type HostCommand =
       type: 'chooseCoreFile' | 'chooseConfigFile' | 'openCoreLocation' | 'openConfigLocation'
       coreType: CoreKind
     }
-  | { type: 'testRouting'; coreType: CoreKind; expectedRuntimeEpoch: number }
+  | {
+      type: 'testRouting'
+      coreType: CoreKind
+      expectedRuntimeEpoch: number
+      targetIds?: string[]
+    }
+  | { type: 'getNetworkDiagnostics'; coreType: CoreKind; expectedRuntimeEpoch: number }
+  | {
+      type: 'setNetworkDiagnostics'
+      coreType: CoreKind
+      expectedRuntimeEpoch: number
+      networkDiagnostics: NetworkDiagnostics
+    }
   | { type: 'setDesktopOption'; option: keyof DesktopOptions; value: boolean }
   | { type: 'saveDashboardPreferences'; preferences: Record<string, string> }
   | { type: 'preferencesFlushed'; requestId: string; value: boolean }

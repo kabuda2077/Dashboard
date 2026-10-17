@@ -1,4 +1,6 @@
+using System.Net.NetworkInformation;
 using System.Security.Principal;
+using Microsoft.Win32;
 using System.Text.Json;
 
 namespace Dashboard;
@@ -32,6 +34,7 @@ internal sealed class DashboardHost : IDisposable
     private long _iconGeneration;
     private CancellationTokenSource? _iconCancellation;
     private long _lastRuntimeEpoch;
+    private long _networkRevision;
     private CoreProfiles _lastProfiles;
     private CoreKind _lastActiveCoreKind;
     private Task<bool>? _shutdownTask;
@@ -61,6 +64,8 @@ internal sealed class DashboardHost : IDisposable
         _lifecycle.Changed += OnRuntimeChanged;
         _core.LogReceived += OnLog;
         _icons.CacheChanged += OnIcons;
+        NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _ = RefreshMetadataAsync();
         RefreshIconCache();
     }
@@ -105,6 +110,7 @@ internal sealed class DashboardHost : IDisposable
             ProcessId = _core.ProcessId,
             CoreType = kind,
             RuntimeEpoch = _lifecycle.Epoch,
+            NetworkRevision = Interlocked.Read(ref _networkRevision),
             CoreTitle = AppSettings.CoreTitleFor(kind),
             CoreVersion = apiVersion.Length > 0 ? apiVersion : metadata?.DisplayVersion ?? "",
             ApiStatus = _lifecycle.ApiStatus,
@@ -155,6 +161,7 @@ internal sealed class DashboardHost : IDisposable
     {
         if (_disposed || _tasks.IsClosing) return CommandResult.Rejected("closing");
         if (request.Type == "testRouting") return await TestRoutingAsync(request).ConfigureAwait(false);
+        if (request.Type is "getNetworkDiagnostics" or "setNetworkDiagnostics") return _lifecycle.NetworkDiagnostics(request);
         if (request.Type is "saveProfile" or "start" or "restart" or "switchCore" or "stop" or "upgradeCore" or "completeSetup")
         {
             var result = await _lifecycle.ExecuteAsync(request).ConfigureAwait(false);
@@ -200,7 +207,7 @@ internal sealed class DashboardHost : IDisposable
     private async Task<CommandResult> TestRoutingAsync(HostRequest request)
     {
         if (request.CoreType is not { } kind || request.ExpectedRuntimeEpoch is not { } epoch
-            || request.Draft is not null) return CommandResult.Rejected("invalidInput");
+            || request.Draft is not null || !RoutingProbe.ValidTargetIds(request.TargetIds)) return CommandResult.Rejected("invalidInput");
         if (Interlocked.CompareExchange(ref _routingBusy, 1, 0) != 0) return CommandResult.Rejected("busy");
         var result = CommandResult.Rejected("closing");
         try
@@ -220,7 +227,7 @@ internal sealed class DashboardHost : IDisposable
                 CancelStaleRouting();
                 try
                 {
-                    var rows = await Task.Run(() => _routingProbe.RunAsync(session!, cancel.Token), cancel.Token).ConfigureAwait(false);
+                    var rows = await Task.Run(() => _routingProbe.RunAsync(session!, cancel.Token, request.TargetIds), cancel.Token).ConfigureAwait(false);
                     var stale = _lifecycle.CaptureRoutingSession(kind, epoch, out _);
                     result = cancel.IsCancellationRequested || stale is not null
                         ? new("cancelled", "cancelled") : new("completed", "routingTested", Routing: rows);
@@ -542,6 +549,7 @@ internal sealed class DashboardHost : IDisposable
     private void OnSettingsChanged(object? sender, EventArgs args)
     {
         var selectionChanged = _lastActiveCoreKind != Settings.ActiveCoreKind;
+        if (selectionChanged) _lifecycle.ClearNetworkDiagnostics();
         if (!ReferenceEquals(_lastProfiles, Settings.Profiles) || selectionChanged)
         {
             _lastProfiles = Settings.Profiles; _lastActiveCoreKind = Settings.ActiveCoreKind;
@@ -549,6 +557,19 @@ internal sealed class DashboardHost : IDisposable
         }
         PublishState();
     }
+    private void OnNetworkAddressChanged(object? sender, EventArgs args) => NotifyNetworkChanged();
+    internal void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs args)
+    {
+        if (args.Mode == PowerModes.Resume) NotifyNetworkChanged();
+    }
+    internal void NotifyNetworkChanged()
+    {
+        if (IsClosing) return;
+        // Retain display history; the frontend uses this revision to schedule fresh diagnostics.
+        Interlocked.Increment(ref _networkRevision);
+        if (!IsClosing) RuntimeStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private void OnRuntimeChanged(object? sender, EventArgs args)
     {
         CancelStaleRouting();
@@ -608,6 +629,8 @@ internal sealed class DashboardHost : IDisposable
         _lifecycle.Changed -= OnRuntimeChanged;
         _core.LogReceived -= OnLog;
         _icons.CacheChanged -= OnIcons;
+        NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
     }
     public void Dispose()
     {

@@ -1,5 +1,8 @@
 <template>
-  <div class="network-card base-container w-full p-4">
+  <div
+    ref="card"
+    class="network-card base-container w-full p-4"
+  >
     <div class="network-card-grid grid grid-cols-1 gap-3">
       <div class="network-card-tests bg-base-200/30 relative min-w-0 overflow-hidden rounded-xl">
         <div
@@ -13,8 +16,8 @@
           @wheel="onWheel"
           @scroll="updateScroll"
         >
-          <ConnectionStatus />
-          <RoutingCheck />
+          <ConnectionStatus :active="cardVisible && activePage === 0" />
+          <RoutingCheck :active="cardVisible && activePage === 1" />
         </div>
         <div
           class="network-scroll-track"
@@ -36,14 +39,26 @@
 import ConnectionStatus from '@/components/overview/ConnectionStatus.vue'
 import IPCheck from '@/components/overview/IPCheck.vue'
 import RoutingCheck from '@/components/overview/RoutingCheck.vue'
-import { onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
+const card = ref<HTMLElement>()
+const cardVisible = ref(false)
+let visibilityObserver: IntersectionObserver | undefined
+onMounted(() => {
+  if (!card.value) return
+  visibilityObserver = new IntersectionObserver(([entry]) => {
+    cardVisible.value = entry?.isIntersecting ?? false
+  })
+  visibilityObserver.observe(card.value)
+})
 const deck = ref<HTMLElement>()
 const scrollProgress = ref(0)
+const activePage = ref(0)
 const updateScroll = () => {
   if (!deck.value) return
   const range = deck.value.scrollHeight - deck.value.clientHeight
   scrollProgress.value = range > 0 ? Math.max(0, Math.min(1, deck.value.scrollTop / range)) : 0
+  activePage.value = Math.round(scrollProgress.value)
 }
 let animation: number | undefined
 const scrollToCard = (top: number) => {
@@ -67,6 +82,7 @@ const scrollToCard = (top: number) => {
   animation = requestAnimationFrame(step)
 }
 onUnmounted(() => {
+  visibilityObserver?.disconnect()
   if (animation !== undefined) cancelAnimationFrame(animation)
 })
 const onTrackPointer = (event: PointerEvent) => {
@@ -208,6 +224,32 @@ const onKeydown = (event: KeyboardEvent) => {
   /* Keep results clear of the scrollbar while the header action stays aligned. */
   margin-right: calc(22px + 0.5rem);
   min-height: 0;
+}
+.network-target-button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.375rem;
+  margin: -0.375rem;
+  border-radius: 0.375rem;
+  text-align: left;
+  cursor: pointer;
+}
+.network-target-button:hover:not(:disabled),
+.network-target-button:focus-visible {
+  background: color-mix(in srgb, var(--color-base-content) 5%, transparent);
+}
+.network-target-button:focus-visible {
+  outline: 1px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.network-target-button:disabled {
+  cursor: default;
 }
 .network-latency-grid {
   column-gap: 1.5rem;

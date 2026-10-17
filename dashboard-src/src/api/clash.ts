@@ -1,22 +1,22 @@
 import { postHostMessage } from '@/composables/hostBridge'
 import { captureBackendSession } from '@/helper/backendSession'
 import { getBackendProbeUrl, throwIfProbeAborted, type ProbeResult } from '@/helper/connectivity'
+import { markNetworkDiagnosticsDirty } from '@/helper/networkDiagnostics'
 import { getUrlFromBackend } from '@/helper/utils'
 import { activeBackend } from '@/store/setup'
-import type {
-  Backend,
-  ClashConnectionRawMessage,
-  Config,
-  NodeRank,
-  Proxy,
-  ProxyProvider,
-  Rule,
-  RuleProvider,
-} from '@/types'
+import type { Backend, Config, NodeRank, Proxy, ProxyProvider, Rule, RuleProvider } from '@/types'
 import axios from 'axios'
 import { debounce } from 'lodash'
 import ReconnectingWebSocket from 'reconnectingwebsocket'
 import { shallowRef } from 'vue'
+
+const notifyPathWrite = <T>(request: Promise<T>): Promise<T> => {
+  const session = captureBackendSession()
+  return request.then((response) => {
+    if (session.isCurrent()) markNetworkDiagnosticsDirty()
+    return response
+  })
+}
 
 export const fetchClashVersion = () => axios.get<{ version: string }>('/version')
 
@@ -32,11 +32,11 @@ export const fetchProxiesAPI = () => {
 }
 
 export const selectProxyAPI = (proxyGroup: string, name: string) => {
-  return axios.put(`/proxies/${encodeURIComponent(proxyGroup)}`, { name })
+  return notifyPathWrite(axios.put(`/proxies/${encodeURIComponent(proxyGroup)}`, { name }))
 }
 
 export const deleteFixedProxyAPI = (proxyGroup: string) => {
-  return axios.delete(`/proxies/${encodeURIComponent(proxyGroup)}`)
+  return notifyPathWrite(axios.delete(`/proxies/${encodeURIComponent(proxyGroup)}`))
 }
 
 const latencyRequestBudget = (timeout: number) =>
@@ -111,7 +111,7 @@ export const fetchProxyProviderAPI = () => {
 }
 
 export const updateProxyProviderAPI = (name: string) => {
-  return axios.put(`/providers/proxies/${encodeURIComponent(name)}`)
+  return notifyPathWrite(axios.put(`/providers/proxies/${encodeURIComponent(name)}`))
 }
 
 export const proxyProviderHealthCheckAPI = (name: string) => {
@@ -128,12 +128,12 @@ export const fetchRulesAPI = () => {
 }
 
 export const toggleRuleDisabledAPI = (data: Record<number, boolean>) => {
-  return axios.patch(`/rules/disable`, data)
+  return notifyPathWrite(axios.patch(`/rules/disable`, data))
 }
 
 // reFind-compatible rules expose stable UUIDs at PUT /rules/{uuid}.
 export const toggleRuleDisabledRefindAPI = (uuid: string) => {
-  return axios.put(`/rules/${encodeURIComponent(uuid)}`)
+  return notifyPathWrite(axios.put(`/rules/${encodeURIComponent(uuid)}`))
 }
 
 // Compatibility alias for existing desktop callers; this is not sing-box native API.
@@ -144,7 +144,7 @@ export const fetchRuleProvidersAPI = () => {
 }
 
 export const updateRuleProviderAPI = (name: string) => {
-  return axios.put(`/providers/rules/${encodeURIComponent(name)}`)
+  return notifyPathWrite(axios.put(`/providers/rules/${encodeURIComponent(name)}`))
 }
 
 export const blockConnectionByIdAPI = (id: string) => {
@@ -164,7 +164,7 @@ export const getConfigsAPI = (signal?: AbortSignal) => {
 }
 
 export const patchConfigsAPI = (configs: Record<string, string | boolean | object | number>) => {
-  return axios.patch('/configs', configs)
+  return notifyPathWrite(axios.patch('/configs', configs))
 }
 
 export const flushFakeIPAPI = () => {
@@ -176,11 +176,11 @@ export const flushDNSCacheAPI = () => {
 }
 
 export const reloadConfigsAPI = () => {
-  return axios.put('/configs?reload=true', { path: '', payload: '' })
+  return notifyPathWrite(axios.put('/configs?reload=true', { path: '', payload: '' }))
 }
 
 export const updateGeoDataAPI = () => {
-  return axios.post('/configs/geo', undefined, { timeout: 120000 })
+  return notifyPathWrite(axios.post('/configs/geo', undefined, { timeout: 120000 }))
 }
 
 export const upgradeCoreAPI = (type: 'release' | 'alpha' | 'auto') => {

@@ -67,6 +67,28 @@ public sealed class HostBridgeMessagesTests
         var output = TestDirectory.ReportDirectory("bridge-fixtures-v2");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "routing.json"), json);
+        File.WriteAllText(Path.Combine(output, "routing-single.json"), HostBridgeJson.Serialize(
+            new HostReply("fixture-routing-single", new("completed", "routingTested", Routing: [rows[7]]), state)));
+        var testedAt = (double)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var snapshot = new NetworkDiagnosticsSnapshot("{\"mode\":\"rule\",\"selector\":\"leaf\"}",
+            [new("tencent", [0, 10, 20, 30, 60000], testedAt - 1000, Invalidated: true)],
+            rows.Select(row => new DiagnosticRoutingSnapshot(row.Id, row, testedAt - 1000, Invalidated: row.Id == "github")).ToArray());
+        var cachedJson = HostBridgeJson.Serialize(new HostReply("fixture-network-diagnostics",
+            new("completed", "networkDiagnosticsLoaded", NetworkDiagnostics: snapshot), state));
+        using var cached = JsonDocument.Parse(cachedJson);
+        var payload = cached.RootElement.GetProperty("result").GetProperty("networkDiagnostics");
+        Assert.Equal(snapshot.PathKey, payload.GetProperty("pathKey").GetString());
+        Assert.Equal(5, payload.GetProperty("latency")[0].GetProperty("samples").GetArrayLength());
+        Assert.Equal(testedAt - 1000, payload.GetProperty("routing")[0].GetProperty("testedAt").GetDouble());
+        Assert.Equal("matched", payload.GetProperty("routing")[0].GetProperty("result").GetProperty("status").GetString());
+        Assert.True(payload.GetProperty("latency")[0].GetProperty("invalidated").GetBoolean());
+        Assert.True(payload.GetProperty("routing")[7].GetProperty("invalidated").GetBoolean());
+        Assert.False(payload.GetProperty("routing")[0].GetProperty("invalidated").GetBoolean());
+        Assert.False(cached.RootElement.GetProperty("state").TryGetProperty("networkDiagnostics", out _));
+        Assert.Equal(0, cached.RootElement.GetProperty("state").GetProperty("runtime").GetProperty("networkRevision").GetInt64());
+        File.WriteAllText(Path.Combine(output, "network-diagnostics.json"), cachedJson);
+        File.WriteAllText(Path.Combine(output, "network-diagnostics-empty.json"), HostBridgeJson.Serialize(
+            new HostReply("fixture-network-diagnostics-empty", new("completed", "networkDiagnosticsLoaded"), state)));
     }
 
     [Fact]

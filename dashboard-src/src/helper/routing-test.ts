@@ -4,8 +4,15 @@ import {
   hostState,
   type RoutingProbeResult,
 } from '@/composables/hostBridge'
-import { backendSessionGeneration, backendSessionReady } from '@/helper/backendSession'
-import { ref, watch, type Ref } from 'vue'
+import { backendSessionReady } from '@/helper/backendSession'
+import {
+  captureNetworkDiagnosticsTask,
+  completeNetworkDiagnostic,
+  registerNetworkDiagnostics,
+  validRoutingProbeResult,
+  type DiagnosticsRunOptions,
+} from '@/helper/networkDiagnostics'
+import { ref, type Ref } from 'vue'
 
 export type RoutingResult = {
   status: 'idle' | 'checking' | 'observed' | 'unconfirmed' | 'unavailable' | 'failed'
@@ -19,6 +26,7 @@ export type RoutingTarget = {
   url: string
   region: 'domestic' | 'international'
   result: Ref<RoutingResult>
+  checking: Ref<boolean>
 }
 
 export const routingTargets: RoutingTarget[] = [
@@ -68,89 +76,184 @@ export const routingTargets: RoutingTarget[] = [
 ].map((target) => ({
   ...target,
   result: ref<RoutingResult>({ status: 'idle' }),
+  checking: ref(false),
 })) as RoutingTarget[]
 
 export const isTestingRouting = ref(false)
-let task: { promise: Promise<void> } | undefined
-
-// Shared across navigation; the host owns cancellation and socket disposal.
-// A new generation/readiness state invalidates replies synchronously, including
-// an old failure or finally block arriving while another test is running.
-watch(
-  [backendSessionGeneration, backendSessionReady],
-  () => {
-    task = undefined
-    isTestingRouting.value = false
-    for (const target of routingTargets) target.result.value = { status: 'idle' }
-  },
-  { flush: 'sync' },
-)
-
-const validResults = (value: unknown): value is RoutingProbeResult[] => {
-  if (!Array.isArray(value) || value.length !== routingTargets.length) return false
-  const ids = new Set(routingTargets.map((target) => target.id))
-  return value.every((entry: unknown) => {
-    if (!entry || typeof entry !== 'object') return false
-    const result = entry as RoutingProbeResult
-    if (!ids.delete(result.id)) return false
-    if (!['matched', 'unconfirmed', 'unavailable', 'failed'].includes(result.status)) return false
-    if (result.reason !== undefined && typeof result.reason !== 'string') return false
-    if (result.status !== 'matched') return true
-    return result.direct === true
-      ? result.node === undefined
-      : result.direct === false && typeof result.node === 'string' && !!result.node.trim()
-  })
+type Batch = {
+  targets: RoutingTarget[]
+  promise: Promise<void>
+  resolve: () => void
+  isCurrent: () => boolean
+  all: boolean
+  shouldStart?: () => boolean
+  manualIds: Set<string>
 }
-
-export const getRouting = (): Promise<void> => {
-  if (task) return task.promise
-  if (!backendSessionReady.value) return Promise.resolve()
-  if (!hasHostBridge) {
-    for (const target of routingTargets)
-      target.result.value = { status: 'unavailable', reason: 'hostRequired' }
-    return Promise.resolve()
+const tasks = new Map<string, Batch>()
+let queue: Batch[] = []
+let running: Batch | undefined
+const displayResult = (observed: RoutingProbeResult): RoutingResult =>
+  observed.status === 'matched'
+    ? {
+        status: 'observed',
+        direct: observed.direct,
+        ...(observed.node ? { node: observed.node } : {}),
+      }
+    : { status: observed.status, ...(observed.reason ? { reason: observed.reason } : {}) }
+const publish = (target: RoutingTarget, result: RoutingProbeResult) => {
+  target.result.value = displayResult(result)
+  completeNetworkDiagnostic(
+    'routing',
+    { id: target.id, result, testedAt: Date.now() },
+    result.status === 'matched',
+  )
+}
+// Covers a previous WebView's bounded probe without turning busy into evidence.
+const BUSY_RETRY_DELAYS = [500, 1000, 2000, 3000, 5000, 5000]
+const releaseTarget = (batch: Batch, target: RoutingTarget) => {
+  if (tasks.get(target.id) === batch) {
+    tasks.delete(target.id)
+    target.checking.value = false
   }
-  const coreType = hostState.value.coreType
-  const epoch = hostState.value.runtimeEpoch
-  if (!coreType || epoch === undefined) return Promise.resolve()
-  const current = { promise: Promise.resolve() }
-  task = current
-  isTestingRouting.value = true
-  for (const target of routingTargets) target.result.value = { status: 'checking' }
-  current.promise = (async () => {
+}
+const keepRequestedTargets = (batch: Batch) => {
+  if (batch.shouldStart && !batch.shouldStart()) {
+    batch.targets = batch.targets.filter((target) => {
+      if (batch.manualIds.has(target.id)) return true
+      releaseTarget(batch, target)
+      return false
+    })
+  }
+  isTestingRouting.value = tasks.size > 0
+  return batch.targets.length > 0
+}
+const startNext = () => {
+  if (running) return
+  const batch = queue.shift()
+  if (!batch) return
+  running = batch
+  void (async () => {
     try {
-      const result = await commandHost({
-        type: 'testRouting',
-        coreType,
-        expectedRuntimeEpoch: epoch,
-      })
-      if (task !== current) return
-      if (
-        result.status !== 'completed' ||
-        result.code !== 'routingTested' ||
-        !validResults(result.routing)
-      )
-        throw new Error('Invalid routing result')
-      for (const target of routingTargets) {
-        const observed = result.routing.find((entry) => entry.id === target.id)!
-        target.result.value =
-          observed.status === 'matched'
-            ? {
-                status: 'observed',
-                direct: observed.direct,
-                ...(observed.node ? { node: observed.node } : {}),
-              }
-            : { status: observed.status, ...(observed.reason ? { reason: observed.reason } : {}) }
+      for (let attempt = 0; ; attempt++) {
+        if (!batch.isCurrent() || !keepRequestedTargets(batch)) return
+        const { coreType, runtimeEpoch } = hostState.value
+        if (!coreType || runtimeEpoch === undefined) return
+        const response = await commandHost({
+          type: 'testRouting',
+          coreType,
+          expectedRuntimeEpoch: runtimeEpoch,
+          ...(batch.all && batch.targets.length === routingTargets.length
+            ? {}
+            : { targetIds: batch.targets.map((target) => target.id) }),
+        })
+        if (!batch.isCurrent()) return
+        if (response.code === 'busy') {
+          // Retain the same task and old display. Hidden automatic requests are
+          // dropped before retry; manual requests retain their navigation lifetime.
+          if (!keepRequestedTargets(batch) || attempt >= BUSY_RETRY_DELAYS.length) return
+          await new Promise<void>((resolve) => setTimeout(resolve, BUSY_RETRY_DELAYS[attempt]))
+          continue
+        }
+        const ids = new Set(batch.targets.map((target) => target.id))
+        if (
+          response.status !== 'completed' ||
+          response.code !== 'routingTested' ||
+          !Array.isArray(response.routing) ||
+          response.routing.length !== ids.size ||
+          !response.routing.every((entry) => validRoutingProbeResult(entry) && ids.delete(entry.id))
+        )
+          throw new Error('Invalid routing result')
+        for (const target of batch.targets)
+          publish(
+            target,
+            response.routing.find((entry) => entry.id === target.id)!,
+          )
+        return
       }
     } catch {
-      if (task === current)
-        for (const target of routingTargets) target.result.value = { status: 'unconfirmed' }
+      if (batch.isCurrent())
+        for (const target of batch.targets)
+          publish(target, { id: target.id, status: 'unconfirmed' })
     } finally {
-      if (task === current) {
-        task = undefined
-        isTestingRouting.value = false
+      for (const target of batch.targets) releaseTarget(batch, target)
+      if (running === batch) {
+        running = undefined
+        startNext()
       }
+      isTestingRouting.value = tasks.size > 0
+      batch.resolve()
     }
   })()
-  return current.promise
 }
+export const getRouting = (
+  targetIds?: string[],
+  options: DiagnosticsRunOptions = {},
+): Promise<void> => {
+  if (!backendSessionReady.value) return Promise.resolve()
+  const selected = routingTargets.filter((target) => !targetIds || targetIds.includes(target.id))
+  if (!hasHostBridge) {
+    for (const target of selected)
+      publish(target, { id: target.id, status: 'unavailable', reason: 'hostRequired' })
+    return Promise.resolve()
+  }
+  if (!hostState.value.coreType || hostState.value.runtimeEpoch === undefined)
+    return Promise.resolve()
+  const pending = new Set<Promise<void>>()
+  const missing = selected.filter((target) => {
+    const existing = tasks.get(target.id)
+    if (!existing?.isCurrent()) return true
+    if (!options.shouldStart) existing.manualIds.add(target.id)
+    pending.add(existing.promise)
+    return false
+  })
+  if (missing.length) {
+    let resolve!: () => void
+    const promise = new Promise<void>((done) => {
+      resolve = done
+    })
+    const batch: Batch = {
+      targets: missing,
+      promise,
+      resolve,
+      isCurrent: captureNetworkDiagnosticsTask(
+        'routing',
+        missing.map((target) => target.id),
+      ).isCurrent,
+      all: !targetIds && missing.length === routingTargets.length,
+      shouldStart: options.shouldStart,
+      manualIds: new Set(options.shouldStart ? [] : missing.map((target) => target.id)),
+    }
+    for (const target of missing) {
+      tasks.set(target.id, batch)
+      target.checking.value = true
+    }
+    isTestingRouting.value = true
+    queue.push(batch)
+    pending.add(promise)
+    startNext()
+  }
+  if (pending.size === 1) return [...pending][0]
+  return Promise.all(pending).then(() => undefined)
+}
+registerNetworkDiagnostics('routing', {
+  ids: routingTargets.map((target) => target.id),
+  run: getRouting,
+  restore: (entry) => {
+    if ('result' in entry) {
+      const target = routingTargets.find((target) => target.id === entry.id)
+      if (target) target.result.value = displayResult(entry.result)
+    }
+  },
+  reset: () => {
+    for (const batch of queue) batch.resolve()
+    queue = []
+    // Keep the physical host command serialized, even across readiness loss.
+    // Its guarded reply can no longer publish into this session.
+    tasks.clear()
+    isTestingRouting.value = false
+    for (const target of routingTargets) {
+      target.result.value = { status: 'idle' }
+      target.checking.value = false
+    }
+  },
+})

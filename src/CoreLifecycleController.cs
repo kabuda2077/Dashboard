@@ -17,6 +17,8 @@ internal sealed class CoreLifecycleController : IDisposable
     private CoreProfile? _connection;
     private int? _observedPid;
     private long _epoch;
+    private readonly double _diagnosticsSessionStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private NetworkDiagnosticsSnapshot? _networkDiagnostics;
     private string _apiStatus = "idle";
     private string _apiVersion = "";
     private string _operation = "idle";
@@ -64,6 +66,33 @@ internal sealed class CoreLifecycleController : IDisposable
             session = new(kind, _connection ?? running.Profile, running.Profile, epoch, pid, _routingInbound);
             return null;
         }
+    }
+
+    internal CommandResult NetworkDiagnostics(HostRequest request)
+    {
+        // Short memory operations share the lifecycle lock, never the core write gate.
+        // Epoch changes and cache reads/writes therefore have one ordering.
+        lock (_sync)
+        {
+            if (request.CoreType is not { } kind || request.ExpectedRuntimeEpoch is not { } epoch)
+                return CommandResult.Rejected("invalidInput");
+            var rejected = CaptureRoutingSession(kind, epoch, out _);
+            if (rejected is not null) return rejected;
+            if (request.Type == "setNetworkDiagnostics")
+            {
+                if (!NetworkDiagnosticsSnapshots.IsValid(request.NetworkDiagnostics, _diagnosticsSessionStartedAt))
+                    return CommandResult.Rejected("invalidInput");
+                _networkDiagnostics = NetworkDiagnosticsSnapshots.Clone(request.NetworkDiagnostics!);
+                return CommandResult.Completed("networkDiagnosticsSaved");
+            }
+            return new("completed", "networkDiagnosticsLoaded", NetworkDiagnostics:
+                _networkDiagnostics is null ? null : NetworkDiagnosticsSnapshots.Clone(_networkDiagnostics));
+        }
+    }
+
+    internal void ClearNetworkDiagnostics()
+    {
+        lock (_sync) _networkDiagnostics = null;
     }
 
     public Task<CommandResult> ExecuteAsync(HostRequest request)
@@ -315,6 +344,7 @@ internal sealed class CoreLifecycleController : IDisposable
                 _observedPid = pid;
                 if (pid is null) _routingInbound = null;
                 _epoch++;
+                _networkDiagnostics = null;
                 _apiStatus = pid is null ? "idle" : "checking";
                 _apiVersion = "";
             }
@@ -342,6 +372,7 @@ internal sealed class CoreLifecycleController : IDisposable
         {
             _connection = profile;
             epoch = ++_epoch;
+            _networkDiagnostics = null;
             _apiVersion = "";
             _apiStatus = profile.SecretDecryptionFailed ? "unauthorized" : "checking";
             probe = CancellationTokenSource.CreateLinkedTokenSource(_tasks.Token);
@@ -413,6 +444,7 @@ internal sealed class CoreLifecycleController : IDisposable
     private async Task<bool> ShutdownOwnedAsync(TimeSpan timeout)
     {
         _closing = true;
+        ClearNetworkDiagnostics();
         _gate.Close();
         CancelProbe();
         var drain = _tasks.StopAndWaitAsync(timeout);
@@ -434,6 +466,7 @@ internal sealed class CoreLifecycleController : IDisposable
     public void Dispose()
     {
         _closing = true;
+        ClearNetworkDiagnostics();
         _gate.Close();
         CancelProbe();
         _core.StatusChanged -= OnProcessChanged;

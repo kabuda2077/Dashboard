@@ -250,6 +250,7 @@ const ru: LANG_MESSAGE = {
   networkRequestFailed: 'Ошибка запроса',
   networkTestLatency: 'Проверить время запросов к восьми сервисам',
   networkTestRouting: 'Наблюдать маршруты к сервисам',
+  networkTestTarget: 'Проверить {name} повторно',
   networkTestIPs: 'Проверить IP выходов',
   networkTestsNavigation:
     'Прокрутка переключает задержку и маршрутизацию; при фокусе доступны стрелки вверх/вниз',

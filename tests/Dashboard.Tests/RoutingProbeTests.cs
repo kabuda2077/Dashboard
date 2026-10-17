@@ -130,6 +130,7 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
 
     [Theory]
     [InlineData("stable", "matched")]
+    [InlineData("shortConnection", "matched")]
     [InlineData("providerChanged", "unconfirmed")]
     [InlineData("chainChanged", "unconfirmed")]
     [InlineData("idChanged", "unconfirmed")]
@@ -137,10 +138,10 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
     [InlineData("providerCancelled", "cancelled")]
     public async Task CompletedTlsRequiresStableConnectionAndProviderEvidence(string scenario, string status)
     {
-        await using var origin = new OwnedOrigin();
+        await using var origin = new OwnedOrigin { CloseAfterResponse = scenario == "shortConnection" };
         await using var relay = new OwnedHttpRelay(origin.Port);
         using var lifetime = new CancellationTokenSource();
-        using var api = new HttpClient(new ChangingEvidenceHandler(relay, origin.Port, scenario, lifetime)) { BaseAddress = new("http://127.0.0.1/") };
+        using var api = new HttpClient(new ChangingEvidenceHandler(relay, origin, scenario, lifetime)) { BaseAddress = new("http://127.0.0.1/") };
         var target = new RoutingProbeTarget("test", "localhost", "/", origin.Port);
         var probe = new RoutingProbe([target], host => new() {
             TargetHost = host, CertificateChainPolicy = new() {
@@ -156,10 +157,94 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             if (status == "matched") { Assert.Equal("leaf", result.Node); Assert.False(result.Direct); }
             else { Assert.Null(result.Node); Assert.Null(result.Direct); Assert.Equal("connectionNotConfirmed", result.Reason); }
         }
+        if (status == "cancelled") Assert.Empty(origin.Requests);
+        else Assert.Single(origin.Requests);
+    }
+
+    [Theory]
+    [InlineData("earlyHints", "matched")]
+    [InlineData("connectHints", "matched")]
+    [InlineData("countLimit", "failed")]
+    [InlineData("byteLimit", "failed")]
+    [InlineData("upgrade", "failed")]
+    [InlineData("noFinal", "failed")]
+    [InlineData("invalidFinal", "failed")]
+    public async Task InformationalHeadersRequireBoundedValidFinalResponse(string scenario, string status)
+    {
+        const string hint = "HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n";
+        const string final = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n";
+        await using var origin = new OwnedOrigin {
+            CloseAfterResponse = true,
+            ResponseHeaders = scenario switch {
+                "earlyHints" => hint + "HTTP/1.1 100 Continue\r\n\r\n" + final,
+                "countLimit" => string.Concat(Enumerable.Repeat(hint, 9)) + final,
+                "byteLimit" => string.Concat(Enumerable.Repeat("HTTP/1.1 103 Early Hints\r\nX-Padding: " + new string('x', 9000) + "\r\n\r\n", 2)) + final,
+                "upgrade" => "HTTP/1.1 101 Switching Protocols\r\n\r\n" + final,
+                "noFinal" => hint,
+                "invalidFinal" => "HTTP/1.1 +200 Invalid\r\n\r\n",
+                _ => final
+            }
+        };
+        await using var relay = new OwnedHttpRelay(origin.Port,
+            (scenario == "connectHints" ? hint : "") + "HTTP/1.1 200 Connection established\r\n\r\n");
+        using var lifetime = new CancellationTokenSource();
+        using var api = new HttpClient(new ChangingEvidenceHandler(relay, origin, "shortConnection", lifetime)) { BaseAddress = new("http://127.0.0.1/") };
+        var target = new RoutingProbeTarget("test", "localhost", "/", origin.Port);
+        var probe = new RoutingProbe([target], host => new() {
+            TargetHost = host, CertificateChainPolicy = new() {
+                TrustMode = X509ChainTrustMode.CustomRootTrust, CustomTrustStore = { origin.Certificate }, RevocationMode = X509RevocationMode.NoCheck
+            }
+        });
+        var result = await probe.ProbeAsync(api, new(IPAddress.Loopback, relay.Port, false, false), target, Environment.ProcessId, lifetime.Token);
+        Assert.Equal(status, result.Status);
+        if (status == "matched") { Assert.Equal("leaf", result.Node); Assert.False(result.Direct); }
+        else { Assert.Equal("probeFailed", result.Reason); Assert.Null(result.Node); Assert.Null(result.Direct); }
         Assert.Single(origin.Requests);
     }
 
-    private sealed class ChangingEvidenceHandler(OwnedHttpRelay relay, int port, string scenario, CancellationTokenSource lifetime) : HttpMessageHandler
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BatchBudgetPreservesCompletedResultsButLifecycleCancellationPropagates(bool cancelLifetime)
+    {
+        await using var origin = new OwnedOrigin { HoldPath = "/pending" };
+        await using var relay = new OwnedHttpRelay(origin.Port);
+        await using var api = new SyntheticClashApi {
+            ConfigResponse = new Dictionary<string, object> { ["mixed-port"] = relay.Port }
+        };
+        api.ConnectionsResponse = _ => relay.Sources.Select(source => (object)new {
+            id = "owned-" + source.Port,
+            metadata = new { sourceIP = source.Address.ToString(), sourcePort = source.Port.ToString(), destinationPort = origin.Port.ToString(), host = "localhost" },
+            chains = new[] { "Node-0", "Group-0" }
+        }).ToArray();
+        var profile = new CoreProfile { ApiUrl = api.Origin };
+        var session = new RoutingProbeSession(CoreKind.Mihomo, profile, profile, 1, Environment.ProcessId, null);
+        var probe = new RoutingProbe([new("done", "localhost", "/done", origin.Port), new("pending", "localhost", "/pending", origin.Port)], host => new() {
+            TargetHost = host, CertificateChainPolicy = new() {
+                TrustMode = X509ChainTrustMode.CustomRootTrust, CustomTrustStore = { origin.Certificate }, RevocationMode = X509RevocationMode.NoCheck
+            }
+        }, TimeSpan.FromSeconds(3));
+        using var lifetime = new CancellationTokenSource();
+        var operation = probe.RunAsync(session, lifetime.Token);
+        await origin.WaitForCountAsync(2);
+        if (cancelLifetime)
+        {
+            lifetime.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        }
+        else
+        {
+            var results = await operation;
+            var done = Assert.Single(results, row => row.Id == "done");
+            Assert.Equal("matched", done.Status); Assert.Equal("Node-0", done.Node); Assert.False(done.Direct);
+            var pending = Assert.Single(results, row => row.Id == "pending");
+            Assert.Equal("failed", pending.Status); Assert.Equal("timeout", pending.Reason);
+            Assert.Null(pending.Node); Assert.Null(pending.Direct);
+        }
+        Assert.Empty(api.Errors);
+    }
+
+    private sealed class ChangingEvidenceHandler(OwnedHttpRelay relay, OwnedOrigin origin, string scenario, CancellationTokenSource lifetime) : HttpMessageHandler
     {
         private int _snapshots;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -172,9 +257,9 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             if (path == "/connections")
             {
                 var round = _snapshots++;
-                body = new { connections = round == 0 ? Array.Empty<object>() : new object[] { new {
+                body = new { connections = round == 0 || (scenario == "shortConnection" && !origin.Requests.IsEmpty) ? Array.Empty<object>() : new object[] { new {
                     id = round > 1 && scenario == "idChanged" ? "other" : "fresh",
-                    metadata = new { sourceIP = "127.0.0.1", sourcePort = relay.Sources.Single().Port.ToString(), destinationPort = port.ToString(), host = "localhost" },
+                    metadata = new { sourceIP = "127.0.0.1", sourcePort = relay.Sources.Single().Port.ToString(), destinationPort = origin.Port.ToString(), host = "localhost" },
                     chains = new[] { "leaf", round > 1 && scenario == "chainChanged" ? "other-group" : "group" },
                     providerChains = new[] { round > 1 && scenario == "providerChanged" ? "two" : "one", "" }
                 } } };
@@ -194,19 +279,22 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
     [InlineData("json")]
     [InlineData("timeout")]
     [InlineData("cancelled")]
+    [InlineData("batchTimeoutAfterHttps")]
+    [InlineData("earlyStalled")]
     public async Task CompletedHttpsWithUnavailableObservationIsUnconfirmedUnlessLifecycleCancelled(string failure)
     {
         await using var origin = new OwnedOrigin();
         await using var relay = new OwnedHttpRelay(origin.Port);
         using var lifetime = new CancellationTokenSource();
-        using var api = new HttpClient(new ObservationFailureHandler(failure, lifetime)) { BaseAddress = new("http://127.0.0.1/") };
+        using var batch = new CancellationTokenSource();
+        using var api = new HttpClient(new ObservationFailureHandler(failure, lifetime, batch)) { BaseAddress = new("http://127.0.0.1/") };
         var target = new RoutingProbeTarget("test", "localhost", "/", origin.Port);
         var probe = new RoutingProbe([target], host => new() {
             TargetHost = host, CertificateChainPolicy = new() {
                 TrustMode = X509ChainTrustMode.CustomRootTrust, CustomTrustStore = { origin.Certificate }, RevocationMode = X509RevocationMode.NoCheck
             }
         });
-        var operation = probe.ProbeAsync(api, new(IPAddress.Loopback, relay.Port, false, false), target, Environment.ProcessId, lifetime.Token);
+        var operation = probe.ProbeAsync(api, new(IPAddress.Loopback, relay.Port, false, false), target, Environment.ProcessId, lifetime.Token, batch.Token);
         if (failure == "cancelled") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
         else
         {
@@ -215,21 +303,24 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             Assert.Equal("connectionNotConfirmed", result.Reason);
             Assert.Null(result.Node); Assert.Null(result.Direct);
         }
-        Assert.Single(origin.Requests);
+        if (failure == "cancelled") Assert.Empty(origin.Requests);
+        else Assert.Single(origin.Requests);
     }
 
-    private sealed class ObservationFailureHandler(string failure, CancellationTokenSource lifetime) : HttpMessageHandler
+    private sealed class ObservationFailureHandler(string failure, CancellationTokenSource lifetime, CancellationTokenSource batch) : HttpMessageHandler
     {
         private int _requests;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             Assert.Equal("/connections", request.RequestUri!.AbsolutePath);
-            if (++_requests == 1) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"connections\":[]}") });
+            if (++_requests == 1) return new(HttpStatusCode.OK) { Content = new StringContent("{\"connections\":[]}") };
+            if (failure == "earlyStalled" && _requests == 2) await Task.Delay(Timeout.Infinite, token);
+            if (failure == "batchTimeoutAfterHttps" && _requests == 3) { batch.Cancel(); throw new OperationCanceledException(token); }
             if (failure == "cancelled") lifetime.Cancel();
             if (failure is "timeout" or "cancelled") throw new OperationCanceledException(token);
-            return Task.FromResult(new HttpResponseMessage(failure == "http" ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK) {
+            return new(failure == "http" ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK) {
                 Content = new StringContent("not-json")
-            });
+            };
         }
     }
 
@@ -254,6 +345,7 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
     [InlineData("wrongDestinationPort")]
     [InlineData("noHostEvidence")]
     [InlineData("duplicateTuple")]
+    [InlineData("duplicateId")]
     [InlineData("emptyChain")]
     public async Task IncompleteOrAmbiguousSnapshotCannotConfirm(string scenario)
     {
@@ -266,7 +358,8 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
                 host = scenario == "noHostEvidence" ? "" : "localhost"
             }, chains = scenario == "emptyChain" ? Array.Empty<string>() : new[] { "leaf" }
         };
-        using var snapshot = JsonDocument.Parse(JsonSerializer.Serialize(new { connections = scenario == "duplicateTuple" ? new[] { connection, connection } : new[] { connection } }));
+        using var snapshot = JsonDocument.Parse(JsonSerializer.Serialize(new { connections = scenario == "duplicateTuple" ? new[] { connection, connection }
+            : scenario == "duplicateId" ? new[] { connection, connection with { metadata = connection.metadata with { sourcePort = "54321" } } } : new[] { connection } }));
         Assert.Null(await RoutingProbe.MatchAsync(api, snapshot, new(IPAddress.Loopback, 12345), new("test", "localhost", "/"), [], default));
     }
 
@@ -359,21 +452,24 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             });
         }
         string[] ids = ["alibaba", "youtube", "google", "telegram", "cloudflare", "chatgpt", "bilibili", "github"];
-        var probe = new RoutingProbe(ids.Select(id => new RoutingProbeTarget(id, "localhost", "/", origin.Port)).ToArray(), host => new() {
+        var probe = new RoutingProbe(ids.Select(id => new RoutingProbeTarget(id, "localhost", "/" + id, origin.Port)).ToArray(), host => new() {
             TargetHost = host, CertificateChainPolicy = new() { TrustMode = X509ChainTrustMode.CustomRootTrust, CustomTrustStore = { origin.Certificate }, RevocationMode = X509RevocationMode.NoCheck }
         });
         using var process = new CoreProcessManager();
         using var host = new DashboardHost(root, ephemeralPort: true, isAdministrator: () => true, core: process, routingProbe: probe);
-        async Task Ready()
+        async Task Ready(DashboardHost? instance = null)
         {
+            instance ??= host;
             using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            while (host.BuildRuntimeState(false).ApiStatus != "ready")
+            while (instance.BuildRuntimeState(false).ApiStatus != "ready")
             {
-                Assert.True(host.IsRunning, process.GetLogTail(8000));
+                Assert.True(instance.IsRunning, process.GetLogTail(8000));
                 await Task.Delay(50, budget.Token);
             }
         }
         HostRequest Request(long? epoch = null) => new() { Type = "testRouting", CoreType = kind, ExpectedRuntimeEpoch = epoch ?? host.RuntimeEpoch };
+        HostRequest CacheRequest(string type, long? epoch = null) => new() { Type = type, CoreType = kind, ExpectedRuntimeEpoch = epoch ?? host.RuntimeEpoch };
+        var checkCache = kind == CoreKind.Mihomo && leaf && !selector && !webView;
         try
         {
             Assert.Equal("apiNotReady", (await host.ExecuteAsync(Request())).Code);
@@ -458,7 +554,14 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             await host.ExecuteAsync(new() { Type = "saveProfile", CoreType = kind, ExpectedRevision = profile.Revision,
                 Draft = new() { ExePath = exe, ConfigPath = draftPath, ApiUrl = profile.ApiUrl } });
             await File.WriteAllTextAsync(configPath, "{}");
-            Assert.All((await host.ExecuteAsync(Request())).Routing!, row => Assert.Equal("matched", row.Status));
+            var originCount = origin.Requests.Count;
+            var single = await host.ExecuteAsync(Request() with { TargetIds = ["github"] });
+            var selected = Assert.Single(single.Routing!);
+            Assert.Equal("github", selected.Id);
+            Assert.Equal("matched", selected.Status);
+            Assert.Equal(originCount + 1, origin.Requests.Count);
+            Assert.StartsWith("GET /github ", origin.Requests.Last());
+            if (checkCache) await CheckDiagnosticsCacheAsync(host, root);
 
             if (webView) await CheckWebViewBridgeAsync(host, origin);
 
@@ -468,9 +571,19 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             var pending = host.ExecuteAsync(Request());
             await origin.WaitForCountAsync(count + ids.Length);
             Assert.Equal("busy", (await host.ExecuteAsync(Request())).Code);
+            var cachedEpoch = host.RuntimeEpoch;
             await host.ExecuteAsync(new() { Type = "refreshCoreMetadata" });
             Assert.Equal("cancelled", (await pending.WaitAsync(TimeSpan.FromSeconds(3))).Status);
             await Ready();
+            if (checkCache)
+            {
+                Assert.Equal("staleRuntime", (await host.ExecuteAsync(CacheRequest("getNetworkDiagnostics", cachedEpoch))).Code);
+                Assert.Equal("staleRuntime", (await host.ExecuteAsync(CacheRequest("setNetworkDiagnostics", cachedEpoch))).Code);
+                Assert.Null((await host.ExecuteAsync(CacheRequest("getNetworkDiagnostics"))).NetworkDiagnostics);
+                Assert.Equal("completed", (await host.ExecuteAsync(CacheRequest("setNetworkDiagnostics") with {
+                    NetworkDiagnostics = new("before-exit", [], [])
+                })).Status);
+            }
             count = origin.Requests.Count;
             pending = host.ExecuteAsync(Request());
             await origin.WaitForCountAsync(count + ids.Length);
@@ -488,6 +601,26 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
                 Assert.Equal("cancelled", (await pending).Status);
             }
             Assert.False(process.IsRunning);
+            if (checkCache)
+            {
+                Assert.Equal("closing", (await host.ExecuteAsync(CacheRequest("getNetworkDiagnostics"))).Code);
+                var revision = host.BuildRuntimeState(false).NetworkRevision;
+                host.NotifyNetworkChanged();
+                Assert.Equal(revision, host.BuildRuntimeState(false).NetworkRevision);
+                // A new host using the same data directory cannot restore the memory snapshot.
+                await File.WriteAllTextAsync(draftPath, config);
+                using var reopened = new DashboardHost(root, ephemeralPort: true, isAdministrator: () => true);
+                try
+                {
+                    Assert.Equal("completed", (await reopened.ExecuteAsync(new() { Type = "start", CoreType = kind })).Status);
+                    await Ready(reopened);
+                    var empty = await reopened.ExecuteAsync(CacheRequest("getNetworkDiagnostics") with { ExpectedRuntimeEpoch = reopened.RuntimeEpoch });
+                    Assert.Equal("completed", empty.Status);
+                    Assert.Null(empty.NetworkDiagnostics);
+                    Assert.Equal(0, reopened.BuildRuntimeState(false).NetworkRevision);
+                }
+                finally { Assert.True(await reopened.ShutdownAsync()); }
+            }
         }
         finally
         {
@@ -539,6 +672,113 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
         Assert.All(await probe.RunAsync(session! with { ProcessId = Environment.ProcessId }, default), row => {
             Assert.Equal("unavailable", row.Status); Assert.Equal("apiNotManaged", row.Reason);
         });
+    }
+
+    private static async Task CheckDiagnosticsCacheAsync(DashboardHost host, string root)
+    {
+        var kind = host.BuildRuntimeState(false).CoreType;
+        var epoch = host.RuntimeEpoch;
+        HostRequest Request(string type) => new() { ProtocolVersion = 2, RequestId = "cache", Type = type, CoreType = kind, ExpectedRuntimeEpoch = epoch };
+        async Task<CommandResult> BridgeRead()
+        {
+            // Recreate the bridge handlers while retaining the native host, as a released WebView does.
+            var router = new HostMessageRouter(new() {
+                ExecuteAsync = host.ExecuteAsync, BuildState = () => host.BuildState(false), Preferences = () => host.Preferences,
+                ChooseFile = (_, _) => throw new InvalidOperationException(), OpenLocation = (_, _) => throw new InvalidOperationException(),
+                WindowCommand = (_, _) => throw new InvalidOperationException(), CheckAppUpdateAsync = () => Task.CompletedTask,
+                OpenAppRelease = () => { }, OpenCoreRepository = () => { }
+            });
+            HostReply? reply = null;
+            await router.RouteAsync(HostBridgeJson.Serialize(new {
+                protocolVersion = 2, requestId = "cache", type = "getNetworkDiagnostics", coreType = kind, expectedRuntimeEpoch = epoch
+            }), message => reply = Assert.IsType<HostReply>(message));
+            return reply!.Result;
+        }
+        var filesBefore = Directory.GetFiles(root, "*", SearchOption.AllDirectories).Order().ToArray();
+        var settingsBefore = await File.ReadAllBytesAsync(Path.Combine(root, "settings.json"));
+        double[] samples = [0, 10, 20, 30, 60000];
+        var testedAt = (double)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1000;
+        DiagnosticLatencySnapshot[] latency = [new("tencent", samples, testedAt, Invalidated: true)];
+        DiagnosticRoutingSnapshot[] routing = [new("github", new("github", "matched", Direct: true), testedAt, Invalidated: true)];
+        var snapshot = new NetworkDiagnosticsSnapshot("{\"secret-free-key\":\"A\"}", latency, routing);
+        var get = Request("getNetworkDiagnostics");
+        var set = Request("setNetworkDiagnostics") with { NetworkDiagnostics = snapshot };
+        Assert.Null((await BridgeRead()).NetworkDiagnostics);
+        Assert.Equal("wrongCore", (await host.ExecuteAsync(get with { CoreType = CoreKind.SingBox })).Code);
+        Assert.Equal("wrongCore", (await host.ExecuteAsync(set with { CoreType = CoreKind.SingBox })).Code);
+        Assert.Equal("completed", (await host.ExecuteAsync(set)).Status);
+        samples[0] = 999;
+        latency[0] = latency[0] with { Id = "google" };
+        routing[0] = routing[0] with { Result = new("github", "failed", Reason: "probeFailed") };
+        var cached = (await BridgeRead()).NetworkDiagnostics!;
+        Assert.Equal("tencent", Assert.Single(cached.Latency).Id);
+        Assert.Equal(0, cached.Latency[0].Samples[0]);
+        Assert.Equal("matched", Assert.Single(cached.Routing).Result.Status);
+        Assert.Equal(testedAt, cached.Routing[0].TestedAt);
+        Assert.True(cached.Latency[0].Invalidated);
+        Assert.True(cached.Routing[0].Invalidated);
+        using (var state = JsonDocument.Parse(HostBridgeJson.Serialize(host.BuildState(false))))
+            Assert.False(state.RootElement.TryGetProperty("networkDiagnostics", out _));
+        ((double[])cached.Latency[0].Samples)[1] = 888;
+        ((DiagnosticRoutingSnapshot[])cached.Routing)[0] = routing[0];
+        var retained = (await host.ExecuteAsync(get)).NetworkDiagnostics!;
+        Assert.Equal(10, retained.Latency[0].Samples[1]);
+        Assert.Equal("matched", retained.Routing[0].Result.Status);
+        Assert.Equal("invalidInput", (await host.ExecuteAsync(set with { NetworkDiagnostics = retained with {
+            Latency = [retained.Latency[0] with { TestedAt = testedAt - TimeSpan.FromHours(1).TotalMilliseconds }]
+        } })).Code);
+        Assert.Equal(retained.PathKey, (await BridgeRead()).NetworkDiagnostics!.PathKey);
+        var replacement = new NetworkDiagnosticsSnapshot("B", [], []);
+        Assert.Equal("completed", (await host.ExecuteAsync(set with { NetworkDiagnostics = replacement })).Status);
+        var replaced = (await BridgeRead()).NetworkDiagnostics!;
+        Assert.Equal("B", replaced.PathKey);
+        Assert.Empty(replaced.Latency);
+        Assert.Empty(replaced.Routing);
+        await Task.WhenAll(Enumerable.Range(0, 2).Select(writer => Task.Run(async () => {
+            var value = writer == 0 ? retained : replacement;
+            for (var i = 0; i < 8; i++)
+            {
+                Assert.Equal("completed", (await host.ExecuteAsync(set with { NetworkDiagnostics = value })).Status);
+                var read = (await host.ExecuteAsync(get)).NetworkDiagnostics!;
+                Assert.Equal(read.PathKey == "B" ? 0 : 1, read.Latency.Count);
+                Assert.Equal(read.Latency.Count, read.Routing.Count);
+            }
+        })));
+        Assert.Equal("completed", (await host.ExecuteAsync(set with { NetworkDiagnostics = retained })).Status);
+        async Task AssertRetainedDisplayAsync()
+        {
+            var display = (await BridgeRead()).NetworkDiagnostics!;
+            Assert.Equal(retained.PathKey, display.PathKey);
+            Assert.Equal(retained.Latency[0].Samples, display.Latency[0].Samples);
+            Assert.Equal(testedAt, display.Latency[0].TestedAt);
+            Assert.Equal(testedAt, display.Routing[0].TestedAt);
+            Assert.Equal(retained.Routing[0].Result, display.Routing[0].Result);
+            Assert.True(display.Latency[0].Invalidated);
+            Assert.True(display.Routing[0].Invalidated);
+        }
+        var before = host.BuildRuntimeState(false);
+        var runtimeEvents = 0;
+        void Changed(object? sender, EventArgs args) => runtimeEvents++;
+        host.RuntimeStateChanged += Changed;
+        try
+        {
+            host.OnPowerModeChanged(null, new(Microsoft.Win32.PowerModes.Suspend));
+            host.OnPowerModeChanged(null, new(Microsoft.Win32.PowerModes.StatusChange));
+            Assert.Equal(before.NetworkRevision, host.BuildRuntimeState(false).NetworkRevision);
+            host.NotifyNetworkChanged();
+            Assert.Equal(before.NetworkRevision + 1, host.BuildRuntimeState(false).NetworkRevision);
+            await AssertRetainedDisplayAsync();
+            host.OnPowerModeChanged(null, new(Microsoft.Win32.PowerModes.Resume));
+            Assert.Equal(before.NetworkRevision + 2, host.BuildRuntimeState(false).NetworkRevision);
+            Assert.Equal(epoch, host.RuntimeEpoch);
+            await AssertRetainedDisplayAsync();
+            Assert.Equal(2, runtimeEvents);
+        }
+        finally { host.RuntimeStateChanged -= Changed; }
+        // Leave a snapshot for the subsequent real epoch-change cancellation check.
+        Assert.Equal("completed", (await host.ExecuteAsync(set with { NetworkDiagnostics = retained })).Status);
+        Assert.Equal(filesBefore, Directory.GetFiles(root, "*", SearchOption.AllDirectories).Order());
+        Assert.Equal(settingsBefore, await File.ReadAllBytesAsync(Path.Combine(root, "settings.json")));
     }
 
     private static async Task CheckWebViewBridgeAsync(DashboardHost host, OwnedOrigin origin)
@@ -614,7 +854,9 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
         public readonly System.Collections.Concurrent.ConcurrentQueue<string> Requests = new();
         public readonly System.Collections.Concurrent.ConcurrentQueue<IPEndPoint> Sources = new();
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
-        public OwnedHttpRelay(int originPort) { _originPort = originPort; _listener.Start(); _accept = AcceptAsync(); }
+        private readonly string _connectHeaders;
+        public OwnedHttpRelay(int originPort, string connectHeaders = "HTTP/1.1 200 Connection established\r\n\r\n")
+        { _originPort = originPort; _connectHeaders = connectHeaders; _listener.Start(); _accept = AcceptAsync(); }
         private async Task AcceptAsync()
         {
             try { while (true) _connections.Add(ServeAsync(await _listener.AcceptTcpClientAsync(_stop.Token))); }
@@ -640,7 +882,7 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
                     Assert.True(headers.StartsWith($"CONNECT localhost:{_originPort} HTTP/1.1\r\n", StringComparison.Ordinal)
                         || headers.StartsWith($"CONNECT 127.0.0.1:{_originPort} HTTP/1.1\r\n", StringComparison.Ordinal), headers);
                     await upstream.ConnectAsync(IPAddress.Loopback, _originPort, _stop.Token);
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection established\r\n\r\n"), _stop.Token);
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(_connectHeaders), _stop.Token);
                     using var connection = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
                     var send = stream.CopyToAsync(upstream.GetStream(), connection.Token);
                     var receive = upstream.GetStream().CopyToAsync(stream, connection.Token);
@@ -665,6 +907,9 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
         private readonly Task _accept;
         public readonly System.Collections.Concurrent.ConcurrentQueue<string> Requests = new();
         public bool Hold;
+        public string? HoldPath;
+        public string ResponseHeaders = "HTTP/1.1 200 OK\r\nContent-Length: 10000\r\nConnection: keep-alive\r\n\r\n";
+        public bool CloseAfterResponse;
         public X509Certificate2 Certificate { get; }
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
         public OwnedOrigin()
@@ -697,8 +942,13 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
                         await tls.ReadExactlyAsync(bytes.AsMemory(count++, 1), _stop.Token);
                         if (count >= 4 && Encoding.ASCII.GetString(bytes, count - 4, 4) == "\r\n\r\n") break;
                     }
-                    Requests.Enqueue(Encoding.ASCII.GetString(bytes, 0, count));
-                    if (!Hold) await tls.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: 10000\r\nConnection: keep-alive\r\n\r\n"), _stop.Token);
+                    var headers = Encoding.ASCII.GetString(bytes, 0, count);
+                    Requests.Enqueue(headers);
+                    if (!Hold && (HoldPath is null || !headers.StartsWith($"GET {HoldPath} ", StringComparison.Ordinal)))
+                    {
+                        await tls.WriteAsync(Encoding.ASCII.GetBytes(ResponseHeaders), _stop.Token);
+                        if (CloseAfterResponse) return;
+                    }
                     await Task.Delay(Timeout.Infinite, _stop.Token);
                 }
                 catch (Exception e) when (e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException) { }
