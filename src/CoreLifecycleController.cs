@@ -9,10 +9,11 @@ internal sealed class CoreLifecycleController : IDisposable
     private readonly ShutdownTaskTracker _tasks = new();
     private readonly object _sync = new();
     private readonly Func<bool> _isAdministrator;
-    private static readonly HttpClient ApiClient = new();
+    private static readonly HttpClient ApiClient = new(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });
     private readonly HttpClient _upgradeClient;
     private CancellationTokenSource? _probe;
     private CoreLaunchSpec? _running;
+    private RoutingProbeInbound? _routingInbound;
     private CoreProfile? _connection;
     private int? _observedPid;
     private long _epoch;
@@ -47,6 +48,22 @@ internal sealed class CoreLifecycleController : IDisposable
         _upgradeClient = upgradeClient ?? CoreUpgradeSupport.SharedClient;
         _isAdministrator = isAdministrator ?? DashboardHost.IsRunningAsAdministrator;
         _core.StatusChanged += OnProcessChanged;
+    }
+
+    internal CommandResult? CaptureRoutingSession(CoreKind kind, long epoch, out RoutingProbeSession? session)
+    {
+        lock (_sync)
+        {
+            session = null;
+            if (_closing) return CommandResult.Rejected("closing");
+            if (epoch != _epoch) return CommandResult.Rejected("staleRuntime");
+            if (_operation != "idle") return CommandResult.Rejected("busy");
+            if (_running is not { } running || _core.ProcessId is not { } pid || !_core.IsRunning || _apiStatus != "ready")
+                return CommandResult.Rejected("apiNotReady");
+            if (running.Kind != kind) return CommandResult.Rejected("wrongCore");
+            session = new(kind, _connection ?? running.Profile, running.Profile, epoch, pid, _routingInbound);
+            return null;
+        }
     }
 
     public Task<CommandResult> ExecuteAsync(HostRequest request)
@@ -161,7 +178,20 @@ internal sealed class CoreLifecycleController : IDisposable
         if (_closing) return CommandResult.Rejected("closing");
         if (!_isAdministrator()) return new("elevationRequired", "elevationRequired", Saved: saved);
         if (spec.Profile.SecretDecryptionFailed) return CommandResult.Rejected("credentialRecoveryRequired");
-        lock (_sync) { _running = spec; _connection = spec.Profile; }
+        RoutingProbeInbound? inbound = null;
+        if (spec.Kind == CoreKind.SingBox)
+        {
+            // Read only at launch and retain no credential-bearing raw JSON.
+            // Unsupported/oversized/non-JSON configs must not prevent core launch.
+            try
+            {
+                var file = new FileInfo(spec.Profile.ConfigPath);
+                if (file.Length <= 4 * 1024 * 1024)
+                    inbound = RoutingProbe.CaptureSingBoxInbound(await File.ReadAllTextAsync(spec.Profile.ConfigPath, token).ConfigureAwait(false));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException) { }
+        }
+        lock (_sync) { _running = spec; _connection = spec.Profile; _routingInbound = inbound; }
         await _core.StartAsync(spec, token).ConfigureAwait(false);
         if (!_core.IsRunning) return CommandResult.Failed("processStartFailed", saved: saved);
         var probe = Connect(spec.Profile);
@@ -283,6 +313,7 @@ internal sealed class CoreLifecycleController : IDisposable
             if (_observedPid != pid)
             {
                 _observedPid = pid;
+                if (pid is null) _routingInbound = null;
                 _epoch++;
                 _apiStatus = pid is null ? "idle" : "checking";
                 _apiVersion = "";

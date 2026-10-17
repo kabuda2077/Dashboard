@@ -92,6 +92,13 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
             return request;
         }
         if (string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 128) throw new ArgumentException("A requestId is required.");
+        if (request.Type == "testRouting")
+        {
+            if (request.CoreType is null || request.ExpectedRuntimeEpoch is null
+                || document.RootElement.EnumerateObject().Any(p => p.Name is not ("protocolVersion" or "type" or "requestId" or "coreType" or "expectedRuntimeEpoch")))
+                throw new ArgumentException("A routing test requires only its core type and runtime epoch.");
+            return request;
+        }
         if (CoreCommands.Contains(request.Type))
         {
             if (request.CoreType is null) throw new ArgumentException("A core type is required.");

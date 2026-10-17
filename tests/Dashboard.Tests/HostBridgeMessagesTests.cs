@@ -33,6 +33,43 @@ public sealed class HostBridgeMessagesTests
     }
 
     [Fact]
+    public void RoutingReplyUsesProductionSerializerAndOmitsUnknownAndDirectNodeFields()
+    {
+        var state = new DashboardState {
+            Profiles = Enum.GetValues<CoreKind>().ToDictionary(AppSettings.WireKind, kind =>
+                new CoreProfileState(0, $"C:/Dashboard/{AppSettings.WireKind(kind)}.exe", "C:/Dashboard/config", "http://127.0.0.1:9090", "", false)),
+            Runtime = new() {
+                CoreType = CoreKind.Mihomo, IsRunning = true, ProcessId = 12345, RuntimeEpoch = 1,
+                ApiStatus = "ready", ApiUrl = "http://127.0.0.1:9090"
+            }
+        };
+        RoutingProbeResult[] rows = [
+            new("alibaba", "matched", Direct: true),
+            new("youtube", "matched", Node: "observed-leaf", Direct: false),
+            new("google", "unconfirmed", Reason: "connectionNotConfirmed"),
+            new("telegram", "unavailable", Reason: "noProxyInbound"),
+            new("cloudflare", "failed", Reason: "tlsValidationFailed"),
+            new("chatgpt", "matched", Node: "another-leaf", Direct: false),
+            new("bilibili", "matched", Node: "observed-leaf", Direct: false),
+            new("github", "unconfirmed", Reason: "connectionNotConfirmed")
+        ];
+        var json = HostBridgeJson.Serialize(new HostReply("fixture-routing", new("completed", "routingTested", Routing: rows), state));
+        using var document = JsonDocument.Parse(json);
+        var result = document.RootElement.GetProperty("result");
+        Assert.Equal("routingTested", result.GetProperty("code").GetString());
+        var routing = result.GetProperty("routing");
+        Assert.Equal(8, routing.GetArrayLength());
+        Assert.False(routing[0].TryGetProperty("node", out _));
+        Assert.True(routing[0].GetProperty("direct").GetBoolean());
+        Assert.Equal("observed-leaf", routing[1].GetProperty("node").GetString());
+        Assert.False(routing[1].GetProperty("direct").GetBoolean());
+        Assert.False(routing[2].TryGetProperty("direct", out _));
+        var output = TestDirectory.ReportDirectory("bridge-fixtures-v2");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "routing.json"), json);
+    }
+
+    [Fact]
     public void IncrementalPayloadDoesNotCarryProfilesOrCredentialsFromOtherCore()
     {
         using var json = JsonDocument.Parse(HostBridgeJson.Serialize(HostOutboundMessage.LogAppend("line")));

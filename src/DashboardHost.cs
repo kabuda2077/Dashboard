@@ -18,6 +18,11 @@ internal sealed class DashboardHost : IDisposable
     private readonly SemaphoreSlim _autostartGate = new(1, 1);
     private readonly SemaphoreSlim _appUpdateGate = new(1, 1);
     private readonly SemaphoreSlim _coreUpdateGate = new(1, 1);
+    private readonly object _routingSync = new();
+    private CancellationTokenSource? _routingCancellation;
+    private RoutingProbeSession? _routingSession;
+    private int _routingBusy;
+    private readonly RoutingProbe _routingProbe;
     private readonly object _metadataSync = new();
     private readonly Dictionary<CoreKind, Metadata> _metadata = new();
     private Task? _metadataTask;
@@ -39,9 +44,10 @@ internal sealed class DashboardHost : IDisposable
         Func<bool>? isAdministrator = null, int testPort = 0,
         Func<string, CoreKind, CancellationToken, Task<string>>? readCoreVersion = null,
         Func<bool, Task<AutostartOperationResult>>? setAutostart = null,
-        CoreProcessManager? core = null)
+        CoreProcessManager? core = null, RoutingProbe? routingProbe = null)
     {
         _core = core ?? new CoreProcessManager();
+        _routingProbe = routingProbe ?? new RoutingProbe();
         _readCoreVersion = readCoreVersion ?? CoreVersionReader.ReadAsync;
         _setAutostart = setAutostart ?? AutostartManager.SetEnabledAsync;
         _settings = new SettingsStore(dataDirectory);
@@ -148,6 +154,7 @@ internal sealed class DashboardHost : IDisposable
     public async Task<CommandResult> ExecuteAsync(HostRequest request)
     {
         if (_disposed || _tasks.IsClosing) return CommandResult.Rejected("closing");
+        if (request.Type == "testRouting") return await TestRoutingAsync(request).ConfigureAwait(false);
         if (request.Type is "saveProfile" or "start" or "restart" or "switchCore" or "stop" or "upgradeCore" or "completeSetup")
         {
             var result = await _lifecycle.ExecuteAsync(request).ConfigureAwait(false);
@@ -188,6 +195,64 @@ internal sealed class DashboardHost : IDisposable
             }
         }).ConfigureAwait(false);
         return response;
+    }
+
+    private async Task<CommandResult> TestRoutingAsync(HostRequest request)
+    {
+        if (request.CoreType is not { } kind || request.ExpectedRuntimeEpoch is not { } epoch
+            || request.Draft is not null) return CommandResult.Rejected("invalidInput");
+        if (Interlocked.CompareExchange(ref _routingBusy, 1, 0) != 0) return CommandResult.Rejected("busy");
+        var result = CommandResult.Rejected("closing");
+        try
+        {
+            await _tasks.Run(async lifetime =>
+            {
+                using var cancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
+                var rejected = _lifecycle.CaptureRoutingSession(kind, epoch, out var session);
+                if (rejected is not null) { result = rejected; return; }
+                lock (_routingSync)
+                {
+                    _routingSession = session;
+                    _routingCancellation = cancel;
+                }
+                // Capture never holds the host routing lock: lifecycle events can be
+                // published synchronously while its own shutdown lock is held.
+                CancelStaleRouting();
+                try
+                {
+                    var rows = await Task.Run(() => _routingProbe.RunAsync(session!, cancel.Token), cancel.Token).ConfigureAwait(false);
+                    var stale = _lifecycle.CaptureRoutingSession(kind, epoch, out _);
+                    result = cancel.IsCancellationRequested || stale is not null
+                        ? new("cancelled", "cancelled") : new("completed", "routingTested", Routing: rows);
+                }
+                catch (OperationCanceledException) { result = new("cancelled", "cancelled"); }
+                catch (Exception)
+                {
+                    // Exceptions may contain endpoints or API secrets. Never log their text.
+                    result = CommandResult.Failed("routingProbeFailed");
+                }
+                finally
+                {
+                    lock (_routingSync) { _routingCancellation = null; _routingSession = null; }
+                }
+            }).ConfigureAwait(false);
+            return result;
+        }
+        finally { Interlocked.Exchange(ref _routingBusy, 0); }
+    }
+
+    private void CancelStaleRouting()
+    {
+        RoutingProbeSession? session;
+        CancellationTokenSource? cancellation;
+        lock (_routingSync) { session = _routingSession; cancellation = _routingCancellation; }
+        if (session is not null
+            && (_disposed || _lifecycle.CaptureRoutingSession(session.Kind, session.Epoch, out _) is not null))
+        {
+            // Completion may dispose the source after this snapshot. Never run
+            // cancellation callbacks under either the routing or lifecycle lock.
+            try { cancellation?.Cancel(); } catch (ObjectDisposedException) { }
+        }
     }
 
     private async Task<CommandResult> SaveOptionAsync(string name, bool value, CancellationToken token)
@@ -486,6 +551,7 @@ internal sealed class DashboardHost : IDisposable
     }
     private void OnRuntimeChanged(object? sender, EventArgs args)
     {
+        CancelStaleRouting();
         if (_lastRuntimeEpoch != _lifecycle.Epoch)
         { _lastRuntimeEpoch = _lifecycle.Epoch; ResetCoreUpdateState(); _ = RefreshMetadataAsync(); }
         if (_lifecycle.IsUpgradeInProgress) ResetCoreUpdateState();

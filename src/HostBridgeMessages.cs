@@ -35,7 +35,7 @@ internal sealed record HostRequest
 }
 
 internal sealed record CommandResult(string Status, string Code, string? Message = null,
-    bool Saved = false, string? Path = null)
+    bool Saved = false, string? Path = null, IReadOnlyList<RoutingProbeResult>? Routing = null)
 {
     public static CommandResult Completed(string code = "completed", bool saved = false) => new("completed", code, Saved: saved);
     public static CommandResult Rejected(string code) => new("rejected", code);

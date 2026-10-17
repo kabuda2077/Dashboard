@@ -1,37 +1,62 @@
-const getLatencyFromUrlAPI = (url: string) => {
-  return new Promise<number>((resolve) => {
-    const startTime = performance.now()
-    const img = document.createElement('img')
-    img.src = url + '?_=' + new Date().getTime()
-    img.style.display = 'none'
-    img.onload = () => {
-      const endTime = performance.now()
-      img.remove()
+export const LATENCY_URLS = {
+  bilibili: 'https://www.bilibili.com/robots.txt',
+  tencent: 'https://www.qq.com/robots.txt',
+  taobao: 'https://www.taobao.com/robots.txt',
+  github: 'https://github.com/robots.txt',
+  cloudflare: 'https://cp.cloudflare.com/generate_204',
+  google: 'https://www.google.com/generate_204',
+  telegram: 'https://telegram.org/robots.txt',
+  youtube: 'https://www.youtube.com/generate_204',
+} as const
 
-      resolve(endTime - startTime)
-    }
-    img.onerror = () => {
-      img.remove()
-
-      resolve(0)
-    }
-
-    document.body.appendChild(img)
-  })
+// Time to response headers through the WebView's current network path, not ICMP
+// or node URL-test latency. Opaque responses cannot establish HTTP status/unlock.
+export const getLatencyFromUrlAPI = async (url: string, signal?: AbortSignal) => {
+  if (signal?.aborted) return 0
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  const timeout = setTimeout(abort, 5000)
+  signal?.addEventListener('abort', abort, { once: true })
+  const started = performance.now()
+  try {
+    const resource = new URL(url)
+    resource.searchParams.set('_dashboard_latency', crypto.randomUUID())
+    const response = await fetch(resource.href, {
+      method: 'GET',
+      mode: 'no-cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'follow',
+      referrerPolicy: 'no-referrer',
+      signal: controller.signal,
+    })
+    const elapsed = Math.max(1, performance.now() - started)
+    // Stop body transfer even when an endpoint changes into a larger resource.
+    // Opaque bodies are inaccessible; abort in finally also closes those.
+    void response.body?.cancel().catch(() => {})
+    return controller.signal.aborted ? 0 : elapsed
+  } catch {
+    return 0
+  } finally {
+    clearTimeout(timeout)
+    signal?.removeEventListener('abort', abort)
+    controller.abort()
+  }
 }
 
-export const getCloudflareLatencyAPI = () => {
-  return getLatencyFromUrlAPI('https://www.cloudflare.com/favicon.ico')
-}
-
-export const getYouTubeLatencyAPI = () => {
-  return getLatencyFromUrlAPI('https://yt3.ggpht.com/favicon.ico')
-}
-
-export const getGithubLatencyAPI = () => {
-  return getLatencyFromUrlAPI('https://github.githubassets.com/favicon.ico')
-}
-
-export const getBaiduLatencyAPI = () => {
-  return getLatencyFromUrlAPI('https://apps.bdimg.com/favicon.ico')
-}
+export const getBilibiliLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.bilibili, signal)
+export const getTencentLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.tencent, signal)
+export const getTaobaoLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.taobao, signal)
+export const getGithubLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.github, signal)
+export const getCloudflareLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.cloudflare, signal)
+export const getGoogleLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.google, signal)
+export const getTelegramLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.telegram, signal)
+export const getYouTubeLatencyAPI = (signal?: AbortSignal) =>
+  getLatencyFromUrlAPI(LATENCY_URLS.youtube, signal)

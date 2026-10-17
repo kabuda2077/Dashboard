@@ -61,12 +61,20 @@ export type HostSnapshot = {
   iconCacheMap?: Record<string, string>
 }
 export type HostState = HostRuntimeState & Partial<Omit<HostSnapshot, 'runtime'>>
+export type RoutingProbeResult = {
+  id: string
+  status: 'matched' | 'unconfirmed' | 'unavailable' | 'failed'
+  node?: string
+  direct?: boolean
+  reason?: string
+}
 export type CommandResult = {
   status: 'completed' | 'rejected' | 'failed' | 'cancelled' | 'elevationRequired'
   code: string
   message?: string
   saved?: boolean
   path?: string
+  routing?: RoutingProbeResult[]
 }
 export type HostMessage = {
   protocolVersion?: number
@@ -114,6 +122,7 @@ export type HostCommand =
       type: 'chooseCoreFile' | 'chooseConfigFile' | 'openCoreLocation' | 'openConfigLocation'
       coreType: CoreKind
     }
+  | { type: 'testRouting'; coreType: CoreKind; expectedRuntimeEpoch: number }
   | { type: 'setDesktopOption'; option: keyof DesktopOptions; value: boolean }
   | { type: 'saveDashboardPreferences'; preferences: Record<string, string> }
   | { type: 'preferencesFlushed'; requestId: string; value: boolean }
@@ -193,11 +202,20 @@ export const isHostSnapshot = (value: unknown): value is HostSnapshot =>
   )
 
 export const applyHostState = (state: HostSnapshot | undefined) => {
-  if (!isHostSnapshot(state)) return
+  if (
+    !isHostSnapshot(state) ||
+    (snapshot.value && state.runtime.runtimeEpoch! < snapshot.value.runtime.runtimeEpoch!)
+  )
+    return
   snapshot.value = state
 }
 export const applyHostRuntimeState = (state: HostRuntimeState | undefined) => {
-  if (state && snapshot.value)
+  if (
+    state &&
+    snapshot.value &&
+    (state.runtimeEpoch === undefined ||
+      state.runtimeEpoch >= (snapshot.value.runtime.runtimeEpoch ?? 0))
+  )
     snapshot.value = { ...snapshot.value, runtime: { ...snapshot.value.runtime, ...state } }
 }
 export const applyHostIconCache = (icons: Record<string, string> | undefined) => {

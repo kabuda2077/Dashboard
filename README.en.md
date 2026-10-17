@@ -11,6 +11,8 @@ A Windows desktop proxy dashboard based on [zashboard](https://github.com/Zephyr
 - Customize themes, backgrounds and connection labels; import and export interface preferences.
 - System tray, autostart, close to tray and lightweight mode. Lightweight mode releases the interface after one minute hidden and restores it when reopened.
 - Optional source-IP hostname resolution, disabled by default. Manual labels take priority; unsupported lookups keep the original IP.
+- Overview measures HTTP request times for eight targets, with five samples each. The number is the median of successful samples; dots retain failures. Scroll between the left-hand latency/routing cards; a thin scrollbar appears on hover. Manual routing checks cover eight targets and create independent host HTTPS connections through an existing local proxy inbound of the current core and show the matched final node or direct route. Checks are unavailable without a usable inbound and never change configuration. Process and inbound rules may differ from WebView, TUN or other apps; results do not represent every application. Unmatched connections remain unconfirmed.
+- Network information shows the single exit IP actually observed by each of ipip.net and Cloudflare, with no separate IPv6 probe or columns. The foreign exit shows Location, ISP/organization and ASN as independent fields; missing fields are not inferred. Addresses appear before country, region, city and organization enrichment and remain visible if it fails. By default, the latter half of each IP and location details beyond the country/territory are masked. The ISP keeps its first word and the ASN keeps its number, with each following word replaced by `**`; reveal them explicitly to see full information. The domestic exit adds no attribution lookup. These observations follow current network and routing rules and do not represent every proxy node. Request time is not Ping; routing checks do not guarantee unblocking or full website functionality.
 
 ## Install and use
 
@@ -36,6 +38,6 @@ Settings are on the Core page. Connections offers Active and All views; select A
 
 For troubleshooting, inspect `resources/logs`. Start with `Dashboard.exe --diagnostic-log` for detailed logging.
 
-For development and maintenance, see the [maintenance guide](docs/maintenance.md) (Chinese).
+For development and verification, see the [development guide](docs/development.md). For upstream updates, see the [upstream guide](docs/upstream.md) (both in Chinese).
 
 MIT License. Upstream frontend copyright is retained in [dashboard-src/LICENSE](dashboard-src/LICENSE).

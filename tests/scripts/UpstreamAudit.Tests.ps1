@@ -66,7 +66,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $upstream 'README.md') -Destination (Join-Path $local 'dashboard-src/README.md')
     Write-FixtureFile $local '.gitignore' ".tmp/`n"
     Write-FixtureFile $local 'tools/check.ps1' "Write-Host 'fixture check'`n"
-    Write-FixtureFile $local 'docs/maintenance.md' '<a id="shared-behavior"></a><a id="dependent-behavior"></a>'
+    Write-FixtureFile $local 'docs/development.md' '<a id="shared-behavior"></a>'
+    Write-FixtureFile $local 'docs/upstream.md' '<a id="dependent-behavior"></a>'
     Write-FixtureFile $local 'docs/source.json' 'SOURCE MUST SURVIVE'
     Write-FixtureFile $local 'dashboard-src/src/owned.ts' "export const desktop = true;`n"
     $largePendingPaths = @('dashboard-src/src/shared.ts', 'dashboard-src/src/normalized.ts') + @(1..302 | ForEach-Object { "dashboard-src/src/old-pending-$_.ts" })
@@ -80,8 +81,8 @@ try {
             @{ path = 'dashboard-src/src/deferred-mirror.ts'; sha256 = Get-NormalizedSourceHash (Join-Path $upstream 'src/deferred-mirror.ts') }
         )
         contracts = @(
-            @{ id = 'shared-behavior'; rule = 'docs/maintenance.md#shared-behavior'; paths = @('dashboard-src/src/*'); watch = @(); checks = @('tools/check.ps1'); risk = 'low' },
-            @{ id = 'dependent-behavior'; rule = 'docs/maintenance.md#dependent-behavior'; paths = @('dashboard-src/src/shared.ts'); watch = @('dashboard-src/src/watch.ts'); checks = @('tools/check.ps1'); risk = 'high' }
+            @{ id = 'shared-behavior'; rule = 'docs/development.md#shared-behavior'; paths = @('dashboard-src/src/*'); watch = @(); checks = @('tools/check.ps1'); risk = 'low' },
+            @{ id = 'dependent-behavior'; rule = 'docs/upstream.md#dependent-behavior'; paths = @('dashboard-src/src/shared.ts'); watch = @('dashboard-src/src/watch.ts'); checks = @('tools/check.ps1'); risk = 'high' }
         )
         pending = @(
             @{ id = 'pending-ui'; contract = 'shared-behavior'; question = 'Check appearance on actual desktop' },
@@ -125,14 +126,18 @@ try {
         Assert-Fails { Invoke-Review } '*graft metadata*'
         Remove-Item -LiteralPath (Join-Path $repo '.git/info/grafts')
     }
-    $fixturePolicy.contracts[0].rule = 'docs/maintenance.md#missing'
+    foreach ($rule in @('docs/development.md#missing', '../development.md#shared-behavior', 'docs/other.md#shared-behavior')) {
+        $fixturePolicy.contracts[0].rule = $rule
+        Save-FixturePolicy
+        Assert-Fails { Read-ForkPolicy -Root $local } '*Contract rule must reference*'
+    }
+    $fixturePolicy.contracts[0].rule = 'docs/development.md#shared-behavior'
+    Write-FixtureFile $local 'docs/development.md' ''
     Save-FixturePolicy
-    Assert-Fails { Read-ForkPolicy -Root $local } '*Contract rule must reference*'
-    $fixturePolicy.contracts[0].rule = 'docs/maintenance.md#shared-behavior'
-    Write-FixtureFile $local 'docs/maintenance.md' '<a id="dependent-behavior"></a>'
-    Save-FixturePolicy
-    Assert-Fails { Read-ForkPolicy -Root $local } '*Missing explicit maintenance rule anchor*'
-    Write-FixtureFile $local 'docs/maintenance.md' '<a id="shared-behavior"></a><a id="dependent-behavior"></a>'
+    Assert-Fails { Read-ForkPolicy -Root $local } '*Missing explicit rule anchor*'
+    Remove-Item -LiteralPath (Join-Path $local 'docs/development.md')
+    Assert-Fails { Read-ForkPolicy -Root $local } '*Missing explicit rule anchor*'
+    Write-FixtureFile $local 'docs/development.md' '<a id="shared-behavior"></a>'
     foreach ($pattern in @('dashboard-src/src/own*.ts', 'Dashboard-src/src/owned.ts')) {
         $fixturePolicy.forkOwnedPaths += $pattern
         Save-FixturePolicy

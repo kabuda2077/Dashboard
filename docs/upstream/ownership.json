@@ -111,7 +111,7 @@
         "dashboard-src/src/__tests__/settings-async-layout.test.ts"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#desktop-shell"
+      "rule": "docs/development.md#desktop-shell"
     },
     {
       "id": "desktop-visuals",
@@ -142,7 +142,7 @@
         "tests/Dashboard.Tests/CoreLayoutTests.cs"
       ],
       "risk": "medium",
-      "rule": "docs/maintenance.md#desktop-visuals"
+      "rule": "docs/development.md#desktop-visuals"
     },
     {
       "id": "shared-controls",
@@ -185,7 +185,7 @@
         "dashboard-src/src/__tests__/tooltip-text.test.ts"
       ],
       "risk": "medium",
-      "rule": "docs/maintenance.md#shared-controls"
+      "rule": "docs/development.md#shared-controls"
     },
     {
       "id": "host-session",
@@ -230,7 +230,7 @@
         "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#host-session"
+      "rule": "docs/development.md#host-session"
     },
     {
       "id": "preferences",
@@ -267,7 +267,7 @@
         "dashboard-src/src/__tests__/settings-observer.test.ts"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#preferences"
+      "rule": "docs/development.md#preferences"
     },
     {
       "id": "notifications",
@@ -287,7 +287,7 @@
         "dashboard-src/src/__tests__/http-error-notification.test.ts"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#notifications"
+      "rule": "docs/development.md#notifications"
     },
     {
       "id": "proxy-experience",
@@ -319,7 +319,7 @@
         "dashboard-src/src/__tests__/proxy-request-lifecycle.test.ts"
       ],
       "risk": "medium",
-      "rule": "docs/maintenance.md#proxy-experience"
+      "rule": "docs/development.md#proxy-experience"
     },
     {
       "id": "tables-history",
@@ -372,7 +372,7 @@
         "dashboard-src/src/__tests__/source-ip-labels.test.ts"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#tables-history"
+      "rule": "docs/development.md#tables-history"
     },
     {
       "id": "overview-charts",
@@ -398,7 +398,7 @@
         "dashboard-src/src/__tests__/connection-status-latency-rounds.test.ts"
       ],
       "risk": "medium",
-      "rule": "docs/maintenance.md#overview-charts"
+      "rule": "docs/development.md#overview-charts"
     },
     {
       "id": "excluded-product-scope",
@@ -449,7 +449,7 @@
         "dashboard-src/src/__tests__/product-routes.test.ts"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#excluded-product-scope"
+      "rule": "docs/upstream.md#excluded-product-scope"
     },
     {
       "id": "local-tooling",
@@ -488,7 +488,7 @@
         "tools/check.ps1"
       ],
       "risk": "high",
-      "rule": "docs/maintenance.md#local-tooling"
+      "rule": "docs/development.md#local-tooling"
     }
   ],
   "pending": [],
@@ -498,7 +498,7 @@
       "contract": "desktop-shell",
       "expected": "Real UAC, logon tasks, cross-account credentials, physical DPI/touch and TUN sleep recovery are checked in an isolated system environment.",
       "observed": "Automated tests cover injected OS boundaries and isolated real WebView/core processes; no dedicated system environment was available for these manual scenarios.",
-      "coverage": "Do not infer these system results from passing unit, WebView, real-core or performance suites. Follow docs/maintenance.md."
+      "coverage": "Do not infer these system results from passing unit, WebView, real-core or performance suites. Follow docs/development.md#system-boundaries."
     }
   ],
   "adaptations": [

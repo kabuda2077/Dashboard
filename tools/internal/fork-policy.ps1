@@ -52,11 +52,13 @@ function Read-ForkPolicy {
         foreach ($field in @('id', 'risk')) { Assert-ForkText $contract.$field "contract.$field" }
         foreach ($field in @('paths', 'checks')) { Assert-ForkArray $contract.$field "contract.$field" -NonEmpty -Strings }
         Assert-ForkText $contract.rule 'contract.rule'
-        if ($contract.rule -cne "docs/maintenance.md#$($contract.id)") { throw "Contract rule must reference docs/maintenance.md#$($contract.id)." }
-        $rules = Join-Path $Root 'docs/maintenance.md'
+        if ($contract.rule -cnotmatch '^(docs/(?:development|upstream)\.md)#([a-z][a-z0-9-]+)$' -or $Matches[2] -cne $contract.id) {
+            throw "Contract rule must reference an approved rule document and its own ID: $($contract.id)."
+        }
+        $rules = Join-Path $Root $Matches[1]
         if (-not (Test-Path -LiteralPath $rules -PathType Leaf) -or
             [IO.File]::ReadAllText($rules) -cnotmatch ('id=["'']' + [regex]::Escape($contract.id) + '["'']')) {
-            throw "Missing explicit maintenance rule anchor: $($contract.rule)"
+            throw "Missing explicit rule anchor: $($contract.rule)"
         }
         Assert-ForkArray $contract.watch 'contract.watch' -Strings
         if ($contract.id -cnotmatch '^[a-z][a-z0-9-]+$' -or -not $ids.Add($contract.id)) {

@@ -3,7 +3,16 @@ import { captureBackendSession } from '@/helper/backendSession'
 import { getBackendProbeUrl, throwIfProbeAborted, type ProbeResult } from '@/helper/connectivity'
 import { getUrlFromBackend } from '@/helper/utils'
 import { activeBackend } from '@/store/setup'
-import type { Backend, Config, NodeRank, Proxy, ProxyProvider, Rule, RuleProvider } from '@/types'
+import type {
+  Backend,
+  ClashConnectionRawMessage,
+  Config,
+  NodeRank,
+  Proxy,
+  ProxyProvider,
+  Rule,
+  RuleProvider,
+} from '@/types'
 import axios from 'axios'
 import { debounce } from 'lodash'
 import ReconnectingWebSocket from 'reconnectingwebsocket'

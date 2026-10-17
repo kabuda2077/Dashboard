@@ -3,7 +3,11 @@ import { proxyMap } from '@/assembly/proxies'
 import { allProxiesLatencyTest, fetchProxies } from '@/assembly/proxies/clash'
 import { rules } from '@/assembly/rules'
 import { fetchRules } from '@/assembly/rules/clash'
-import { applyHostRuntimeState, applyHostState } from '@/composables/hostBridge'
+import {
+  applyHostRuntimeState,
+  applyHostState,
+  hostSessionGeneration,
+} from '@/composables/hostBridge'
 import { captureBackendSession } from '@/helper/backendSession'
 import { independentLatencyTest, IPv6test } from '@/store/settings'
 import { activeUuid, addBackend } from '@/store/setup'
@@ -28,7 +32,9 @@ const state = {
   processId: 1,
   isRunning: true,
 }
+let epoch = 0
 beforeEach(() => {
+  epoch = hostSessionGeneration.value + 1
   addBackend(
     {
       type: 'clash',
@@ -40,17 +46,17 @@ beforeEach(() => {
     },
     { replaceExisting: true },
   )
-  applyHostState(makeHostSnapshot(state))
+  applyHostState(makeHostSnapshot({ ...state, runtimeEpoch: epoch }))
 })
 
 it('invalidates synchronously on same-endpoint core changes and PID restarts, but not identical state', () => {
   const session = captureBackendSession()
-  applyHostState(makeHostSnapshot({ ...state, latestCoreVersion: 'next' }))
+  applyHostState(makeHostSnapshot({ ...state, runtimeEpoch: epoch, latestCoreVersion: 'next' }))
   expect(session.isCurrent()).toBe(true)
-  applyHostState(makeHostSnapshot({ ...state, coreType: 'sing-box', runtimeEpoch: 2 }))
+  applyHostState(makeHostSnapshot({ ...state, coreType: 'sing-box', runtimeEpoch: epoch + 1 }))
   expect(session.isCurrent()).toBe(false)
   const restarted = captureBackendSession()
-  applyHostRuntimeState({ processId: 2, runtimeEpoch: 3 })
+  applyHostRuntimeState({ processId: 2, runtimeEpoch: epoch + 2 })
   expect(restarted.isCurrent()).toBe(false)
 })
 
@@ -66,7 +72,7 @@ it.each(['/proxies', '/rules', '/configs', '/cache/dns/flush'])(
         }),
     })
     const rejected = expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' })
-    applyHostRuntimeState({ processId: 3, runtimeEpoch: 3 })
+    applyHostRuntimeState({ processId: 3, runtimeEpoch: epoch + 1 })
     complete()
     await rejected
   },
@@ -90,7 +96,7 @@ it('does not let an old 401 clear the new active backend', async () => {
       }),
   })
   const rejected = expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' })
-  applyHostRuntimeState({ processId: 5, runtimeEpoch: 5 })
+  applyHostRuntimeState({ processId: 5, runtimeEpoch: epoch + 1 })
   const id = activeUuid.value
   complete()
   await rejected
@@ -116,7 +122,7 @@ it('abandons queued latency work and old history writes after switching sessions
   try {
     const testing = allProxiesLatencyTest()
     await vi.waitFor(() => expect(pending).toHaveLength(5))
-    applyHostRuntimeState({ processId: 11, runtimeEpoch: 11 })
+    applyHostRuntimeState({ processId: 11, runtimeEpoch: epoch + 1 })
     pending.forEach((complete) => complete())
     await testing
     expect(get).toHaveBeenCalledTimes(5)
@@ -127,25 +133,23 @@ it('abandons queued latency work and old history writes after switching sessions
 })
 
 it('does not write proxy/rule state when a session changes after transport resolution', async () => {
-  const get = vi
-    .spyOn(axios, 'get')
-    .mockImplementation(
-      async (url) =>
-        ({
-          data:
-            url === '/proxies'
-              ? { proxies: {} }
-              : url === '/rules'
-                ? { rules: [] }
-                : { providers: {} },
-        }) as AxiosResponse,
-    )
+  const get = vi.spyOn(axios, 'get').mockImplementation(
+    async (url) =>
+      ({
+        data:
+          url === '/proxies'
+            ? { proxies: {} }
+            : url === '/rules'
+              ? { rules: [] }
+              : { providers: {} },
+      }) as AxiosResponse,
+  )
   try {
     const previousProxies = proxyMap.value
     const previousRules = rules.value
     const proxies = fetchProxies(),
       ruleRequest = fetchRules()
-    applyHostRuntimeState({ processId: 7, runtimeEpoch: 7 })
+    applyHostRuntimeState({ processId: 7, runtimeEpoch: epoch + 1 })
     await Promise.all([proxies, ruleRequest])
     await nextTick()
     expect(proxyMap.value).toBe(previousProxies)

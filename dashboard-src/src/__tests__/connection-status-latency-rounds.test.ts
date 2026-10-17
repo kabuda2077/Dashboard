@@ -1,225 +1,140 @@
 import ConnectionStatus from '@/components/overview/ConnectionStatus.vue'
-import {
-  baiduLatency,
-  cloudflareLatency,
-  getLatency,
-  githubLatency,
-  isTestingLatency,
-  youtubeLatency,
-} from '@/helper/overview'
+import { getLatency, isTestingLatency, LATENCY_ROUNDS, latencyTargets } from '@/helper/overview'
+import en from '@/i18n/en'
 import { autoConnectionCheck } from '@/store/settings'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
+import { createI18n } from 'vue-i18n'
 
-const latencyAPIs = vi.hoisted(() => ({
-  baidu: vi.fn<() => Promise<number>>(),
-  cloudflare: vi.fn<() => Promise<number>>(),
-  github: vi.fn<() => Promise<number>>(),
-  youtube: vi.fn<() => Promise<number>>(),
+const fixtures = vi.hoisted(() => ({
+  bilibili: vi.fn(),
+  tencent: vi.fn(),
+  taobao: vi.fn(),
+  github: vi.fn(),
+  cloudflare: vi.fn(),
+  google: vi.fn(),
+  telegram: vi.fn(),
+  youtube: vi.fn(),
 }))
-
 vi.mock('@/api/latency', () => ({
-  getBaiduLatencyAPI: latencyAPIs.baidu,
-  getCloudflareLatencyAPI: latencyAPIs.cloudflare,
-  getGithubLatencyAPI: latencyAPIs.github,
-  getYouTubeLatencyAPI: latencyAPIs.youtube,
+  LATENCY_URLS: Object.fromEntries(
+    Object.keys(fixtures).map((id) => [id, `https://${id}.test/favicon.ico`]),
+  ),
+  getBilibiliLatencyAPI: fixtures.bilibili,
+  getTencentLatencyAPI: fixtures.tencent,
+  getTaobaoLatencyAPI: fixtures.taobao,
+  getGithubLatencyAPI: fixtures.github,
+  getCloudflareLatencyAPI: fixtures.cloudflare,
+  getGoogleLatencyAPI: fixtures.google,
+  getTelegramLatencyAPI: fixtures.telegram,
+  getYouTubeLatencyAPI: fixtures.youtube,
 }))
-
-// Keep ConnectionStatus and LatencyChart real; only replace the ECharts-facing rendering boundary.
-vi.mock('@/components/overview/MiniSparkline.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-
+vi.mock('@/helper/backendSession', async () => {
+  const { ref } = await import('vue')
   return {
-    default: defineComponent({
-      name: 'MiniSparklineBoundary',
-      props: { data: { type: Array, required: true } },
-      setup(props) {
-        return () => h('div', { 'data-chart-points': JSON.stringify(props.data) })
-      },
-    }),
+    backendSessionGeneration: ref(1),
+    backendSessionReady: ref(true),
+    captureBackendSession: () => ({ isCurrent: () => true }),
   }
 })
 
-type Target = keyof typeof latencyAPIs
-
-const targetState = {
-  baidu: baiduLatency,
-  cloudflare: cloudflareLatency,
-  github: githubLatency,
-  youtube: youtubeLatency,
-}
-const pending = {
-  baidu: [] as Array<(value: number) => void>,
-  cloudflare: [] as Array<(value: number) => void>,
-  github: [] as Array<(value: number) => void>,
-  youtube: [] as Array<(value: number) => void>,
-}
-const targets = Object.keys(latencyAPIs) as Target[]
-
 let app: App | undefined
-let host: HTMLDivElement | undefined
-
-const rowText = (name: string) => {
-  const row = Array.from(host!.querySelectorAll('.grid > div')).find((element) =>
-    element.textContent?.includes(name),
-  )
-  expect(row, `latency row for ${name}`).toBeTruthy()
-  return row!.textContent!.replace(/\s+/g, '')
+let root: HTMLDivElement
+const pending = new Map<string, Array<(value: number) => void>>()
+const mount = () => {
+  root = document.createElement('div')
+  document.body.append(root)
+  app = createApp(ConnectionStatus)
+  app.use(createI18n({ legacy: false, locale: 'en', messages: { en } }))
+  app.mount(root)
 }
-
-const resolveRound = async (values: Record<Target, number[]>, round: number) => {
-  for (const target of targets) {
-    const resolve = pending[target].shift()
-    expect(resolve, `pending ${target} request for round ${round + 1}`).toBeTypeOf('function')
-    resolve!(values[target][round]!)
+beforeEach(() => {
+  autoConnectionCheck.value = false
+  for (const target of latencyTargets) {
+    target.ref.value = []
+    pending.set(target.id, [])
+    const mock = fixtures[target.id as keyof typeof fixtures]
+    mock
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<number>((resolve) => pending.get(target.id)!.push(resolve)),
+      )
   }
+  mount()
+})
+afterEach(() => {
+  app?.unmount()
+  app = undefined
+  root.remove()
+})
+const finishRound = async (value: number) => {
+  for (const target of latencyTargets) pending.get(target.id)!.shift()!(value)
+  await nextTick()
   await nextTick()
 }
 
-const expectCallCount = async (count: number) => {
-  await vi.waitFor(() => {
-    for (const target of targets) expect(latencyAPIs[target]).toHaveBeenCalledTimes(count)
-  })
-}
-
-describe('mounted ConnectionStatus latency rounds', () => {
-  beforeEach(() => {
-    autoConnectionCheck.value = false
-    for (const target of targets) {
-      targetState[target].value = []
-      pending[target].length = 0
-      latencyAPIs[target].mockReset()
-      latencyAPIs[target].mockImplementation(
-        () => new Promise<number>((resolve) => pending[target].push(resolve)),
-      )
-    }
-
-    host = document.createElement('div')
-    document.body.appendChild(host)
-    app = createApp(ConnectionStatus)
-    app.config.globalProperties.$t = (key: string) => key
-    app.mount(host)
-  })
-
-  afterEach(() => {
-    app?.unmount()
-    host?.remove()
-    app = undefined
-    host = undefined
-  })
-
-  it('shares a running task across remounts before the first reply and keeps exactly 10 rounds', async () => {
-    host!.querySelector('button')!.click()
-    await expectCallCount(1)
-    app!.unmount()
-    autoConnectionCheck.value = true
-    app = createApp(ConnectionStatus)
-    app.config.globalProperties.$t = (key: string) => key
-    app.mount(host!)
-    expect(host!.querySelector('button')!.disabled).toBe(true)
-    host!.querySelector('button')!.click()
-    await getLatency()
-    await expectCallCount(1)
-    app.unmount()
-    app = undefined
-    const values = Object.fromEntries(
-      targets.map((target) => [target, Array(10).fill(42)]),
-    ) as Record<Target, number[]>
-    for (let round = 0; round < 10; round++) {
-      await resolveRound(values, round)
-      if (round < 9) await expectCallCount(round + 2)
-    }
-    await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
-    app = createApp(ConnectionStatus)
-    app.config.globalProperties.$t = (key: string) => key
-    app.mount(host!)
-    expect(host!.querySelector('button')!.disabled).toBe(false)
-    expect(rowText('Baidu')).toBe('Baidu42msmin42msmax42ms')
-    await expectCallCount(10)
-    expect(targets.map((target) => targetState[target].value.length)).toEqual([10, 10, 10, 10])
-  })
-
-  it('records rejected rounds as failures and stays busy until all targets finish', async () => {
-    latencyAPIs.baidu.mockRejectedValue(new Error('offline'))
-    host!.querySelector('button')!.click()
-    await vi.waitFor(() => expect(baiduLatency.value).toHaveLength(10))
-    expect(isTestingLatency.value).toBe(true)
-    await getLatency()
-    expect(latencyAPIs.cloudflare).toHaveBeenCalledTimes(1)
-    for (let round = 0; round < 10; round++) {
-      for (const target of targets.filter((target) => target !== 'baidu'))
-        pending[target].shift()!(25)
-      await nextTick()
-    }
-    await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
-    expect(baiduLatency.value).toEqual(Array(10).fill(0))
-    await expectCallCount(10)
-  })
-
-  it('waits for all 10 samples before averaging each target, reports ranges, and resets safely', async () => {
-    const firstRun = {
-      baidu: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-      cloudflare: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-      github: [51, 52, 53, 54, 55, 56, 57, 58, 59, 60],
-      youtube: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
-    }
-    const button = host!.querySelector('button')!
-
-    button.click()
+it('shares one eight-target five-round task across remounts and keeps samples visible as dots', async () => {
+  root.querySelector('button')!.click()
+  expect(latencyTargets).toHaveLength(8)
+  expect(latencyTargets.map(({ id }) => id)).toEqual([
+    'bilibili',
+    'tencent',
+    'taobao',
+    'github',
+    'cloudflare',
+    'google',
+    'telegram',
+    'youtube',
+  ])
+  expect(LATENCY_ROUNDS).toBe(5)
+  expect(root.querySelectorAll('[data-network-target]')).toHaveLength(8)
+  expect(root.querySelectorAll('[data-network-target] [role=img] span')).toHaveLength(40)
+  app!.unmount()
+  root.remove()
+  autoConnectionCheck.value = true
+  mount()
+  expect(root.querySelector('button')!.disabled).toBe(true)
+  await getLatency()
+  for (const mock of Object.values(fixtures)) expect(mock).toHaveBeenCalledTimes(1)
+  for (let round = 0; round < LATENCY_ROUNDS; round++) await finishRound(42)
+  await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
+  for (const target of latencyTargets) {
+    expect(target.ref.value).toEqual(Array(5).fill(42))
+    expect(root.querySelector(`[data-network-target=${target.id}]`)?.textContent).toContain('42ms')
+  }
+  for (const mock of Object.values(fixtures)) expect(mock).toHaveBeenCalledTimes(5)
+})
+it('shows failed and pending samples separately rather than dropping them from the chart', async () => {
+  fixtures.bilibili.mockRejectedValue(new Error('offline'))
+  root.querySelector('button')!.click()
+  await vi.waitFor(() => expect(latencyTargets[0].ref.value).toHaveLength(5))
+  const failedRow = root.querySelector('[data-network-target=bilibili]')!
+  expect(failedRow.querySelectorAll('.bg-error')).toHaveLength(5)
+  expect(failedRow.textContent).toContain('--')
+  expect(
+    root.querySelector('[data-network-target=github] [role=img]')?.getAttribute('aria-label'),
+  ).toContain('0/0')
+  for (let round = 0; round < LATENCY_ROUNDS; round++) {
+    for (const target of latencyTargets.filter((target) => target.id !== 'bilibili'))
+      pending.get(target.id)!.shift()!(25)
     await nextTick()
-    expect(button.disabled).toBe(true)
-    await expectCallCount(1)
-
-    for (let round = 0; round < 9; round++) {
-      await resolveRound(firstRun, round)
-      await expectCallCount(round + 2)
-    }
-
-    expect(targets.map((target) => latencyAPIs[target].mock.calls.length)).toEqual([10, 10, 10, 10])
-    expect(targets.map((target) => targetState[target].value.length)).toEqual([9, 9, 9, 9])
-    expect(rowText('Baidu')).toBe('Baidu--min10msmax90ms')
-    expect(rowText('Cloudflare')).toBe('Cloudflare--min11msmax19ms')
-    expect(rowText('GitHub')).toBe('GitHub--min51msmax59ms')
-    expect(rowText('YouTube')).toBe('YouTube--min100msmax108ms')
-
-    await resolveRound(firstRun, 9)
-    await vi.waitFor(() => expect(button.disabled).toBe(false))
-
-    expect(targets.map((target) => latencyAPIs[target].mock.calls.length)).toEqual([10, 10, 10, 10])
-    expect(rowText('Baidu')).toBe('Baidu55msmin10msmax100ms')
-    expect(rowText('Cloudflare')).toBe('Cloudflare16msmin11msmax20ms')
-    expect(rowText('GitHub')).toBe('GitHub56msmin51msmax60ms')
-    expect(rowText('YouTube')).toBe('YouTube105msmin100msmax109ms')
-
-    button.click()
     await nextTick()
-    expect(button.disabled).toBe(true)
-    expect(targets.map((target) => targetState[target].value)).toEqual([[], [], [], []])
-    await expectCallCount(11)
-
-    button.click()
-    await nextTick()
-    expect(targets.map((target) => latencyAPIs[target].mock.calls.length)).toEqual([11, 11, 11, 11])
-
-    const secondRun = {
-      baidu: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-      cloudflare: [21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
-      github: [31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
-      youtube: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-    }
-    for (let round = 0; round < 10; round++) {
-      await resolveRound(secondRun, round)
-      if (round < 9) await expectCallCount(round + 12)
-    }
-    await vi.waitFor(() => expect(button.disabled).toBe(false))
-
-    expect(targets.map((target) => latencyAPIs[target].mock.calls.length)).toEqual([20, 20, 20, 20])
-    expect(targets.map((target) => targetState[target].value)).toEqual([
-      secondRun.baidu,
-      secondRun.cloudflare,
-      secondRun.github,
-      secondRun.youtube,
-    ])
-    expect(rowText('Baidu')).toBe('Baidu6msmin1msmax10ms')
-  })
+  }
+  await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
+})
+it('resets existing samples on another manual test without launching duplicates', async () => {
+  for (const target of latencyTargets) target.ref.value = [10, 20]
+  root.querySelector('button')!.click()
+  await nextTick()
+  expect(latencyTargets.every((target) => target.ref.value.length === 0)).toBe(true)
+  root.querySelector('button')!.click()
+  for (const mock of Object.values(fixtures)) expect(mock).toHaveBeenCalledTimes(1)
+  for (const value of [10, 0, 20, 40, 1000]) await finishRound(value)
+  await vi.waitFor(() => expect(isTestingLatency.value).toBe(false))
+  // The outlier affects the mean, not the displayed successful-sample median.
+  for (const target of latencyTargets) {
+    const row = root.querySelector(`[data-network-target=${target.id}]`)!
+    expect(row.textContent).toContain('30ms')
+    expect(row.querySelector('[role=img]')?.getAttribute('aria-label')).toContain('4/5')
+  }
 })
