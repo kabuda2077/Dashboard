@@ -17,7 +17,7 @@
 
 ## 安装与使用
 
-需要 Windows x64、[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) 和 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
+需要 Windows x64、[.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) 和 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
 1. 从 [Releases](https://github.com/kabuda2077/Dashboard/releases) 下载压缩包，解压后运行 `Dashboard.exe`。
 2. 自备 mihomo 或启用 Clash API 的 sing-box，以及对应配置文件。发布包不包含核心和配置。

@@ -81,7 +81,7 @@ function Test-Host {
     param([string]$Configuration, [bool]$IncludeWebViewIntegration, [bool]$IncludeRealCoreIntegration, [bool]$IncludePerformanceIntegration)
     Push-Location $script:RepositoryRoot
     try {
-        Invoke-Checked '.NET restore' { dotnet restore tests/Dashboard.Tests/Dashboard.Tests.csproj --nologo }
+        Invoke-Checked '.NET restore' { dotnet restore tests/Dashboard.Tests/Dashboard.Tests.csproj -p:Configuration=$Configuration --nologo }
         $reports = Join-Path $script:RepositoryRoot '.tmp\reports\dotnet'
         $testArgs = @('test', 'tests/Dashboard.Tests/Dashboard.Tests.csproj', '-c', $Configuration, '--no-restore', '--nologo', '--logger', 'trx;LogFileName=tests.trx', '--results-directory', $reports)
         $filters = @()

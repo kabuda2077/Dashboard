@@ -101,7 +101,7 @@ API、宿主和外部错误、tooltip 按文本显示，富内容单独清洗。
 <a id="local-tooling"></a>
 ## 环境与工具
 
-需要 PowerShell 7、.NET 9 SDK 和 pnpm 启动器。Node/pnpm 版本由 `.node-version` 和 `dashboard-src/package.json` 固定，使用冻结 lockfile 和用户缓存；现有入口准备依赖并构建前端，不改全局 Node 或另建项目工具链缓存。应用版本与前端包版本分别管理。
+需要 PowerShell 7、.NET 10 SDK 和 pnpm 启动器。Node/pnpm 版本由 `.node-version` 和 `dashboard-src/package.json` 固定，使用冻结 lockfile 和用户缓存；现有入口准备依赖并构建前端，不改全局 Node 或另建项目工具链缓存。应用版本与前端包版本分别管理。
 
 Windows 后台进程显式隐藏窗口，保留日志、退出码并确认退出；可见交互事先说明，不改全局 TEMP/TMP。项目只编译 `src/**/*.cs`，显式排除临时和依赖目录，不能只靠 `.gitignore`。
 

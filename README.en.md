@@ -17,7 +17,7 @@ A Windows desktop proxy dashboard based on [zashboard](https://github.com/Zephyr
 
 ## Install and use
 
-Requires Windows x64, [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+Requires Windows x64, [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 
 1. Download a ZIP from [Releases](https://github.com/kabuda2077/Dashboard/releases), extract it and run `Dashboard.exe`.
 2. Supply mihomo or sing-box with the Clash API enabled, plus its configuration file. The package includes neither cores nor configurations.
