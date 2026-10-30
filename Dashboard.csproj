@@ -11,8 +11,8 @@
     <ApplicationIcon>resources\app.ico</ApplicationIcon>
     <AssemblyName>Dashboard</AssemblyName>
     <RootNamespace>Dashboard</RootNamespace>
-    <Version>2.2.8</Version>
-    <InformationalVersion>2.2.8</InformationalVersion>
+    <Version>2.3.0</Version>
+    <InformationalVersion>2.3.0</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AllowedReferenceRelatedFileExtensions>.pdb;.pri</AllowedReferenceRelatedFileExtensions>
