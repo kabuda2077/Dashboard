@@ -1,14 +1,14 @@
 <template>
   <div
-    class="pointer-events-none top-0 z-30"
-    :class="pageAligned ? 'bg-base-200 sticky w-full' : 'fixed right-0 bg-transparent p-3 pb-0'"
+    class="pointer-events-none top-0 z-30 bg-transparent"
+    :class="pageAligned ? 'sticky w-full' : 'fixed right-0 p-3 pb-0'"
     :style="ctrlsBarStyle"
     ref="ctrlsBarRef"
   >
     <div
       class="flex items-start gap-3"
       :class="[
-        pageAligned && 'core-controls-container mx-auto w-full max-w-7xl p-3 pb-0',
+        pageAligned && 'core-controls-container w-full p-3 pb-0 md:pr-2',
         showWindowControls ? 'justify-between' : '',
         rowClass,
       ]"

@@ -16,12 +16,34 @@ public sealed class CoreVersionReaderTests
     }
 
     [Fact]
-    public async Task DrainsBothPipesWithoutTruncationOrDeadlock()
+    public async Task DrainsBothPipesAtTheLimitWithoutTruncationOrDeadlock()
     {
-        using var process = Start("[Console]::Out.Write(('x' * 100000)); [Console]::Error.Write(('y' * 100000)); exit 0");
+        var limit = CoreVersionReader.MaxOutputCharactersPerStream;
+        using var process = Start($"[Console]::Out.Write(('x' * {limit})); [Console]::Error.Write(('y' * {limit})); exit 0");
         var output = await CoreVersionReader.ReadProcessAsync(process, default, TimeSpan.FromSeconds(10));
-        Assert.Equal(new string('x', 100000) + " " + new string('y', 100000), output);
+        Assert.Equal(new string('x', limit) + " " + new string('y', limit), output);
         Assert.True(process.HasExited);
+    }
+
+    [Theory]
+    [InlineData("Out", "stdout")]
+    [InlineData("Error", "stderr")]
+    public async Task ContinuousOutputBeyondLimitFailsAndReapsTheChild(string writer, string stream)
+    {
+        using var process = Start($"$chunk = 'x' * 2048; while ($true) {{ [Console]::{writer}.Write($chunk) }}");
+        try
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                CoreVersionReader.ReadProcessAsync(process, default, TimeSpan.FromSeconds(10)));
+            Assert.Contains(stream, error.Message);
+            Assert.Contains("上限", error.Message);
+            Assert.Contains(CoreVersionReader.MaxOutputCharactersPerStream.ToString(), error.Message);
+            Assert.True(process.HasExited);
+        }
+        finally
+        {
+            if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); }
+        }
     }
 
     [Fact]

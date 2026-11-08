@@ -7,8 +7,6 @@ namespace Dashboard;
 
 internal sealed class DashboardHost : IDisposable
 {
-    internal const string MihomoRepositoryUrl = "https://github.com/MetaCubeX/mihomo";
-    internal const string SingBoxRepositoryUrl = "https://github.com/reF1nd/sing-box";
     private readonly SettingsStore _settings;
     private readonly CoreProcessManager _core;
     private readonly CoreLifecycleController _lifecycle;
@@ -31,6 +29,7 @@ internal sealed class DashboardHost : IDisposable
     private bool _metadataAgain;
     private bool _metadataForce;
     private int _coreUpdatePending;
+    private string _coreUpdateMetadataKey = "";
     private long _iconGeneration;
     private CancellationTokenSource? _iconCancellation;
     private long _lastRuntimeEpoch;
@@ -59,7 +58,7 @@ internal sealed class DashboardHost : IDisposable
         _icons = new ProxyGroupIconCache(Path.Combine(dataDirectory ?? AppSettings.AppDirectory, "resources", "icon-cache"));
         _server = new DashboardServer(dashboardDirectory ?? Path.Combine(AppSettings.ResourceDirectory, "dashboard"), _icons.CacheDirectory);
         DashboardUri = ephemeralPort ? _server.StartForTests(testPort) : _server.Start();
-        _lifecycle = new(_settings, _core, isAdministrator);
+        _lifecycle = new(_settings, _core, isAdministrator, _readCoreVersion);
         _settings.Changed += OnSettingsChanged;
         _lifecycle.Changed += OnRuntimeChanged;
         _core.LogReceived += OnLog;
@@ -103,6 +102,8 @@ internal sealed class DashboardHost : IDisposable
         var connection = _lifecycle.Connection;
         Metadata? metadata;
         lock (_metadataSync) _metadata.TryGetValue(kind, out metadata);
+        if (metadata?.Key != MetadataKey(EffectiveProfile(kind))) metadata = null;
+        var source = CoreUpdateSource.Resolve(metadata?.RawVersion ?? "", kind);
         var apiVersion = _lifecycle.ApiVersion;
         return new()
         {
@@ -113,14 +114,18 @@ internal sealed class DashboardHost : IDisposable
             NetworkRevision = Interlocked.Read(ref _networkRevision),
             CoreTitle = AppSettings.CoreTitleFor(kind),
             CoreVersion = apiVersion.Length > 0 ? apiVersion : metadata?.DisplayVersion ?? "",
+            CoreUpdateMode = source.Mode,
+            CoreReleaseUrl = source.ReleaseUrl,
             ApiStatus = _lifecycle.ApiStatus,
+            ApiIsManaged = _lifecycle.ApiIsManaged,
             ApiUrl = connection.ApiUrl,
             Secret = connection.Secret,
             SecretDecryptionFailed = connection.SecretDecryptionFailed,
             Operation = _lifecycle.Operation,
             RequiresRestart = _lifecycle.RequiresRestart,
-            CanUpgradeCore = !_lifecycle.IsBusy && !_lifecycle.RequiresRestart && !connection.SecretDecryptionFailed
-                && (kind == CoreKind.SingBox || (_core.IsRunning && _lifecycle.ApiStatus == "ready")),
+            CanUpgradeCore = source.Mode == "automatic" && !_lifecycle.IsBusy && !_lifecycle.RequiresRestart
+                && !connection.SecretDecryptionFailed && _core.IsRunning
+                && _lifecycle.ApiStatus == "ready" && _lifecycle.ApiIsManaged,
             IsWindowMaximized = isWindowMaximized,
             ReadOnlyTunEnabled = kind == CoreKind.SingBox ? metadata?.Tun : null
         };
@@ -129,9 +134,12 @@ internal sealed class DashboardHost : IDisposable
     public DashboardState BuildState(bool isWindowMaximized)
     {
         var settings = Settings;
+        var runtime = BuildRuntimeState(isWindowMaximized);
+        var currentUpdate = runtime.CoreUpdateMode == "automatic"
+            && _coreUpdateMetadataKey == MetadataKey(EffectiveProfile(runtime.CoreType));
         return new()
         {
-            Runtime = BuildRuntimeState(isWindowMaximized),
+            Runtime = runtime,
             Profiles = Enum.GetValues<CoreKind>().ToDictionary(AppSettings.WireKind, kind =>
             {
                 var profile = settings.Profile(kind);
@@ -144,9 +152,9 @@ internal sealed class DashboardHost : IDisposable
             LatestAppVersion = LatestAppVersion,
             IsAppUpdateChecking = IsAppUpdateChecking,
             AppUpdateAvailable = AppUpdateAvailable,
-            LatestCoreVersion = LatestCoreVersion,
+            LatestCoreVersion = currentUpdate ? LatestCoreVersion : "",
             IsCoreUpdateChecking = IsCoreUpdateChecking,
-            CoreUpdateAvailable = CoreUpdateAvailable,
+            CoreUpdateAvailable = currentUpdate && CoreUpdateAvailable,
             LogText = _core.GetLogTail(8000),
             DroppedLogEntries = HostOperationLogger.DroppedEntries,
             LogWriteFailures = HostOperationLogger.WriteFailures,
@@ -287,14 +295,14 @@ internal sealed class DashboardHost : IDisposable
         if (!_disposed && !_tasks.IsClosing) RelaunchRequested?.Invoke(this, new(true, true, true));
     }
 
-    internal async Task RelaunchAfterAutostartAsync(Action startReplacement, Func<Task> finishExit)
+    internal async Task RelaunchAfterAutostartAsync(Func<Task> startReplacement, Func<Task> finishExit)
     {
         await _autostartGate.WaitAsync();
         Task exit;
         try
         {
             if (_disposed || _tasks.IsClosing) throw new InvalidOperationException("Dashboard 已进入退出流程。");
-            startReplacement(); // UAC failure releases the gate without sealing the old host.
+            await startReplacement(); // UAC or identity confirmation failure leaves the old host usable.
             exit = finishExit(); // seals new host work synchronously before the gate is released
         }
         finally { _autostartGate.Release(); }
@@ -322,6 +330,7 @@ internal sealed class DashboardHost : IDisposable
             if (_disposed) return CommandResult.Rejected("closing");
             IsAutostartUpdating = true;
             PublishState();
+            var previous = Settings.DesktopOptions.Autostart;
             var result = await _setAutostart(value).ConfigureAwait(false);
             if (!result.Success) return CommandResult.Failed("autostartFailed", result.Message);
             try
@@ -332,7 +341,16 @@ internal sealed class DashboardHost : IDisposable
             }
             catch (Exception error)
             {
-                return CommandResult.Failed("autostartChangedButNotSaved", "系统自启状态已改变，但设置未保存：" + error.Message);
+                AutostartOperationResult rollback;
+                try { rollback = await _setAutostart(previous).ConfigureAwait(false); }
+                catch (Exception rollbackError)
+                {
+                    HostOperationLogger.Error("autostart", "Unable to restore autostart after settings commit failed.", rollbackError);
+                    return CommandResult.Failed("autostartRollbackFailed", "设置未保存，系统自启状态也未能恢复，请检查任务计划程序：" + error.Message + "；" + rollbackError.Message);
+                }
+                if (!rollback.Success)
+                    return CommandResult.Failed("autostartRollbackFailed", "设置未保存，系统自启状态也未能恢复，请检查任务计划程序：" + error.Message + "；" + rollback.Message);
+                return CommandResult.Failed("autostartNotSaved", "设置未保存，系统自启状态已恢复：" + error.Message);
             }
         }
         finally { IsAutostartUpdating = false; _autostartGate.Release(); PublishState(); }
@@ -445,10 +463,12 @@ internal sealed class DashboardHost : IDisposable
             await RefreshMetadataAsync().ConfigureAwait(false);
             Metadata? metadata;
             lock (_metadataSync) _metadata.TryGetValue(kind, out metadata);
-            if (metadata is null || metadata.RawVersion.Length == 0) return;
+            if (metadata is null || metadata.Key != MetadataKey(EffectiveProfile(kind))
+                || CoreUpdateSource.Resolve(metadata.RawVersion, kind).Mode != "automatic") return;
             var result = await CoreUpdateChecker.CheckReleaseAsync(CoreUpgradeSupport.SharedClient, metadata.RawVersion, kind == CoreKind.SingBox, token).ConfigureAwait(false);
-            if (kind == _lifecycle.Kind && epoch == _lifecycle.Epoch && !_disposed)
-            { LatestCoreVersion = result.LatestVersion; CoreUpdateAvailable = result.UpdateAvailable; }
+            if (kind == _lifecycle.Kind && epoch == _lifecycle.Epoch && !_disposed
+                && metadata.Key == MetadataKey(EffectiveProfile(kind)))
+            { _coreUpdateMetadataKey = metadata.Key; LatestCoreVersion = result.LatestVersion; CoreUpdateAvailable = result.UpdateAvailable; }
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { HostOperationLogger.Error("update", "Core update check failed.", error); }
@@ -483,8 +503,11 @@ internal sealed class DashboardHost : IDisposable
         HostOutboundMessage.AppUpdateResult(result, manual, DashboardVersion.Current, LatestAppVersion));
 
     public void OpenAppReleasePage() => OpenWeb(AppUpdateChecker.ReleasesPageUrl);
-    public void OpenCoreRepositoryPage() => OpenWeb(GetCoreRepositoryUrl(_lifecycle.Kind == CoreKind.SingBox));
-    internal static string GetCoreRepositoryUrl(bool isSingBox) => isSingBox ? SingBoxRepositoryUrl : MihomoRepositoryUrl;
+    public void OpenCoreRepositoryPage()
+    {
+        var url = BuildRuntimeState(false).CoreReleaseUrl;
+        if (url.Length > 0) OpenWeb(url);
+    }
     private void OpenWeb(string url)
     {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
@@ -578,7 +601,7 @@ internal sealed class DashboardHost : IDisposable
         if (_lifecycle.IsUpgradeInProgress) ResetCoreUpdateState();
         if (!_disposed) RuntimeStateChanged?.Invoke(this, EventArgs.Empty);
     }
-    private void ResetCoreUpdateState() { LatestCoreVersion = ""; CoreUpdateAvailable = false; PublishState(); }
+    private void ResetCoreUpdateState() { _coreUpdateMetadataKey = ""; LatestCoreVersion = ""; CoreUpdateAvailable = false; PublishState(); }
     private void OnLog(object? sender, string text) => LogReceived?.Invoke(this, text);
     private void OnIcons(object? sender, EventArgs args) => IconCacheChanged?.Invoke(this, args);
     private void PublishState() { if (!_disposed) StateChanged?.Invoke(this, EventArgs.Empty); }

@@ -153,7 +153,6 @@ export const proxyLatencyTest = async (
   proxyName: string,
   url?: string,
   timeout?: number,
-  _groupName?: string,
 ) => clashProxyLatencyTest(proxyName, url, timeout)
 
 let proxyRequest = 0

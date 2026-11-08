@@ -155,11 +155,17 @@ describe('close visible current active connections', () => {
     expect(closeButton().disabled).toBe(true)
   })
 
-  it('closes all when the visible targets cover every current active connection', async () => {
+  it('closes only captured IDs even when the visible targets cover every active connection', async () => {
     await mount([conn('a'), conn('b')], [conn('old')], CONNECTION_TAB_TYPE.ALL)
+    calls.byId.mockImplementationOnce(() => {
+      const incoming = conn('arrived-after-click')
+      activeConnections.value = [...activeConnections.value, incoming]
+      renderConnections.value = [...renderConnections.value, incoming]
+      return Promise.resolve()
+    })
     await clickClose()
-    expect(calls.all).toHaveBeenCalledOnce()
-    expect(calls.byId).not.toHaveBeenCalled()
+    expect(calls.all).not.toHaveBeenCalled()
+    expect(calls.byId.mock.calls).toEqual([['a'], ['b']])
   })
 
   it('only closes visible active targets when a filtered All view includes history', async () => {
@@ -214,7 +220,8 @@ describe('close visible current active connections', () => {
     await nextTick()
     expect(closeButton().disabled).toBe(false)
     await clickClose()
-    expect(calls.all).toHaveBeenCalledOnce()
+    expect(calls.all).not.toHaveBeenCalled()
+    expect(calls.byId).toHaveBeenCalledExactlyOnceWith('current')
   })
 
   it('stops remaining targets when the session changes during dispatch', async () => {
@@ -238,7 +245,7 @@ describe('close visible current active connections', () => {
 
   it('keeps the real manual-request error notification', async () => {
     await mount([conn('a')])
-    calls.all.mockRejectedValueOnce(new Error('close failed'))
+    calls.byId.mockRejectedValueOnce(new Error('close failed'))
     await clickClose()
     expect(calls.notify).toHaveBeenCalledWith(expect.objectContaining({ content: 'close failed', type: 'alert-error' }))
   })
@@ -246,7 +253,7 @@ describe('close visible current active connections', () => {
   it('does not notify an obsolete session about a late failure', async () => {
     await mount([conn('a')])
     let reject!: (reason: unknown) => void
-    calls.all.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+    calls.byId.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
     await clickClose()
     calls.generation++
     reject(new Error('old session failure'))

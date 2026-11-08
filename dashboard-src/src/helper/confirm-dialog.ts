@@ -28,9 +28,26 @@ const showNextConfirmDialog = () => {
 
 export const confirmDialogState = readonly(activeConfirmDialog)
 
-export const showConfirmDialog = (options: ConfirmDialogOptions) =>
+export const showConfirmDialog = (options: ConfirmDialogOptions, signal?: AbortSignal) =>
   new Promise<ConfirmDialogResult>((resolve) => {
-    confirmDialogQueue.push({ ...options, resolve })
+    if (signal?.aborted) {
+      resolve({ confirmed: false, checked: false })
+      return
+    }
+    const finish = (result: ConfirmDialogResult) => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve(result)
+    }
+    const request = { ...options, resolve: finish }
+    const onAbort = () => {
+      const index = confirmDialogQueue.indexOf(request)
+      if (index >= 0) confirmDialogQueue.splice(index, 1)
+      if (activeConfirmDialog.value?.resolve === finish) activeConfirmDialog.value = undefined
+      finish({ confirmed: false, checked: false })
+      showNextConfirmDialog()
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    confirmDialogQueue.push(request)
     showNextConfirmDialog()
   })
 

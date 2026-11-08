@@ -79,30 +79,27 @@ internal sealed class ShutdownTaskTracker : IDisposable
         // them while holding the tracker lock. New operations are already sealed.
         _cancellation.Cancel();
 
-        while (true)
+        Task[] pending;
+        lock (_sync) pending = [.. _tasks.Where(task => !task.IsCompleted)];
+        if (pending.Length == 0) return true;
+
+        var remaining = unlimited ? Timeout.InfiniteTimeSpan : deadline - DateTime.UtcNow;
+        if (!unlimited && remaining <= TimeSpan.Zero) return false;
+
+        var batch = Task.WhenAll(pending);
+        try
         {
-            Task[] pending;
-            lock (_sync) pending = [.. _tasks.Where(task => !task.IsCompleted)];
-            if (pending.Length == 0) return true;
-
-            var remaining = unlimited ? Timeout.InfiniteTimeSpan : deadline - DateTime.UtcNow;
-            if (!unlimited && remaining <= TimeSpan.Zero) return false;
-
-            try
-            {
-                await Task.WhenAll(pending).WaitAsync(remaining).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                return false;
-            }
-            catch
-            {
-                // Observe the finished batch and loop until the registered set is empty.
-                foreach (var task in pending)
-                    if (task.IsCompleted) _ = task.Exception;
-            }
+            await batch.WaitAsync(remaining).ConfigureAwait(false);
         }
+        catch when (batch.IsCompleted)
+        {
+            // Faulted and cancelled tasks are also finished, including task timeouts.
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+        return true;
     }
 
     public void Dispose() => _cancellation.Dispose();

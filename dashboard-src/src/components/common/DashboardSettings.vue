@@ -210,13 +210,14 @@ import {
   autoImportSettings,
   autoSyncSettings,
   DEFAULT_SETTINGS_URL,
+  importSettingsFromFile as loadSettingsFile,
   importSettingsFromUrl,
   importSettingsUrl,
+  resetDashboardSettings,
   skipImportSettingsConfirm,
   skipSyncSettingsConfirm,
   syncSettingsFromCore,
 } from '@/helper/auto-import-settings'
-import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { LOCAL_IMAGE } from '@/helper/indexeddb'
 import { showNotification } from '@/helper/notification'
 import { captureBackendSession } from '@/helper/backendSession'
@@ -225,14 +226,8 @@ import {
   notifyRequestErrorForSession,
   runManualRequest,
 } from '@/helper/request-error'
-import { cancelBackgroundUpdates } from '@/helper/backgroundUpdates'
 import { useTooltip } from '@/helper/tooltip'
-import {
-  applyDashboardSettingsToStorage,
-  clearDashboardSettingsFromStorage,
-  exportSettings,
-  getDashboardSettingsFromStorage,
-} from '@/helper/utils'
+import { exportSettings, getDashboardSettingsFromStorage } from '@/helper/utils'
 import { customBackgroundURL } from '@/store/settings'
 import {
   ArrowDownCircleIcon,
@@ -269,33 +264,15 @@ const handlerClickResetSettings = async () => {
   if (!window.confirm(t('resetSettingsConfirm'))) return
   dashboardSettingsDialogShow.value = false
   try {
-    await cancelBackgroundUpdates()
-    clearDashboardSettingsFromStorage()
-    await saveDashboardSettingsToHost()
-    window.location.reload()
+    await resetDashboardSettings()
   } catch (error) {
     notifyRequestError(error)
   }
 }
 
 const handlerJsonUpload = () => {
-  showNotification({
-    content: 'importing',
-  })
   const file = inputRef.value?.files?.[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    void runManualRequest(async () => {
-      const { parseSettingsDocument } = await import('@/helper/utils')
-      const settings = parseSettingsDocument(JSON.parse(reader.result as string))
-      await cancelBackgroundUpdates()
-      applyDashboardSettingsToStorage(settings)
-      await saveDashboardSettingsToHost()
-      location.reload()
-    })
-  }
-  reader.readAsText(file)
+  if (file) void runManualRequest(() => loadSettingsFile(file))
 }
 
 const importSettingsFromFile = () => {

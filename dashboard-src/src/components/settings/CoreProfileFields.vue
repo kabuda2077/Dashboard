@@ -8,7 +8,8 @@
     <div class="flex gap-2">
       <input
         :id="`${idPrefix}-exe`"
-        v-model="draft.values.exePath"
+        :value="draft.values.exePath"
+        @input="emit('edit', 'exePath', ($event.target as HTMLInputElement).value)"
         class="input input-sm dashboard-input"
       />
       <button
@@ -36,7 +37,8 @@
     <div class="flex gap-2">
       <input
         :id="`${idPrefix}-config`"
-        v-model="draft.values.configPath"
+        :value="draft.values.configPath"
+        @input="emit('edit', 'configPath', ($event.target as HTMLInputElement).value)"
         class="input input-sm dashboard-input"
       />
       <button
@@ -64,7 +66,8 @@
     <div class="flex gap-2">
       <input
         :id="`${idPrefix}-api`"
-        v-model="draft.values.apiUrl"
+        :value="draft.values.apiUrl"
+        @input="emit('edit', 'apiUrl', ($event.target as HTMLInputElement).value)"
         class="input input-sm dashboard-input w-full"
       />
       <button
@@ -72,7 +75,7 @@
         class="btn btn-sm dashboard-action-btn"
         @click="$emit('retry')"
       >
-        {{ t('desktop.retry') }}
+        {{ t('desktop.connect') }}
       </button>
     </div>
   </div>
@@ -89,7 +92,8 @@
       >
         <input
           :id="`${idPrefix}-secret`"
-          v-model="draft.values.secret"
+          :value="draft.values.secret"
+          @input="emit('edit', 'secret', ($event.target as HTMLInputElement).value)"
           :type="secretVisible ? 'text' : 'password'"
           autocomplete="off"
           class="input input-sm dashboard-input w-full pr-9"
@@ -118,7 +122,8 @@
       class="core-secret-warning text-warning flex items-center gap-2 text-sm"
     >
       <input
-        v-model="draft.replaceSecret"
+        :checked="draft.replaceSecret"
+        @change="emit('replaceSecret', ($event.target as HTMLInputElement).checked)"
         type="checkbox"
         class="checkbox checkbox-sm"
       />{{ t('desktop.replaceSecret') }}
@@ -153,7 +158,13 @@ const concealOnLeave = (event: FocusEvent) => {
   )
     secretVisible.value = false
 }
-defineEmits<{ choose: [config: boolean]; location: [config: boolean]; retry: [] }>()
+const emit = defineEmits<{
+  choose: [config: boolean]
+  location: [config: boolean]
+  retry: []
+  edit: [field: keyof CoreDraft['values'], value: string]
+  replaceSecret: [value: boolean]
+}>()
 </script>
 
 <style scoped>

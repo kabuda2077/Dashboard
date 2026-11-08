@@ -34,6 +34,13 @@
             </button>
           </template>
         </SourceIPInput>
+        <p
+          v-if="getSourceIPLabelKeyError(newLabelForIP.key)"
+          class="text-error mt-1 text-xs"
+          role="alert"
+        >
+          {{ getSourceIPLabelKeyError(newLabelForIP.key) }}
+        </p>
       </div>
       <Draggable
         v-if="dialogVisible"
@@ -49,8 +56,7 @@
         <template #item="{ element: sourceIP }">
           <div class="border-base-content/10 rounded-box border p-2.5">
             <SourceIPInput
-              :model-value="sourceIP"
-              @update:model-value="handlerLabelUpdate"
+              v-model="labelDrafts[sourceIP.id]"
             >
               <template #prefix>
                 <ChevronUpDownIcon class="drag-handle h-4 w-4 shrink-0 cursor-grab" />
@@ -64,6 +70,13 @@
                 </button>
               </template>
             </SourceIPInput>
+            <p
+              v-if="getSourceIPLabelKeyError(labelDrafts[sourceIP.id]?.key ?? '')"
+              class="text-error mt-1 text-xs"
+              role="alert"
+            >
+              {{ getSourceIPLabelKeyError(labelDrafts[sourceIP.id]?.key ?? '') }}
+            </p>
           </div>
         </template>
       </Draggable>
@@ -74,6 +87,8 @@
 <script setup lang="ts">
 import SettingItem from '@/components/settings/SettingItem.vue'
 import { disableSwipe } from '@/composables/use-swipe-router'
+import { showNotification } from '@/helper/notification'
+import { getSourceIPLabelKeyError } from '@/helper/preferenceValues'
 import { sourceIPLabelList } from '@/store/settings'
 import type { SourceIPLabel } from '@/types'
 import {
@@ -127,8 +142,57 @@ const resetNewLabelForIP = () => {
   }
 }
 
+const reportedInvalidKeys = new Set<string>()
+const isValidKey = (key: string) => {
+  const error = getSourceIPLabelKeyError(key)
+  if (!error) return true
+  if (!reportedInvalidKeys.has(key)) {
+    reportedInvalidKeys.add(key)
+    showNotification({ content: error, type: 'alert-error' })
+  }
+  return false
+}
+
+// SourceIPInput edits nested properties, so give it detached drafts rather than
+// storage-backed objects. Invalid intermediate regexes stay editable locally.
+const labelDrafts = ref<Record<string, SourceIPLabel>>({})
+let savedLabels = new Map<string, string>()
+watch(
+  sourceIPLabelList,
+  (labels) => {
+    const nextSaved = new Map<string, string>()
+    for (const label of labels) {
+      const serialized = JSON.stringify(label)
+      nextSaved.set(label.id, serialized)
+      if (savedLabels.get(label.id) !== serialized) {
+        labelDrafts.value[label.id] = JSON.parse(serialized)
+      }
+    }
+    for (const id of Object.keys(labelDrafts.value)) {
+      if (!nextSaved.has(id)) delete labelDrafts.value[id]
+    }
+    savedLabels = nextSaved
+  },
+  { deep: true, immediate: true, flush: 'sync' },
+)
+watch(
+  labelDrafts,
+  (drafts) => {
+    for (const draft of Object.values(drafts)) {
+      if (JSON.stringify(draft) === savedLabels.get(draft.id) || !isValidKey(draft.key)) continue
+      const index = sourceIPLabelList.value.findIndex((item) => item.id === draft.id)
+      if (index !== -1) sourceIPLabelList.value[index] = JSON.parse(JSON.stringify(draft))
+    }
+  },
+  { deep: true },
+)
+
 const handlerLabelAdd = (keepDialogOpen = true) => {
-  if (!newLabelForIP.value.key || !newLabelForIP.value.label) {
+  if (
+    !newLabelForIP.value.key ||
+    !newLabelForIP.value.label ||
+    !isValidKey(newLabelForIP.value.key)
+  ) {
     return
   }
 
@@ -146,15 +210,6 @@ const handlerLabelRemove = (id: string) => {
     sourceIPLabelList.value.findIndex((item) => item.id === id),
     1,
   )
-}
-
-const handlerLabelUpdate = (sourceIP: Partial<SourceIPLabel>) => {
-  const index = sourceIPLabelList.value.findIndex((item) => item.id === sourceIP.id)
-
-  sourceIPLabelList.value[index] = {
-    ...sourceIPLabelList.value[index],
-    ...sourceIP,
-  }
 }
 
 watch(dialogVisible, (visible, wasVisible) => {

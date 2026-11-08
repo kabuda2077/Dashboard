@@ -111,6 +111,34 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
         Assert.Empty(Directory.GetFiles(cache.CacheDirectory, "*.tmp"));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActiveIconSurvivesNewerInactiveFilesWithinBothLimits(bool bytePressure)
+    {
+        using var client = new HttpClient(new Handler(_ => new ByteArrayContent([1, 2, 3])));
+        var cache = Cache(client);
+        await cache.RefreshAsync(Config("active", "https://example.test/active.png"));
+        var dashboard = new Uri("http://127.0.0.1/");
+        var published = Assert.Single(cache.GetDashboardMap(dashboard));
+        var activeFile = Assert.Single(Directory.GetFiles(cache.CacheDirectory));
+        File.SetLastWriteTimeUtc(activeFile, DateTime.UtcNow.AddDays(-31));
+        var inactiveCount = bytePressure ? 32 : ProxyGroupIconCache.MaxCacheFiles;
+        for (var index = 0; index < inactiveCount; index++)
+        {
+            using var file = File.Create(Path.Combine(cache.CacheDirectory, $"inactive-{index}.png"));
+            file.SetLength(bytePressure ? 2 * 1024 * 1024 : 1);
+        }
+
+        Assert.False(cache.PruneCache());
+
+        Assert.True(File.Exists(activeFile));
+        Assert.Equal(published, Assert.Single(cache.GetDashboardMap(dashboard)));
+        var retained = new DirectoryInfo(cache.CacheDirectory).GetFiles();
+        Assert.Equal(bytePressure ? 32 : ProxyGroupIconCache.MaxCacheFiles, retained.Length);
+        Assert.True(retained.Sum(file => file.Length) <= ProxyGroupIconCache.MaxCacheBytes);
+    }
+
     [Fact]
     public void TotalByteLimitIsIndependentOfTheFileCountLimit()
     {

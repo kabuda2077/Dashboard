@@ -6,14 +6,18 @@
     <div
       :id="itemId(SETTINGS_MENU_KEY.backend)"
       :data-key="SETTINGS_MENU_KEY.backend"
-      class="mx-auto mb-4 w-full max-w-7xl md:mb-6"
+      class="mb-4 w-full md:mb-6"
+      :class="!embedded && 'mx-auto max-w-7xl'"
     >
       <BackendSettings :embedded="embedded" />
     </div>
 
-    <div class="mx-auto w-full max-w-7xl px-2">
+    <div
+      class="w-full"
+      :class="!embedded && 'mx-auto max-w-7xl px-2'"
+    >
       <button
-        class="hover:text-primary mt-1 mb-3 flex items-center gap-2 px-1 text-lg leading-7 font-semibold transition-colors focus:outline-none"
+        class="hover:text-primary focus-visible:ring-primary/35 mt-1 mb-3 flex items-center gap-2 px-1 text-lg leading-7 font-semibold transition-colors focus:outline-none focus-visible:ring-2"
         data-testid="settings-toggle"
         :aria-expanded="settingsExpanded"
         type="button"
@@ -40,20 +44,21 @@
       <div>
         <template v-if="twoColumnsAvailable">
           <div
-            class="grid w-full grid-cols-2 gap-8"
-            :class="embedded ? '' : 'mx-auto max-w-7xl p-3'"
+            class="grid w-full grid-cols-2"
+            :class="embedded ? 'gap-3' : 'mx-auto max-w-7xl gap-8 p-3'"
           >
             <div
               v-for="col in [0, 1]"
               :key="col"
-              class="flex flex-col gap-3"
+              class="flex min-w-0 flex-col gap-3"
             >
               <div
                 v-for="item in menuItems.filter((_, i) => columnAssignment[i] === col)"
                 :id="itemId(item.key)"
                 :key="item.key"
                 :data-key="item.key"
-                class="mb-4 rounded-lg p-2 md:mb-6"
+                class="mb-4 min-w-0 md:mb-6"
+                :class="!embedded && 'rounded-lg p-2'"
               >
                 <div
                   v-if="item.key !== SETTINGS_MENU_KEY.general && item.key !== ABOUT_DASHBOARD_KEY"
@@ -68,8 +73,8 @@
         </template>
         <div
           v-else
-          class="mx-auto w-full max-w-3xl space-y-1 md:space-y-2"
-          :class="embedded ? '' : 'p-3 md:px-8 md:py-6'"
+          class="w-full space-y-1 md:space-y-2"
+          :class="!embedded && 'mx-auto max-w-3xl p-3 md:px-8 md:py-6'"
         >
           <div
             v-for="item in menuItems"

@@ -810,11 +810,14 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
                 {
                     await Until(async () => await Script("!!document.querySelector('#app')") == "true");
                     await Script("location.hash='#/overview'; true");
+                    await Until(async () => await Script("document.querySelectorAll('.network-card [role=tab]').length === 2") == "true");
+                    await Script("document.querySelectorAll('.network-card [role=tab]')[1].click(); true");
                     await Until(async () => await Script("document.querySelectorAll('[data-routing-target]').length === 8") == "true");
-                    await Until(async () => await Script("!document.querySelector('[data-routing-target]').closest('section').querySelector('button').disabled") == "true");
-                    await Script("document.querySelector('[data-routing-target]').closest('section').querySelector('button').click(); true");
+                    const string runRoutingButton = "document.querySelector('.network-card-tests > .network-panel-header > button')";
+                    await Until(async () => await Script("!" + runRoutingButton + ".disabled") == "true");
+                    await Script(runRoutingButton + ".click(); true");
                     await Until(async () => await Script("Array.from(document.querySelectorAll('[data-routing-target]')).every(el => el.innerText.includes('observed-leaf'))") == "true");
-                    Assert.Equal("true", await Script("!document.querySelector('[data-routing-target]').closest('section').querySelector('button').disabled"));
+                    Assert.Equal("true", await Script("!" + runRoutingButton + ".disabled"));
                     origin.Hold = true;
                     var count = origin.Requests.Count;
                     await Send("webview-routing-cancelled");

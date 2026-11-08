@@ -248,7 +248,11 @@ it.each(['unauthorized', 'http'] as const)(
 it.each([200, 401, 403, 500])(
   'classifies Clash-compatible browser probe HTTP %s',
   async (status) => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: status === 200, status })
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(
+        async () => new Response(JSON.stringify({ version: 'v1.19.33' }), { status }),
+      )
     vi.stubGlobal('fetch', fetchMock)
     const backend = {
       protocol: 'http',
@@ -276,6 +280,71 @@ it.each([200, 401, 403, 500])(
     )
   },
 )
+
+it.each(['<html>Dashboard</html>', '{}', '{"version":""}', '{"version":123}'])(
+  'rejects an HTTP-successful non-Clash response: %s',
+  async (body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)))
+    expect(
+      await probeClashChannel(
+        { protocol: 'http', host: 'example.com', port: '9090' } as Backend,
+        10000,
+      ),
+    ).toEqual({ ok: false, kind: 'http', message: 'Invalid Clash API version response' })
+  },
+)
+
+it.each(['cancel', 'timeout'] as const)(
+  'handles %s while reading the version body',
+  async (kind) => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, options) => ({
+        ok: true,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            )
+          }),
+      })),
+    )
+    const pending = probeClashChannel(
+      { protocol: 'http', host: 'example.com', port: '9090' } as Backend,
+      10,
+      controller.signal,
+    )
+    if (kind === 'cancel') {
+      const assertion = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+      await Promise.resolve()
+      controller.abort()
+      await assertion
+    } else {
+      await vi.advanceTimersByTimeAsync(10)
+      expect(await pending).toEqual({ ok: false, kind: 'timeout' })
+    }
+    expect(vi.getTimerCount()).toBe(0)
+  },
+)
+
+it('classifies a response body transport failure as a network failure', async () => {
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError('terminated'))
+      },
+    }),
+  )
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
+  expect(
+    await probeClashChannel(
+      { protocol: 'http', host: 'example.com', port: '9090' } as Backend,
+      10000,
+    ),
+  ).toEqual({ ok: false, kind: 'network' })
+})
 
 it('keeps network and timeout failures separate from bad credentials', async () => {
   const backend = {

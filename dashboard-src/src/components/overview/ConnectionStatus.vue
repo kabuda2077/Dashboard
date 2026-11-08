@@ -1,6 +1,9 @@
 <template>
   <section class="network-test-page">
-    <div class="flex items-center justify-between">
+    <div
+      v-if="!hideHeader"
+      class="flex items-center justify-between"
+    >
       <div
         class="text-base-content/60 text-xs font-semibold tracking-wider uppercase"
         :title="$t('networkLatencyHelp')"
@@ -8,7 +11,7 @@
         {{ $t('latency') }}
       </div>
       <button
-        class="btn btn-ghost btn-xs btn-circle"
+        class="network-icon-button"
         type="button"
         :disabled="targets.every((target) => target.checking.value) || !backendSessionReady"
         :aria-label="$t('networkTestLatency')"
@@ -21,45 +24,42 @@
       </button>
     </div>
     <div class="network-test-grid network-latency-grid">
-      <div
+      <button
         v-for="target in targets"
         :key="target.id"
-        class="flex min-w-0 flex-col justify-center gap-2"
         :data-network-target="target.id"
+        type="button"
+        class="network-bento-tile"
+        :disabled="target.checking.value || !backendSessionReady"
+        :aria-label="$t('networkTestTarget', { name: $t(`networkTarget_${target.id}`) })"
+        :aria-busy="target.checking.value"
+        @click="getLatency([target.id])"
       >
-        <button
-          type="button"
-          class="network-target-button"
-          :disabled="target.checking.value || !backendSessionReady"
-          :aria-label="$t('networkTestTarget', { name: $t(`networkTarget_${target.id}`) })"
-          :aria-busy="target.checking.value"
-          @click="getLatency([target.id])"
-        >
-          <div class="flex min-w-0 items-center gap-2">
+        <div class="network-tile-top">
+          <div class="network-tile-title-wrap">
             <span
-              class="min-w-0 truncate text-sm font-medium"
+              class="network-tile-dot"
+              :class="dotColor(target.ref.value)"
+            />
+            <span
+              class="network-tile-name"
               :title="target.url"
             >
               {{ $t(`networkTarget_${target.id}`) }}
             </span>
-            <span
-              v-if="target.checking.value"
-              class="loading loading-spinner h-3 w-3 shrink-0"
-              aria-hidden="true"
-            />
-            <span class="text-base-content/45 shrink-0 text-[10px]">
-              {{ $t(target.region === 'domestic' ? 'networkDomestic' : 'networkInternational') }}
-            </span>
           </div>
-          <div class="flex min-w-0 items-center gap-2">
-            <LatencyChart
-              :data="target.ref.value"
-              :rounds="ROUNDS"
-              :name="target.name"
-            />
-          </div>
-        </button>
-      </div>
+          <span class="network-tile-badge">
+            {{ $t(target.region === 'domestic' ? 'networkDomestic' : 'networkInternational') }}
+          </span>
+        </div>
+        <LatencyChart
+          :data="target.ref.value"
+          :progress="target.progress.value"
+          :attempt="target.attempt.value"
+          :rounds="ROUNDS"
+          :name="target.name"
+        />
+      </button>
     </div>
   </section>
 </template>
@@ -76,7 +76,25 @@ import { useNetworkDiagnosticsPage } from '@/helper/networkDiagnostics'
 import { BoltIcon } from '@heroicons/vue/24/outline'
 import { toRef } from 'vue'
 import LatencyChart from './LatencyChart.vue'
+import { getColorForLatency } from '@/helper'
 
-const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ active?: boolean; hideHeader?: boolean }>(), {
+  active: true,
+  hideHeader: false,
+})
 useNetworkDiagnosticsPage('latency', toRef(props, 'active'))
+
+const median = (samples: number[]) => {
+  const successes = samples.filter((v) => v > 0)
+  if (!successes.length) return 0
+  const sorted = [...successes].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return Math.round(sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2)
+}
+const dotColor = (samples: number[]) => {
+  const m = median(samples)
+  if (m <= 0) return 'bg-base-content/20'
+  const color = getColorForLatency(m)
+  return color.replace('text-', 'bg-')
+}
 </script>

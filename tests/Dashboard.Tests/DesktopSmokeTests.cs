@@ -22,11 +22,18 @@ public sealed class DesktopSmokeTests : TemporaryDirectoryTest
         {
             ["config/language"] = language, ["config/default-theme"] = theme, ["config/auto-theme"] = "false"
         });
+        var manualCore = Path.Combine(root, "manual-core.exe");
+        var manualConfig = Path.Combine(root, "manual-config.yaml");
+        await File.WriteAllTextAsync(manualCore, "Version-reader fixture; never executed.");
+        await File.WriteAllTextAsync(manualConfig, "external-controller: 127.0.0.1:19191\n");
+        await initial.UpdateProfileAsync(CoreKind.Mihomo, 0, new() { ExePath = manualCore, ConfigPath = manualConfig, ApiUrl = "http://127.0.0.1:9090" });
         await initial.CompleteSetupAsync();
+        var versionOutput = "Mihomo Meta TanakaLun-Alpha-9fc52a02 windows amd64";
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
-            using var host = new DashboardHost(root, Path.Combine(repository.FullName, "resources", "dashboard"), ephemeralPort: true, () => false);
+            using var host = new DashboardHost(root, Path.Combine(repository.FullName, "resources", "dashboard"), ephemeralPort: true, () => false,
+                readCoreVersion: (_, _, _) => Task.FromResult(versionOutput));
             var contentUpdate = WebViewDataMaintenance.PlanForCurrentContent(root, dashboardDirectory: Path.Combine(repository.FullName, "resources", "dashboard"));
             using var form = new MainForm(host, contentUpdate);
             form.Size = new System.Drawing.Size(width, height);
@@ -63,6 +70,17 @@ public sealed class DesktopSmokeTests : TemporaryDirectoryTest
                     Assert.DoesNotContain(language == "en-US" ? "Stopped" : "未运行", await Script("document.querySelector('.core-status-box').textContent"));
                     Assert.Contains(language == "en-US" ? "Core logs" : "内核日志", await Script("document.body.textContent"));
                     Assert.Contains(language == "en-US" ? "Current downloads" : "当前下载", await Script("document.body.textContent"));
+                    await Until(async () => await Script("!!document.querySelector('[data-testid=core-release-page]:not(:disabled)')") == "true");
+                    Assert.Equal("https://github.com/TanakaLun/mihomo/releases", JsonSerializer.Deserialize<string>(await Script("document.querySelector('.dashboard-section-title a').href")));
+                    Assert.Contains(language == "en-US" ? "Manual update" : "手动更新", await Script("document.querySelector('[data-testid=core-release-page]').title"));
+                    Assert.Equal("true", await Script("document.querySelector('.dashboard-section-title a').title===document.querySelector('[data-testid=core-release-page]').title"));
+                    versionOutput = "Mihomo Meta custom-core windows amd64";
+                    await host.RefreshMetadataAsync(force: true);
+                    await Until(async () => await Script("!!document.querySelector('[data-testid=core-release-page]:disabled')") == "true");
+                    Assert.Equal("true", await Script("(() => { const link=document.querySelector('.dashboard-section-title a');link.focus();return document.activeElement===link && !link.hasAttribute('href') && link.getAttribute('aria-disabled')==='true' && !!document.getElementById(link.getAttribute('aria-describedby')).textContent; })()"));
+                    versionOutput = "Mihomo Meta TanakaLun-Alpha-9fc52a02 windows amd64";
+                    await host.RefreshMetadataAsync(force: true);
+                    await Until(async () => await Script("!!document.querySelector('[data-testid=core-release-page]:not(:disabled)')") == "true");
                     await Script("const input = document.querySelector('#core-api'); input.value = 'http://127.0.0.1:19191'; input.dispatchEvent(new Event('input', {bubbles:true})); true");
                     await Until(async () => await Script("!!document.querySelector('[data-testid=discard-core-profile]')") == "true");
                     Assert.False(await form.FlushPreferencesAsync());
@@ -102,6 +120,62 @@ public sealed class DesktopSmokeTests : TemporaryDirectoryTest
                     Directory.CreateDirectory(screenshots);
                     await using (var image = File.Create(Path.Combine(screenshots, $"{language}-{theme}-{width}.png")))
                         await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+
+                    await Script("document.querySelector('[data-testid=settings-toggle]').click(); true");
+                    await Until(async () => await Script("!!document.querySelector('#core-settings-about-dashboard')") == "true");
+                    await Script("document.querySelector('[data-testid=settings-toggle]').scrollIntoView({block:'center'}); true");
+                    await Task.Delay(300);
+                    await using (var image = File.Create(Path.Combine(screenshots, $"settings-{language}-{theme}-{width}.png")))
+                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+
+                    // Emulate focus for this off-screen test window without activating a user window.
+                    await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
+                    // Real keyboard input establishes :focus-visible; programmatic focus alone does not.
+                    async Task Key(string key, string code, int virtualKey)
+                    {
+                        foreach (var type in new[] { "keyDown", "keyUp" })
+                            await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent",
+                                JsonSerializer.Serialize(new { type, key, code, windowsVirtualKeyCode = virtualKey,
+                                    text = type == "keyDown" && key == "Enter" ? "\r" : "" }));
+                    }
+                    await Key("Tab", "Tab", 9);
+                    await Script("document.querySelector('[data-testid=settings-toggle]').focus({preventScroll:true}); true");
+                    await using (var image = File.Create(Path.Combine(screenshots, $"settings-focus-{language}-{theme}-{width}.png")))
+                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                    Assert.Equal("true", await Script("(() => { const button=document.querySelector('[data-testid=settings-toggle]'),style=getComputedStyle(button); return button.matches(':focus-visible') && (style.boxShadow!=='none' || (style.outlineStyle!=='none' && parseFloat(style.outlineWidth)>0)); })()"));
+                    Assert.Equal("status", JsonSerializer.Deserialize<string>(await Script("document.querySelector('#core-settings-about-dashboard [aria-live]').getAttribute('role')")));
+                    await Key("Enter", "Enter", 13);
+                    await Until(async () => await Script("document.querySelector('[data-testid=settings-toggle]').getAttribute('aria-expanded')==='false'") == "true");
+                    Assert.Equal("true", await Script("document.activeElement===document.querySelector('[data-testid=settings-toggle]')"));
+
+                    await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia", "{\"features\":[{\"name\":\"prefers-reduced-motion\",\"value\":\"no-preference\"}]}");
+                    foreach (var collapsed in new[] { true, false })
+                    {
+                        await Script($$"""
+                            (() => { for (const [key,value] of Object.entries({'config/split-overview-page':'true','config/is-sidebar-collapsed':'{{collapsed.ToString().ToLowerInvariant()}}'})) {
+                              const oldValue=localStorage.getItem(key);localStorage.setItem(key,value);
+                              window.dispatchEvent(new StorageEvent('storage',{key,oldValue,newValue:value,storageArea:localStorage}));
+                            } return true; })()
+                            """);
+                        await Until(async () => await Script("!!document.querySelector('[data-sidebar-route=overview] .motion-tiles')") == "true");
+                        await Script("document.querySelector('[data-sidebar-route=core] > a').focus(); true");
+                        await Key("Enter", "Enter", 13);
+                        await Until(async () => await Script("getComputedStyle(document.querySelector('[data-sidebar-route=core] svg')).animationName.startsWith('nav-pop-')") == "true");
+                        await Until(async () => await Script("!document.querySelector('[data-sidebar-route=core] .is-playing')") == "true");
+                        await Script("document.querySelector('[data-sidebar-route=core] > a').click(); true");
+                        await Until(async () => await Script("!!document.querySelector('[data-sidebar-route=core] .is-playing')") == "true");
+                        await Until(async () => await Script("!document.querySelector('[data-sidebar-route=core] .is-playing')") == "true");
+                        await using var image = File.Create(Path.Combine(screenshots, $"navigation-{language}-{theme}-{collapsed}.png"));
+                        await View()!.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                    }
+                    await Script("document.querySelector('[data-sidebar-route=core] > a').click(); true");
+                    await Until(async () => await Script("getComputedStyle(document.querySelector('[data-sidebar-route=core] svg')).animationName.startsWith('nav-pop-')") == "true");
+                    await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia", "{\"features\":[{\"name\":\"prefers-reduced-motion\",\"value\":\"reduce\"}]}");
+                    await Until(async () => await Script("!document.querySelector('[data-sidebar-route=core] .is-playing')") == "true");
+                    await Script("document.querySelector('[data-sidebar-route=core] > a').click(); true");
+                    Assert.Equal("true", await Script("(() => { const icon=document.querySelector('[data-sidebar-route=core] svg');return !icon.classList.contains('is-playing') && getComputedStyle(icon).animationName==='none'; })()"));
+                    await View()!.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia", "{\"features\":[{\"name\":\"prefers-reduced-motion\",\"value\":\"no-preference\"}]}");
+                    Assert.Equal("true", await Script("getComputedStyle(document.querySelector('[data-sidebar-route=core] svg')).animationName==='none'"));
                     await host.ShutdownAsync();
                     await TestBrowser.DisposeAsync(form);
                     completion.TrySetResult();

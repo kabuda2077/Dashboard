@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
+using System.Text;
 using Dashboard;
 
 namespace Dashboard.Tests;
@@ -38,6 +40,59 @@ public sealed class MihomoApiUpdaterTests
         Assert.Equal("http://127.0.0.1:9090/upgrade", capturedRequest.RequestUri?.AbsoluteUri);
         Assert.Equal("Bearer", capturedRequest.Headers.Authorization?.Scheme);
         Assert.Equal("dashboard-secret", capturedRequest.Headers.Authorization?.Parameter);
+    }
+
+    [Fact]
+    public async Task DoesNotFollowUpgradeRedirectToSuccessfulLoginPage()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var origin = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}";
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var serve = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    using var socket = await listener.AcceptTcpClientAsync(stop.Token);
+                    using var stream = socket.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, leaveOpen: true);
+                    var request = await reader.ReadLineAsync(stop.Token);
+                    requests.Enqueue(request!);
+                    while (!string.IsNullOrEmpty(await reader.ReadLineAsync(stop.Token))) { }
+                    var response = request!.Contains("/upgrade ", StringComparison.Ordinal)
+                        ? "HTTP/1.1 302 Found\r\nLocation: /login\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        : "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\nConnection: close\r\n\r\nlogin";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(response), stop.Token);
+                }
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+            catch (SocketException) when (stop.IsCancellationRequested) { }
+        });
+        try
+        {
+            var error = await Assert.ThrowsAsync<MihomoApiUpgradeException>(() =>
+                MihomoApiUpdater.UpgradeAsync(origin, "", Environment.ProcessId, stop.Token));
+            Assert.Contains("HTTP 302", error.Message);
+            Assert.Equal("POST /upgrade HTTP/1.1", Assert.Single(requests));
+        }
+        finally
+        {
+            stop.Cancel();
+            listener.Stop();
+            await serve;
+        }
+    }
+
+    [Fact]
+    public async Task RejectsAnExternalConnectionBeforeSendingTheUpgradeRequest()
+    {
+        await using var api = new SyntheticClashApi();
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => MihomoApiUpdater.UpgradeAsync(api.Origin, "", 0));
+        Assert.IsType<CoreApiOwnershipException>(error.InnerException);
+        Assert.False(api.Requests.ContainsKey("/upgrade"));
     }
 
     [Fact]
@@ -91,7 +146,8 @@ public sealed class MihomoApiUpdaterTests
         });
         using var observed = Process.GetCurrentProcess();
         using var process = new CoreProcessManager(_ => { }, (_, _) => false);
-        using var lifecycle = new CoreLifecycleController(store, process, () => true);
+        using var lifecycle = new CoreLifecycleController(store, process, () => true,
+            readCoreVersion: (_, _, _) => Task.FromResult("Mihomo Meta v1.19.29 windows amd64"));
         var ownedProcess = typeof(CoreProcessManager).GetField("_process", BindingFlags.Instance | BindingFlags.NonPublic)!;
         ownedProcess.SetValue(process, observed);
         try

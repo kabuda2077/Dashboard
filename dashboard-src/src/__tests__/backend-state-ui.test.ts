@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createApp, nextTick, type App } from 'vue'
+import { createApp, h, nextTick, type App } from 'vue'
 import { startMockHost } from './hostFixture'
 const { get, patch } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }))
 vi.mock('@/api/clash', () => ({
   getConfigsAPI: get,
   patchConfigsAPI: patch,
+  disconnectClashByIdAPI: vi.fn(),
+  disconnectAllClashAPI: vi.fn(),
   flushDNSCacheAPI: vi.fn(),
   flushFakeIPAPI: vi.fn(),
   reloadConfigsAPI: vi.fn(),
@@ -21,6 +23,18 @@ vi.mock('@/components/common/BackendVersion.vue', () => ({ default: { render: ()
 vi.mock('@/components/settings/backend/TopDownloadConnections.vue', () => ({
   default: { render: () => null },
 }))
+vi.mock('@/components/settings/general/AboutDashboardSettings.vue', () => ({
+  default: { render: () => null },
+}))
+vi.mock('@/components/settings/general/ZashboardSettings.vue', () => ({
+  default: { render: () => null },
+}))
+vi.mock('@/components/settings/overview/OverviewSettings.vue', () => ({
+  default: { render: () => null },
+}))
+vi.mock('@/components/settings/proxies/ProxiesSettings.vue', () => ({
+  default: { render: () => null },
+}))
 let app: App | undefined
 let root: HTMLDivElement
 beforeEach(() => {
@@ -35,7 +49,7 @@ afterEach(() => {
   window.dispatchEvent(new Event('pagehide'))
   Reflect.deleteProperty(window, 'chrome')
 })
-const mount = async (hostPatch = {}) => {
+const mount = async (hostPatch = {}, content: 'backend' | 'stack' | 'settings' = 'backend') => {
   const host = await startMockHost(hostPatch)
   const state = await import('@/assembly/config')
   const { useBackendRuntimeConfig } = await import('@/composables/useBackendRuntimeConfig')
@@ -46,7 +60,18 @@ const mount = async (hostPatch = {}) => {
   root = document.createElement('div')
   root.id = 'app-content'
   document.body.append(root)
-  app = createApp(Component)
+  if (content === 'settings') {
+    const { default: SettingsContent } = await import('@/components/settings/SettingsContent.vue')
+    app = createApp(SettingsContent)
+  } else if (content === 'stack') {
+    const { default: ConnectionsSettings } =
+      await import('@/components/settings/connections/ConnectionsSettings.vue')
+    app = createApp({
+      render: () => h('div', [h(Component), h(ConnectionsSettings)]),
+    })
+  } else {
+    app = createApp(Component)
+  }
   app.use(i18n)
   app.mount(root)
   const load = async (data: unknown) => {
@@ -133,7 +158,9 @@ it.each([false, true])(
     expect(toggle('TUN mode')?.disabled).toBe(true)
     expect(root.textContent).not.toContain('Read-only · core configuration file')
     expect(toggle('TUN mode')?.parentElement?.title).toBe('Read-only · core configuration file')
-    expect(toggle('TUN mode')?.getAttribute('aria-description')).toBe('Read-only · core configuration file')
+    expect(toggle('TUN mode')?.getAttribute('aria-description')).toBe(
+      'Read-only · core configuration file',
+    )
     expect(toggle('Allow LAN')).toBeNull()
     expect(root.querySelector('.loading-spinner')).toBeNull()
     await view.updateTunEnabled(!enabled)
@@ -176,86 +203,148 @@ it.each(['unauthorized', 'unreachable', 'transport-401'] as const)(
   },
 )
 
-const stackSelect = () => root.querySelector<HTMLButtonElement>('[role=combobox][aria-label="TUN stack"]')
+const stackSelect = () =>
+  root.querySelector<HTMLButtonElement>('[role=combobox][aria-label="TUN stack"]')
 const chooseStack = async (label: string) => {
   stackSelect()!.click()
   await nextTick()
-  const option = [...root.querySelectorAll<HTMLElement>('[role=option]')].find((item) => item.textContent?.trim() === label)
+  const option = [...root.querySelectorAll<HTMLElement>('[role=option]')].find(
+    (item) => item.textContent?.trim() === label,
+  )
   expect(option).toBeDefined()
   option!.click()
   await nextTick()
 }
 
+it('keeps TUN settings in the folded connections section, after ports and available without them', async () => {
+  const { load } = await mount({}, 'settings')
+  await load({ tun: { enable: true, stack: 'System' }, 'mixed-port': 7890 })
+  const backend = root.querySelector('[data-key="backendSettings"]')!
+  expect(backend.querySelector('[aria-label="TUN stack"]')).toBeNull()
+  expect(stackSelect()).toBeNull()
+  expect(root.textContent).not.toContain('TUN settings')
+  const expand = root.querySelector<HTMLButtonElement>('[data-testid="settings-toggle"]')!
+  expect(expand.getAttribute('aria-expanded')).toBe('false')
+  expand.click()
+  await nextTick()
+  const connections = root.querySelector('[data-key="connectionSettings"]')!
+  const headings = [...connections.querySelectorAll('.settings-section-label')]
+  const tunHeading = headings.find((heading) => heading.textContent?.trim() === 'TUN settings')
+  expect(tunHeading).toBeDefined()
+  const port = connections.querySelector('#port-mixed-port')!
+  expect(port).not.toBeNull()
+  expect(port.compareDocumentPosition(tunHeading!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(
+    tunHeading!.compareDocumentPosition(stackSelect()!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+  expect(connections.contains(stackSelect())).toBe(true)
+  await load({ tun: { enable: true, stack: 'System' } })
+  expect(connections.querySelector('#port-mixed-port')).toBeNull()
+  expect(connections.textContent).toContain('TUN settings')
+  expect(stackSelect()?.textContent?.trim()).toBe('system')
+  expand.click()
+  await nextTick()
+  expect(stackSelect()).toBeNull()
+  expect(root.textContent).not.toContain('TUN settings')
+})
+
 it('shows normalized confirmed stacks and all three supported choices', async () => {
-  const { load } = await mount()
+  const { load } = await mount({}, 'stack')
   expect(stackSelect()).toBeNull()
   await load({ tun: { enable: true, stack: 'gVisor' } })
   expect(stackSelect()?.textContent?.trim()).toBe('gvisor')
   stackSelect()!.click()
   await nextTick()
-  expect([...root.querySelectorAll('[role=option]')].map((item) => item.textContent?.trim())).toEqual(['system', 'gvisor', 'mixed'])
-  expect(root.querySelector('[role=option][aria-selected=true]')?.textContent?.trim()).toBe('gvisor')
+  expect(
+    [...root.querySelectorAll('[role=option]')].map((item) => item.textContent?.trim()),
+  ).toEqual(['system', 'gvisor', 'mixed'])
+  expect(root.querySelector('[role=option][aria-selected=true]')?.textContent?.trim()).toBe(
+    'gvisor',
+  )
 })
 
 it('keeps an unknown stack selected and does not write when simply opening the menu', async () => {
-  const { load } = await mount()
+  const { load } = await mount({}, 'stack')
   await load({ tun: { enable: false, stack: 'FutureStack' } })
   expect(stackSelect()?.textContent?.trim()).toBe('FutureStack')
   stackSelect()!.click()
   await nextTick()
-  expect(root.querySelector('[role=option][aria-selected=true]')?.textContent?.trim()).toBe('FutureStack')
-  expect(root.querySelector('[role=option][aria-selected=true]')?.getAttribute('aria-disabled')).toBe('true')
+  expect(root.querySelector('[role=option][aria-selected=true]')?.textContent?.trim()).toBe(
+    'FutureStack',
+  )
+  expect(
+    root.querySelector('[role=option][aria-selected=true]')?.getAttribute('aria-disabled'),
+  ).toBe('true')
   expect(patch).not.toHaveBeenCalled()
 })
 
-it('keeps the stack and TUN switch disabled until GET confirms the change', async () => {
-  const { load } = await mount()
-  await load({ tun: { enable: true, stack: 'System' } })
-  let finishPatch!: () => void
-  let finishGet!: (value: unknown) => void
-  patch.mockImplementationOnce(() => new Promise<void>((resolve) => { finishPatch = resolve }))
-  get.mockImplementationOnce(() => new Promise((resolve) => { finishGet = resolve }))
-  await chooseStack('mixed')
-  expect(patch).toHaveBeenCalledWith({ tun: { enable: true, stack: 'mixed' } })
-  expect(stackSelect()?.disabled).toBe(true)
-  expect(stackSelect()?.getAttribute('aria-busy')).toBe('true')
-  expect(root.textContent).not.toContain('Read-only')
-  expect(stackSelect()?.textContent?.trim()).toBe('system')
-  expect(toggle('TUN mode')?.disabled).toBe(true)
-  finishPatch()
-  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
-  expect(stackSelect()?.disabled).toBe(true)
-  finishGet({ data: { tun: { enable: true, stack: 'Mixed' } } })
-  await vi.waitFor(() => expect(stackSelect()?.disabled).toBe(false))
-  expect(stackSelect()?.textContent?.trim()).toBe('mixed')
-  expect(toggle('TUN mode')?.checked).toBe(true)
-})
+it.each([false, true])(
+  'keeps the stack and TUN switch disabled until GET confirms the change, preserving enable=%s',
+  async (enabled) => {
+    const { load } = await mount({}, 'stack')
+    await load({ tun: { enable: enabled, stack: 'System' } })
+    let finishPatch!: () => void
+    let finishGet!: (value: unknown) => void
+    patch.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPatch = resolve
+        }),
+    )
+    get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishGet = resolve
+        }),
+    )
+    await chooseStack('mixed')
+    expect(patch).toHaveBeenCalledWith({ tun: { enable: enabled, stack: 'mixed' } })
+    expect(stackSelect()?.disabled).toBe(true)
+    expect(stackSelect()?.getAttribute('aria-busy')).toBe('true')
+    expect(root.textContent).not.toContain('Read-only')
+    expect(stackSelect()?.textContent?.trim()).toBe('system')
+    expect(toggle('TUN mode')?.disabled).toBe(true)
+    finishPatch()
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+    expect(stackSelect()?.disabled).toBe(true)
+    finishGet({ data: { tun: { enable: enabled, stack: 'Mixed' } } })
+    await vi.waitFor(() => expect(stackSelect()?.disabled).toBe(false))
+    expect(stackSelect()?.textContent?.trim()).toBe('mixed')
+    expect(toggle('TUN mode')?.checked).toBe(enabled)
+  },
+)
 
 it('shows the confirmed stack after rejection and warns when PATCH succeeds without a confirmed rebuild', async () => {
   const notification = await import('@/helper/notification')
   const notify = vi.spyOn(notification, 'showNotification').mockImplementation(() => {})
   try {
-    const { load } = await mount()
+    const { load } = await mount({}, 'stack')
     await load({ tun: { enable: true, stack: 'System' } })
     patch.mockRejectedValueOnce(new Error('Write rejected'))
     await chooseStack('mixed')
     await vi.waitFor(() => expect(stackSelect()?.disabled).toBe(false))
     expect(stackSelect()?.textContent?.trim()).toBe('system')
-    expect(notify.mock.calls.at(-1)?.[0]).toMatchObject({ content: 'Write rejected', type: 'alert-error' })
+    expect(notify.mock.calls.at(-1)?.[0]).toMatchObject({
+      content: 'Write rejected',
+      type: 'alert-error',
+    })
     patch.mockResolvedValueOnce({})
     get.mockResolvedValueOnce({ data: { tun: { enable: false, stack: 'Mixed' } } })
     await chooseStack('mixed')
     await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(2))
     expect(toggle('TUN mode')?.checked).toBe(false)
     expect(stackSelect()?.textContent?.trim()).toBe('mixed')
-    expect(notify.mock.calls.at(-1)?.[0]).toMatchObject({ content: 'The TUN stack change was not confirmed. Check the current state and core logs.', type: 'alert-error' })
+    expect(notify.mock.calls.at(-1)?.[0]).toMatchObject({
+      content: 'The TUN stack change was not confirmed. Check the current state and core logs.',
+      type: 'alert-error',
+    })
   } finally {
     notify.mockRestore()
   }
 })
 
 it('keeps missing or failed API stack capability unavailable in the real settings consumer', async () => {
-  const { load, state } = await mount()
+  const { load, state } = await mount({}, 'stack')
   await load({ tun: { enable: true } })
   expect(stackSelect()).toBeNull()
   await load({ tun: { enable: true, stack: 'System' } })
@@ -272,21 +361,24 @@ it.each([
   ['zh-CN', '切换协议栈会重建 TUN，可能中断连接。'],
   ['zh-TW', '切換協定堆疊會重建 TUN，可能中斷連線。'],
   ['ru-RU', 'Смена стека пересоздаёт TUN и может прервать соединения.'],
-] as const)('exposes the interruption help on focus without a summary row in %s', async (locale, help) => {
-  const { load } = await mount()
-  const { i18n } = await import('@/i18n')
-  i18n.global.locale.value = locale
-  await load({ tun: { enable: false, stack: 'System' } })
-  const select = root.querySelector<HTMLButtonElement>('[role=combobox]')!
-  expect(select.getAttribute('aria-description')).toBe(help)
-  expect(select.closest('.setting-item')?.textContent).not.toContain(help)
-  select.focus()
-  await vi.waitFor(() => expect(root.querySelector('[role=tooltip]')?.textContent).toBe(help))
-  select.blur()
-})
+] as const)(
+  'exposes the interruption help on focus without a summary row in %s',
+  async (locale, help) => {
+    const { load } = await mount({}, 'stack')
+    const { i18n } = await import('@/i18n')
+    i18n.global.locale.value = locale
+    await load({ tun: { enable: false, stack: 'System' } })
+    const select = root.querySelector<HTMLButtonElement>('[role=combobox]')!
+    expect(select.getAttribute('aria-description')).toBe(help)
+    expect(select.closest('.setting-item')?.textContent).not.toContain(help)
+    select.focus()
+    await vi.waitFor(() => expect(root.querySelector('[role=tooltip]')?.textContent).toBe(help))
+    select.blur()
+  },
+)
 
 it('hides the stack for missing capability, failed configuration and desktop sing-box', async () => {
-  const { load, state } = await mount({ coreType: 'sing-box', readOnlyTunEnabled: true })
+  const { load, state } = await mount({ coreType: 'sing-box', readOnlyTunEnabled: true }, 'stack')
   await load({ tun: { enable: true, stack: 'System' } })
   expect(stackSelect()).toBeNull()
   expect(toggle('TUN mode')?.disabled).toBe(true)
@@ -300,10 +392,15 @@ it('suppresses an obsolete stack failure after a same-endpoint restart', async (
   const notification = await import('@/helper/notification')
   const notify = vi.spyOn(notification, 'showNotification').mockImplementation(() => {})
   try {
-    const { load, host, state } = await mount()
+    const { load, host, state } = await mount({}, 'stack')
     await load({ tun: { enable: true, stack: 'System' } })
     let rejectOld!: (error: Error) => void
-    patch.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
+    patch.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectOld = reject
+        }),
+    )
     await chooseStack('mixed')
     host.runtime({ processId: 2, runtimeEpoch: 2 })
     state.resetConfigs()

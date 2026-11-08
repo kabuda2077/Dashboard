@@ -28,8 +28,13 @@ public sealed class CoreUpdateCheckerTests
         Assert.Contains("MetaCubeX/mihomo/releases/latest", handler.RequestUri?.AbsoluteUri);
     }
 
-    [Fact]
-    public async Task MatchesMihomoAlphaBuildFromReleaseAssets()
+    [Theory]
+    [InlineData("alpha-abc123", false)]
+    [InlineData("beta-abc123", false)]
+    [InlineData("meta-abc123", false)]
+    [InlineData("beta-def456", true)]
+    [InlineData("meta-def456", true)]
+    public async Task HashBuildsUseAlphaReleaseAssets(string installedVersion, bool expectedUpdate)
     {
         var handler = new StubHandler("""
             {
@@ -41,56 +46,30 @@ public sealed class CoreUpdateCheckerTests
 
         var result = await CoreUpdateChecker.CheckReleaseAsync(
             client,
-            "Mihomo Meta alpha-abc123 windows amd64",
+            $"Mihomo Meta {installedVersion} windows amd64",
             isSingBox: false);
 
-        Assert.False(result.UpdateAvailable);
-        Assert.Contains("Prerelease-Alpha", handler.RequestUri?.AbsoluteUri);
+        Assert.Equal(expectedUpdate, result.UpdateAvailable);
+        Assert.Equal("https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/Prerelease-Alpha", handler.RequestUri?.AbsoluteUri);
     }
 
-    [Fact]
-    public async Task UsesMatchingSingBoxPrereleaseChannel()
+    [Theory]
+    [InlineData("Mihomo Meta TanakaLun-Alpha-9fc52a02 windows amd64", false, "manualCoreUpdate")]
+    [InlineData("Mihomo Meta alpha-smart-ab12 windows amd64", false, "manualCoreUpdate")]
+    [InlineData("Mihomo Smart v1.19.29 windows amd64", false, "manualCoreUpdate")]
+    [InlineData("Mihomo Meta custom-v1.19.29 windows amd64", false, "unknownCoreSource")]
+    [InlineData("unexpected output with go1.26.8", false, "unknownCoreSource")]
+    [InlineData("sing-box version 1.14.0-beta.15-reF1nd", true, "manualCoreUpdate")]
+    [InlineData("sing-box version 1.14.0-rc.1", true, "manualCoreUpdate")]
+    [InlineData("sing-box version 1.14.0-custom", true, "unknownCoreSource")]
+    public async Task NonautomaticSourcesCannotMakeReleaseRequests(string output, bool singBox, string code)
     {
-        using var client = new HttpClient(new StubHandler("""
-            [
-              {
-                "tag_name":"v1.14.0-beta.14-reF1nd",
-                "prerelease":true,
-                "published_at":"2026-08-13T00:00:00Z"
-              }
-            ]
-            """));
-
-        var result = await CoreUpdateChecker.CheckReleaseAsync(
-            client,
-            "sing-box version 1.14.0-beta.13-reF1nd",
-            isSingBox: true);
-
-        Assert.True(result.UpdateAvailable);
-        Assert.Equal("v1.14.0-beta.14-reF1nd", result.LatestVersion);
-    }
-
-    [Fact]
-    public async Task TreatsMatchingSingBoxPrereleaseAsCurrent()
-    {
-        using var client = new HttpClient(new StubHandler("""
-            [
-              {
-                "tag_name":"v1.14.0-beta.15-reF1nd",
-                "prerelease":true,
-                "published_at":"2026-08-16T17:25:32Z"
-              }
-            ]
-            """));
-
-        var result = await CoreUpdateChecker.CheckReleaseAsync(
-            client,
-            "sing-box version 1.14.0-beta.15-reF1nd",
-            isSingBox: true);
-
-        Assert.False(result.UpdateAvailable);
-        Assert.Equal("1.14.0-beta.15-reF1nd", result.CurrentVersion);
-        Assert.Equal("v1.14.0-beta.15-reF1nd", result.LatestVersion);
+        var handler = new StubHandler("{}");
+        using var client = new HttpClient(handler);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CoreUpdateChecker.CheckReleaseAsync(client, output, singBox));
+        Assert.Equal(code, error.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]

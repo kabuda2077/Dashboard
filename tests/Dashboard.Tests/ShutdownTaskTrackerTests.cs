@@ -33,6 +33,28 @@ public sealed class ShutdownTaskTrackerTests
         never.SetResult();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FaultedWorkDoesNotEndShutdownBeforeOtherWorkFinishes(bool taskTimesOut)
+    {
+        using var tracker = new ShutdownTaskTracker();
+        var failure = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failed = tracker.Run(_ => failure.Task);
+        var owned = tracker.Run(_ => finish.Task);
+        var shutdown = tracker.StopAndWaitAsync(TimeSpan.FromSeconds(2));
+
+        Exception error = taskTimesOut ? new TimeoutException("Work timed out.") : new InvalidOperationException("Work failed.");
+        failure.SetException(error);
+        Assert.Same(error, await Record.ExceptionAsync(() => failed));
+        Assert.False(shutdown.IsCompleted);
+
+        finish.SetResult();
+        Assert.True(await shutdown);
+        await owned;
+    }
+
     [Fact]
     public async Task UnlimitedCleanupWaitStillWaitsForOwnedWork()
     {

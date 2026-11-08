@@ -290,13 +290,19 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     }
                     var stackLabel = language == "zh-CN" ? "TUN 协议栈" : "TUN stack";
                     var stackHelp = language == "zh-CN" ? "切换协议栈会重建 TUN，可能中断连接。" : "Changing the stack rebuilds TUN and may interrupt connections.";
+                    var stackSelector = $"#core-settings-connectionSettings [role=combobox][aria-label=\"{stackLabel}\"]";
+                    async Task EnsureConnectionSettingsExpanded()
+                    {
+                        await Script("(() => { const toggle=document.querySelector('[data-testid=settings-toggle]'); if (toggle?.getAttribute('aria-expanded')==='false') toggle.click(); return true; })()");
+                        await Until(async () => await Script("document.querySelector('[data-testid=settings-toggle]')?.getAttribute('aria-expanded')==='true' && !!document.querySelector('#core-settings-connectionSettings .settings-grid')") == "true");
+                    }
                     async Task<string> RecordBackendState(string name)
                     {
                         await Until(async () => await Script("!document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().iterations!==Infinity)") == "true");
                         var json = await Script($$"""
                             (() => {
                               const root=document.querySelector('#core-settings-backendSettings');
-                              const select=[...root.querySelectorAll('[role=combobox]')].find(e=>e.getAttribute('aria-label')==={{JsonSerializer.Serialize(stackLabel)}});
+                              const select=document.querySelector({{JsonSerializer.Serialize(stackSelector)}});
                               const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
                               let stack=null;
                               if (select) {
@@ -330,14 +336,16 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                     await RecordBackendState("recovered");
                     if (!baselineEvidence)
                     {
-                        api.ConfigResponse = new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["mixed-port"] = 0, ["tun"] = new { enable = false, stack = "System" } };
+                        // The stack remains available even when the API reports no numeric port fields.
+                        api.ConfigResponse = new Dictionary<string, object> { ["mode"] = "rule", ["allow-lan"] = false, ["tun"] = new { enable = false, stack = "System" } };
                         SendBackendState();
-                        await Until(async () => await Script("!!document.querySelector('#core-settings-backendSettings [role=combobox][aria-description]:not(:disabled)')") == "true");
+                        await EnsureConnectionSettingsExpanded();
+                        await Until(async () => await Script($"!!document.querySelector({JsonSerializer.Serialize(stackSelector + "[aria-description]:not(:disabled)")})") == "true");
                         foreach (var width in new[] { 1500, 640 })
                         {
                             form.Size = new System.Drawing.Size(width, 1000);
                             await Until(async () => await Script($"innerWidth==={width}") == "true");
-                            await Script("document.querySelector('#core-settings-backendSettings [role=combobox][aria-description]').closest('.setting-item').scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+                            await Script($"document.querySelector({JsonSerializer.Serialize(stackSelector)}).closest('.setting-item').scrollIntoView({{block:'center'}}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
                             var json = await RecordBackendState($"tun-stack-{width}");
                             using var measured = JsonDocument.Parse(json);
                             var stack = measured.RootElement.GetProperty("stack");
@@ -355,7 +363,8 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                         form.ClientSize = new System.Drawing.Size(1360, 1000);
                         api.ConfigResponse = null;
                         SendBackendState();
-                        await Until(async () => await Script("document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2 && !document.querySelector('#core-settings-backendSettings [role=combobox][aria-description]')") == "true");
+                        await EnsureConnectionSettingsExpanded();
+                        await Until(async () => await Script($"document.querySelectorAll('#core-settings-backendSettings input[type=checkbox]').length===2 && !document.querySelector({JsonSerializer.Serialize(stackSelector)})") == "true");
                     }
                     if (language == "en-US")
                     {
@@ -439,6 +448,7 @@ public sealed class CoreLayoutTests : TemporaryDirectoryTest
                             api.ConfigStatusCode = 200;
                             api.ConfigResponse = new Dictionary<string, object> { ["allow-lan"] = false, ["tun"] = new { enable = !enabled, stack = "Mixed" } };
                             SendBackendState(enabled);
+                            await EnsureConnectionSettingsExpanded();
                             await Until(async () => await Script("(() => { const root=document.querySelector('#core-settings-backendSettings'), inputs=root.querySelectorAll('input[type=checkbox]'); return inputs.length===2 && inputs[0].disabled && inputs[0].checked===" + expected + " && !root.querySelector('[role=alert]') })()") == "true");
                             var json = await RecordBackendState("read-only-reported-stack-" + expected);
                             using var measured = JsonDocument.Parse(json);

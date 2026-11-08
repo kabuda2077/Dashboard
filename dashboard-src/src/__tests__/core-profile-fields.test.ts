@@ -34,7 +34,13 @@ const mount = () => {
   root = document.createElement('div')
   document.body.append(root)
   app = createApp({
-    render: () => h(Fields, { draft: state.draft, idPrefix: 'profile', busy: false }),
+    render: () => h(Fields, {
+      draft: state.draft,
+      idPrefix: 'profile',
+      busy: false,
+      onEdit: (field, value) => { state.draft.values[field] = value },
+      onReplaceSecret: (value) => { state.draft.replaceSecret = value },
+    }),
   })
   app.mount(root)
   return state
@@ -65,6 +71,22 @@ it.each(['zh-CN', 'en-US'] as const)(
     expect(state.draft.values.secret).toBe('test-only-secret')
   },
 )
+
+it('edits the owning draft through field and replacement events', async () => {
+  const state = mount()
+  const input = root.querySelector<HTMLInputElement>('#profile-api')!
+  input.value = 'http://127.0.0.1:9091'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  expect(state.draft.values.apiUrl).toBe(input.value)
+  state.draft.base.secretDecryptionFailed = true
+  await nextTick()
+  const replace = root.querySelector<HTMLInputElement>('input[type=checkbox]')!
+  replace.click()
+  await nextTick()
+  expect(state.draft.replaceSecret).toBe(true)
+  expect(root.querySelector<HTMLInputElement>('#profile-secret')!.disabled).toBe(false)
+})
 
 it('does not carry visibility into another profile and respects unreadable credentials', async () => {
   const state = mount()

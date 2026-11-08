@@ -1,4 +1,4 @@
-import { getIPFromCloudflareAPI, getIPFromIpipnetAPI, getIPInfo } from '@/api/geoip'
+import { getIPFromIpipnetAPI, getIPInfo } from '@/api/geoip'
 import {
   getBilibiliLatencyAPI,
   getCloudflareLatencyAPI,
@@ -20,6 +20,7 @@ import {
 import { i18n } from '@/i18n'
 import { IPInfoAPI } from '@/store/settings'
 import * as ipaddr from 'ipaddr.js'
+import pLimit from 'p-limit'
 import { ref, watch, type Ref } from 'vue'
 
 export type IPDetails = {
@@ -33,7 +34,7 @@ export type IPObservation = {
   details: IPDetails
   detailsWithPrivacy: IPDetails
   state: 'idle' | 'loading' | 'ready' | 'failed'
-  locationState: 'idle' | 'loading' | 'ready' | 'partial'
+  locationState: 'idle' | 'ready' | 'partial'
 }
 const emptyDetails = (): IPDetails => ({ location: '', organization: '', asn: '' })
 const emptyObservation = (): IPObservation => ({
@@ -98,53 +99,28 @@ export const getIPs = async () => {
     await Promise.all([
       (async () => {
         try {
-          const observed = await getIPFromCloudflareAPI(controller.signal)
+          // The selected service observes its own request's exit and returns its details together.
+          const info = await getIPInfo('', source, controller.signal)
           if (!isCurrent()) return
-          const masked = maskIP(observed.ip)
-          const publish = (
-            location: string,
-            country: string,
-            organization: string,
-            asn: string,
-            locationState: IPObservation['locationState'],
-          ) => {
-            const details = {
-              location,
-              organization,
-              asn: formatASN(asn),
-            }
-            ipForGlobal.value = {
-              ipWithPrivacy: [location, observed.ip],
-              ip: [maskLocation(country), masked],
-              detailsWithPrivacy: details,
-              details: {
-                location: maskLocation(country),
-                organization: maskDetail(organization),
-                asn: maskDetail(details.asn),
-              },
-              state: 'ready',
-              locationState,
-            }
-          }
-          // Enrichment only adds location; it never replaces the observed address.
-          publish(observed.loc, observed.loc, '', '', 'loading')
-          try {
-            const info = await getIPInfo(observed.ip, source, controller.signal)
-            if (!isCurrent()) return
-            const parts = [info.country || observed.loc, info.region, info.city]
-              .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-              .map((part) => part.trim())
-            publish(
-              [...new Set(parts)].join(' '),
-              info.country || observed.loc,
-              info.organization,
-              [formatASN(info.asn), info.asn.trim() ? info.asnOrganization?.trim() : '']
-                .filter(Boolean)
-                .join(' '),
-              info.organization && info.asn && parts.length ? 'ready' : 'partial',
-            )
-          } catch {
-            if (isCurrent()) ipForGlobal.value.locationState = 'partial'
+          const masked = maskIP(info.ip)
+          const parts = [info.country, info.region, info.city]
+            .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+            .map((part) => part.trim())
+          const location = [...new Set(parts)].join(' ')
+          const asn = [formatASN(info.asn), info.asn.trim() ? info.asnOrganization?.trim() : '']
+            .filter(Boolean)
+            .join(' ')
+          ipForGlobal.value = {
+            ipWithPrivacy: [location, info.ip],
+            ip: [maskLocation(info.country), masked],
+            detailsWithPrivacy: { location, organization: info.organization, asn },
+            details: {
+              location: maskLocation(info.country),
+              organization: maskDetail(info.organization),
+              asn: maskDetail(asn),
+            },
+            state: 'ready',
+            locationState: info.organization && info.asn && parts.length ? 'ready' : 'partial',
           }
         } catch {
           if (isCurrent()) ipForGlobal.value = ipMessage('networkIPQueryFailed', 'failed')
@@ -161,12 +137,28 @@ export const getIPs = async () => {
           )
             throw new Error('Invalid IP response')
           const masked = maskIP(res.data.ip)
-          const parts = res.data.location.map((part) => part.trim()).filter(Boolean)
+          const rawLocation = res.data.location.map((part) => part.trim())
+          const parts = rawLocation.filter(Boolean)
+          const hasTailISP = rawLocation.length >= 5 && Boolean(rawLocation.at(-1))
+          const locationParts = (hasTailISP ? rawLocation.slice(0, -1) : rawLocation).filter(
+            Boolean,
+          )
+          const organization = hasTailISP ? (rawLocation.at(-1) ?? '') : ''
+          const locationText = locationParts.join(' ')
+          const maskedCountry = maskLocation(res.data.location[0] ?? '')
           ipForChina.value = {
             ipWithPrivacy: [parts.join(' '), res.data.ip],
-            details: emptyDetails(),
-            detailsWithPrivacy: emptyDetails(),
-            ip: [maskLocation(res.data.location[0] ?? ''), masked],
+            details: {
+              location: maskedCountry,
+              organization: maskDetail(organization),
+              asn: '',
+            },
+            detailsWithPrivacy: {
+              location: locationText,
+              organization,
+              asn: '',
+            },
+            ip: [maskedCountry, masked],
             state: 'ready',
             locationState: parts.length > 1 ? 'ready' : 'partial',
           }
@@ -200,6 +192,8 @@ type LatencyTarget = {
   url: string
   ref: Ref<number[]>
   checking: Ref<boolean>
+  progress: Ref<number[] | undefined>
+  attempt: Ref<number>
   api: (signal?: AbortSignal) => Promise<number>
 }
 export const latencyTargets: LatencyTarget[] = [
@@ -267,8 +261,15 @@ export const latencyTargets: LatencyTarget[] = [
     ref: ref([]),
     api: getYouTubeLatencyAPI,
   },
-].map((target) => ({ ...target, checking: ref(false) })) as LatencyTarget[]
+].map((target) => ({
+  ...target,
+  checking: ref(false),
+  progress: ref<number[]>(),
+  attempt: ref(0),
+})) as LatencyTarget[]
 export const isTestingLatency = ref(false)
+// Share the same limit across automatic, single-target and whole-card checks.
+const limitLatency = pLimit(4)
 type LatencyTask = {
   promise: Promise<void>
   controller: AbortController
@@ -282,6 +283,7 @@ const resetLatency = () => {
   for (const target of latencyTargets) {
     target.ref.value = []
     target.checking.value = false
+    target.progress.value = undefined
   }
 }
 export const getLatency = (targetIds?: string[]): Promise<void> => {
@@ -300,11 +302,15 @@ export const getLatency = (targetIds?: string[]): Promise<void> => {
       }
       latencyTasks.set(target.id, current)
       target.checking.value = true
+      target.progress.value = []
+      target.attempt.value++
       isTestingLatency.value = true
       const hadResult = target.ref.value.length > 0
-      current.promise = (async () => {
+      current.promise = limitLatency(async () => {
         const samples: number[] = []
         try {
+          // A queued task may have been cancelled or superseded before its slot opens.
+          if (!current.isCurrent()) return
           for (let i = 0; i < LATENCY_ROUNDS; i++) {
             if (!current.isCurrent()) return
             let result = 0
@@ -315,6 +321,7 @@ export const getLatency = (targetIds?: string[]): Promise<void> => {
             }
             if (!current.isCurrent()) return
             samples.push(Number.isFinite(result) ? Math.max(0, Math.round(result)) : 0)
+            target.progress.value = [...samples]
             if (!hadResult) target.ref.value = [...samples]
           }
           target.ref.value = samples
@@ -331,10 +338,11 @@ export const getLatency = (targetIds?: string[]): Promise<void> => {
           if (latencyTasks.get(target.id) === current) {
             latencyTasks.delete(target.id)
             target.checking.value = false
+            if (!current.isCurrent()) target.progress.value = undefined
             isTestingLatency.value = latencyTasks.size > 0
           }
         }
-      })()
+      })
       return current.promise
     }),
   ).then(() => undefined)
@@ -345,21 +353,23 @@ registerNetworkDiagnostics('latency', {
   restore: (entry) => {
     if ('samples' in entry) {
       const target = latencyTargets.find((target) => target.id === entry.id)
-      if (target) target.ref.value = [...entry.samples]
+      if (target) {
+        target.ref.value = [...entry.samples]
+        target.progress.value = undefined
+      }
     }
   },
   run: getLatency,
 })
 
-export const resetNetworkChecks = () => {
+export const resetIPChecks = () => {
   ipQueryId++
   ipController?.abort()
   ipController = undefined
-  resetLatency()
   isCheckingIPs.value = false
   ipForChina.value = emptyObservation()
   ipForGlobal.value = emptyObservation()
 }
 
 // Also allow standalone browser preview checks while idle; transitions still invalidate them.
-watch([backendSessionGeneration, backendSessionReady], resetNetworkChecks, { flush: 'sync' })
+watch([backendSessionGeneration, backendSessionReady], resetIPChecks, { flush: 'sync' })

@@ -8,7 +8,9 @@ function Initialize-FrontendTools {
     $expectedPnpm = $Matches[1]
     $expectedNode = [IO.File]::ReadAllText((Join-Path $script:RepositoryRoot '.node-version')).Trim()
     if ($expectedNode -notmatch '^\d+\.\d+\.\d+$') { throw '.node-version must contain an exact Node version.' }
-    $script:FrontendPnpm = (Get-Command pnpm.cmd -ErrorAction Stop).Source
+    $launcher = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
+    if (-not $launcher) { $launcher = Get-Command pnpm.exe -ErrorAction Stop }
+    $script:FrontendPnpm = $launcher.Source
     Push-Location $frontend
     try {
         # Check from the package directory so the pnpm launcher can honor packageManager.

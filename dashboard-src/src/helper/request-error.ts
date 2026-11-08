@@ -1,8 +1,7 @@
 // 请求失败的提示工具。
 //
-// api 层不再全局拦截报错(见 api/http.ts):是否打扰用户由发起请求的业务层决定 ——
-// 只有用户手动触发的动作(点按钮、提交表单)才 try-catch 后调用这里弹提示;
-// 后台自动拉取(轮询、切后端后的初始化、反查 DNS 等)失败一律静默。
+// api 层不全局拦截报错(见 api/http.ts)，由发起请求的业务层决定是否提示。
+// 手动操作及需要用户恢复的首次规则加载显式反馈；后台轮询、反查 DNS 等保持静默。
 import { hasHostBridge } from '@/composables/hostBridge'
 import { activeBackend } from '@/store/setup'
 import axios from 'axios'
@@ -60,7 +59,7 @@ export const notifyRequestErrorForSession = async (
     !error.config.backendSession.isCurrent()
   )
     return
-  // Only diagnose manual browser requests bound to the active Clash-compatible API.
+  // Diagnose reported browser requests bound to the active Clash-compatible API.
   // Core errors and external absolute URLs retain their existing reporting path.
   if (
     !hasHostBridge &&

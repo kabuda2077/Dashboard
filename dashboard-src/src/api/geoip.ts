@@ -48,23 +48,6 @@ const fetchIPResource = async <T>(
   }
 }
 
-// Observe the route chosen for the original hostname; do not force an address family.
-export const getIPFromCloudflareAPI = async (signal?: AbortSignal) => {
-  const trace = await fetchIPResource(
-    'https://www.cloudflare.com/cdn-cgi/trace',
-    'Cloudflare',
-    (response) => response.text(),
-    signal,
-  )
-  const fields = new Map(
-    trace.split(/\r?\n/).map((line) => {
-      const separator = line.indexOf('=')
-      return [line.slice(0, separator), line.slice(separator + 1).trim()]
-    }),
-  )
-  return { ip: fields.get('ip') ?? '', loc: fields.get('loc') ?? '' }
-}
-
 // China public-IP service. Query-string cache busting can make ipip.net omit CORS headers.
 export const getIPFromIpipnetAPI = async (signal?: AbortSignal) => {
   return (await fetchIPResource(
@@ -89,6 +72,7 @@ export const getIPFromIpsbAPI = async (ip = '', signal?: AbortSignal) => {
     signal,
   )) as {
     ip: string
+    isp?: string
     organization?: string
     asn_organization?: string
     asn?: number
@@ -212,7 +196,7 @@ export const getIPInfo = async (
         city: result.city ?? '',
         asn: result.asn?.toString() ?? '',
         asnOrganization: result.asn_organization,
-        organization: result.organization ?? result.asn_organization ?? '',
+        organization: result.isp || result.organization || result.asn_organization || '',
         latitude: coordinate(result.latitude),
         longitude: coordinate(result.longitude),
       }

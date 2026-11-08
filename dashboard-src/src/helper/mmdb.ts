@@ -322,7 +322,10 @@ export class AsyncMMDBReader<T> {
   async get(ipAddress: string): Promise<T | null> {
     if (!ipaddr.isValid(ipAddress)) return null
 
-    const rawAddress = ipaddr.parse(ipAddress).toByteArray()
+    const address = ipaddr.process(ipAddress)
+    if (this.metadata.ipVersion === 4 && address.kind() === 'ipv6') return null
+
+    const rawAddress = address.toByteArray()
     const nodeCount = this.metadata.nodeCount
     let nodeNumber = rawAddress.length === 4 ? this.ipv4StartNodeNumber : 0
 

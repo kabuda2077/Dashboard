@@ -68,10 +68,13 @@ const dirtyTypes = new Set<ConnectionHistoryType>()
 interface InitContext {
   epoch: number
   uuid: string
-  pending: Connection[]
+  pending: AggregationMaps
+  clear?: boolean
+  task?: Promise<boolean>
 }
 
 let currentContext: InitContext | undefined
+const pendingInitializations = new Set<InitContext>()
 let persistenceQueue: Promise<void> = Promise.resolve()
 const pendingSnapshots = new Map<string, HistorySnapshot>()
 
@@ -173,6 +176,7 @@ const flushCurrentSession = () => {
 }
 
 registerPersistenceFlusher(async () => {
+  await Promise.all([...pendingInitializations].map(initializeContext))
   await flushCurrentSession()
   await Promise.all(
     [...pendingSnapshots].map(([targetUuid, snapshot]) =>
@@ -182,7 +186,7 @@ registerPersistenceFlusher(async () => {
   await persistenceQueue
   // Initialization or an incoming batch may have completed while awaiting disk.
   if (dirty) await flushCurrentSession()
-  if (dirty || pendingSnapshots.size)
+  if (dirty || pendingSnapshots.size || pendingInitializations.size)
     throw new Error('Connection history has not been saved. Retry before closing.')
 })
 
@@ -230,24 +234,38 @@ export const aggregateConnections = (
   return Array.from(map.values())
 }
 
+const accumulateItems = (
+  map: Map<string, ConnectionHistoryData>,
+  items: Iterable<ConnectionHistoryData>,
+) => {
+  for (const item of items) {
+    const existing = map.get(item.key)
+    if (existing) {
+      existing.download += item.download
+      existing.upload += item.upload
+      existing.count += item.count
+    } else {
+      map.set(item.key, { ...item })
+    }
+  }
+}
+
 const accumulateInto = (maps: AggregationMaps, connections: Connection[]) => {
   for (const type of allHistoryTypes) {
-    const map = maps[type]
-    for (const item of aggregateConnections(connections, type)) {
-      const existing = map.get(item.key)
-      if (existing) {
-        existing.download += item.download
-        existing.upload += item.upload
-        existing.count += item.count
-      } else {
-        map.set(item.key, item)
-      }
-    }
+    accumulateItems(maps[type], aggregateConnections(connections, type))
+  }
+}
+
+const mergePending = (maps: AggregationMaps, pending: AggregationMaps) => {
+  for (const type of allHistoryTypes) {
+    accumulateItems(maps[type], pending[type].values())
+    trimMap(maps, type)
   }
 }
 
 const accumulateCurrent = (connections: Connection[]) => {
   accumulateInto(aggregationMaps, connections)
+  for (const type of allHistoryTypes) trimMap(aggregationMaps, type)
   markAllTypesDirty()
   dirty = true
 }
@@ -279,24 +297,101 @@ const resetCurrentSession = (targetUuid: string) => {
   aggregatedDataMap.value = emptyView()
 }
 
-const settleStaleContext = async (context: InitContext, maps: AggregationMaps) => {
-  if (!context.pending.length || context.epoch < lastClearEpoch) return
+const hasPending = (context: InitContext) =>
+  allHistoryTypes.some((type) => context.pending[type].size > 0)
 
-  const pending = context.pending.splice(0)
+const settleStaleContext = async (context: InitContext, maps: AggregationMaps) => {
+  if (!hasPending(context) || context.epoch < lastClearEpoch) return
+
+  // Transfer ownership before awaiting a commit: a returning session must not
+  // replay aggregates that are already represented by the pending snapshot.
+  const pending = context.pending
+  context.pending = createAggregationMaps()
   if (currentContext && currentContext !== context && currentContext.uuid === context.uuid) {
-    currentContext.pending.push(...pending)
+    mergePending(currentContext.pending, pending)
     return
   }
 
-  accumulateInto(maps, pending)
-  const snapshot = snapshotMaps(maps)
-  await queueSnapshot(context.uuid, snapshot)
+  mergePending(maps, pending)
+  await queueSnapshot(context.uuid, snapshotMaps(maps))
+}
+
+const initializeContext = (context: InitContext): Promise<boolean> => {
+  if (context.task) return context.task
+
+  context.task = (async () => {
+    // A failed clear must finish before a newer initialization reads old disk data.
+    const pendingClear = [...pendingInitializations].find(
+      (item) => item.clear && item.epoch < context.epoch && item.epoch >= lastClearEpoch,
+    )
+    if (pendingClear && !(await initializeContext(pendingClear))) return false
+
+    const loadedMaps = await enqueuePersistence(async () => {
+      if (context.epoch < lastClearEpoch) return createAggregationMaps()
+      if (!context.clear) return loadHistoryMaps(context.uuid)
+      await clearConnectionHistoryFromIndexedDB()
+      pendingSnapshots.clear()
+      return createAggregationMaps()
+    })
+
+    if (context.epoch !== initEpoch) {
+      await settleStaleContext(context, loadedMaps)
+    } else {
+      aggregationMaps = loadedMaps
+      ready = true
+      if (hasPending(context)) {
+        mergePending(aggregationMaps, context.pending)
+        dirty = true
+      }
+      if (currentContext === context) currentContext = undefined
+      markAllTypesDirty()
+      refreshView()
+    }
+    pendingInitializations.delete(context)
+    return true
+  })()
+    .catch((error) => {
+      // Connection streams start initialization without awaiting it. Keep the
+      // aggregates for a later retry, while the close barrier reports failure.
+      console.error('Failed to initialize connection history:', error)
+      return false
+    })
+    .finally(() => {
+      context.task = undefined
+    })
+  return context.task
+}
+
+const createInitContext = (clear = false): InitContext => {
+  const context: InitContext = {
+    epoch: ++initEpoch,
+    uuid: uuid(),
+    pending: createAggregationMaps(),
+    clear,
+  }
+  if (clear) lastClearEpoch = context.epoch
+  for (const previous of pendingInitializations) {
+    if (previous.epoch < lastClearEpoch) {
+      pendingInitializations.delete(previous)
+    } else if (previous.uuid === context.uuid) {
+      mergePending(context.pending, previous.pending)
+      previous.pending = createAggregationMaps()
+      // Keep a clear as a prerequisite until its disk operation succeeds.
+      if (!previous.clear) pendingInitializations.delete(previous)
+    } else if (!previous.clear && !hasPending(previous)) {
+      pendingInitializations.delete(previous)
+    }
+  }
+  currentContext = context
+  pendingInitializations.add(context)
+  resetCurrentSession(context.uuid)
+  return context
 }
 
 setInterval(() => {
-  if (!ready || document.hidden) return
+  if (!ready) return
 
-  refreshView()
+  if (!document.hidden) refreshView()
   if (++viewTick >= FLUSH_EVERY_TICKS) {
     viewTick = 0
     flushCurrentSession()
@@ -304,7 +399,10 @@ setInterval(() => {
 }, VIEW_REFRESH_MS)
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && ready) flushCurrentSession()
+  if (!ready) return
+
+  if (document.hidden) flushCurrentSession()
+  else refreshView()
 })
 
 window.addEventListener('pagehide', () => {
@@ -313,52 +411,13 @@ window.addEventListener('pagehide', () => {
 
 export const initAggregatedDataMap = async () => {
   flushCurrentSession()
-
-  const context: InitContext = {
-    epoch: ++initEpoch,
-    uuid: uuid(),
-    pending: [],
-  }
-  currentContext = context
-  resetCurrentSession(context.uuid)
-  const loadedMaps = await enqueuePersistence(() => loadHistoryMaps(context.uuid))
-
-  if (context.epoch !== initEpoch) {
-    await settleStaleContext(context, loadedMaps)
-    return
-  }
-
-  aggregationMaps = loadedMaps
-  ready = true
-  if (context.pending.length) accumulateCurrent(context.pending.splice(0))
-  if (currentContext === context) currentContext = undefined
-  markAllTypesDirty()
-  refreshView()
+  await initializeContext(createInitContext())
 }
 
 export const clearConnectionHistory = async () => {
-  const context: InitContext = {
-    epoch: ++initEpoch,
-    uuid: uuid(),
-    pending: [],
+  if (!(await initializeContext(createInitContext(true)))) {
+    throw new Error('Connection history could not be cleared. Retry before closing.')
   }
-  lastClearEpoch = context.epoch
-  currentContext = context
-  resetCurrentSession(context.uuid)
-  await enqueuePersistence(async () => {
-    await clearConnectionHistoryFromIndexedDB()
-    pendingSnapshots.clear()
-  })
-
-  if (context.epoch !== initEpoch) {
-    await settleStaleContext(context, createAggregationMaps())
-    return
-  }
-
-  ready = true
-  if (context.pending.length) accumulateCurrent(context.pending.splice(0))
-  if (currentContext === context) currentContext = undefined
-  refreshView()
 }
 
 export const mergeAggregatedData = (
@@ -392,7 +451,8 @@ export const saveConnectionHistory = (newClosedConnections: Connection[]) => {
   const targetUuid = uuid()
   if (!ready || targetUuid !== sessionUuid) {
     if (currentContext?.uuid === targetUuid) {
-      currentContext.pending.push(...newClosedConnections)
+      accumulateInto(currentContext.pending, newClosedConnections)
+      for (const type of allHistoryTypes) trimMap(currentContext.pending, type)
     }
     return
   }

@@ -50,6 +50,44 @@ public sealed class AutostartShutdownTests : TemporaryDirectoryTest
         Assert.Equal(success, new SettingsStore(TestRoot).Current.DesktopOptions.Autostart);
     }
 
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    public async Task FailedSettingsCommitRestoresSystemStateOrReportsRollbackFailure(bool enabled, bool rollbackSucceeds, bool rollbackThrows)
+    {
+        var original = !enabled;
+        await new SettingsStore(TestRoot).SetOptionAsync("autostart", original);
+        var calls = new List<bool>();
+        var systemEnabled = original;
+        using (var host = new DashboardHost(TestRoot, Path.Combine(TestRoot, "ui"), ephemeralPort: true,
+            setAutostart: value =>
+            {
+                calls.Add(value);
+                if (calls.Count == 2 && !rollbackSucceeds)
+                {
+                    if (rollbackThrows) throw new IOException("rollback failed");
+                    return Task.FromResult(AutostartOperationResult.Failure("rollback refused"));
+                }
+                systemEnabled = value;
+                return Task.FromResult(AutostartOperationResult.Ok("changed"));
+            }))
+        {
+            using (var held = new FileStream(Path.Combine(TestRoot, "settings.json"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                var result = await host.ExecuteAsync(new() { Type = "setDesktopOption", Option = "autostart", Value = enabled });
+                Assert.Equal("failed", result.Status);
+                Assert.Equal(rollbackSucceeds ? "autostartNotSaved" : "autostartRollbackFailed", result.Code);
+                Assert.Equal(new[] { enabled, original }, calls);
+                Assert.Equal(original, host.Settings.DesktopOptions.Autostart);
+                Assert.Equal(rollbackSucceeds ? original : enabled, systemEnabled);
+            }
+        }
+        // The next launch reads the same state as the restored system task.
+        Assert.Equal(original, new SettingsStore(TestRoot).Current.DesktopOptions.Autostart);
+    }
+
     [Fact]
     public async Task ClosingBeforeCommandDispatchNeverChangesSystemState()
     {

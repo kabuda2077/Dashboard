@@ -58,12 +58,16 @@ try {
     }
     foreach ($name in @('shared', 'retired', 'renamed', 'retained-name', 'watch', 'keep', 'mirror', 'deferred-mirror', 'normalized')) { Write-FixtureFile $upstream "src/$name.ts" "export const value = '$name';`n" }
     Write-FixtureFile $upstream 'README.md' "base`n"
+    Write-FixtureFile $upstream 'public/favicon.ico' 'favicon source'
     $null = Invoke-FixtureGit $upstream @('add', '.')
     $null = Invoke-FixtureGit $upstream @('commit', '--quiet', '-m', 'reviewed U0')
     $base = [string](Invoke-FixtureGit $upstream @('rev-parse', 'HEAD'))
     $null = New-Item -ItemType Directory -Force (Join-Path $local 'dashboard-src')
     Copy-Item -LiteralPath (Join-Path $upstream 'src') -Destination (Join-Path $local 'dashboard-src/src') -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $upstream 'public') -Destination (Join-Path $local 'dashboard-src/public') -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $upstream 'README.md') -Destination (Join-Path $local 'dashboard-src/README.md')
+    Write-FixtureFile $local 'resources/app.ico' 'generated app icon'
+    Write-FixtureFile $local 'resources/tray.ico' 'generated tray icon'
     Write-FixtureFile $local '.gitignore' ".tmp/`n"
     Write-FixtureFile $local 'tools/check.ps1' "Write-Host 'fixture check'`n"
     Write-FixtureFile $local 'docs/development.md' '<a id="shared-behavior"></a>'
@@ -75,7 +79,7 @@ try {
         schemaVersion = 2
         upstream = @{ repository = 'https://example.invalid/upstream.git'; tag = 'fixture-U0'; revision = $base; localPrefix = 'dashboard-src/' }
         historicalReference = @{ tag = 'unavailable-tag'; revision = ('1' * 40) }
-        forkOwnedPaths = @('docs/*', 'tools/*', '.gitignore', 'dashboard-src/src/owned.ts', 'dashboard-src/src/__tests__/*')
+        forkOwnedPaths = @('docs/*', 'tools/*', 'resources/*', '.gitignore', 'dashboard-src/src/owned.ts', 'dashboard-src/src/__tests__/*')
         mirrors = @(
             @{ path = 'dashboard-src/src/mirror.ts'; sha256 = Get-NormalizedSourceHash (Join-Path $upstream 'src/mirror.ts') },
             @{ path = 'dashboard-src/src/deferred-mirror.ts'; sha256 = Get-NormalizedSourceHash (Join-Path $upstream 'src/deferred-mirror.ts') }
@@ -153,11 +157,16 @@ try {
     $zeroPlan = Read-Record 'plan.json'
     Assert-True ($zeroPlan.requiredPaths.Count -eq 0 -and $zeroPlan.checks.Count -eq 0 -and $zeroPlan.triggeredPending.Count -eq 0) 'Old pending created required paths/checks without incoming.'
     Assert-True (-not [IO.File]::ReadAllText((Join-Path $output 'report.md')).Contains('Original reason must survive')) 'Untriggered pending expanded in report.'
+    Write-FixtureFile $local 'resources/app.ico' 'app icon rebuilt after Plan'
     Invoke-Review 'Prepare'
     $zeroPolicy = Read-ForkPolicy -Root $local
     Assert-True (($zeroPolicy.pending | ConvertTo-Json -Depth 30 -Compress) -ceq ($fixturePolicy.pending | ConvertTo-Json -Depth 30 -Compress)) 'Untouched pending did not carry verbatim.'
     Assert-Fails { Invoke-Review 'Complete' } '*review actual*'
     Add-Evidence
+    Write-FixtureFile $local 'resources/tray.ico' 'tray icon rebuilt after Prepare'
+    Write-FixtureFile $local 'dashboard-src/public/favicon.ico' 'changed favicon source'
+    Assert-Fails { Invoke-Review 'Complete' } '*Prepared source or decisions changed*'
+    Write-FixtureFile $local 'dashboard-src/public/favicon.ico' 'favicon source'
     Invoke-Review 'Complete'
     # Explicit reconsideration selects only the requested pending ID.
     $output = Join-Path $local '.tmp/reports/revisit'
@@ -411,7 +420,172 @@ try {
     $inventoryPath = Join-Path $output 'inventory.json'
     [IO.File]::AppendAllText($inventoryPath, ' ')
     Assert-Fails { Invoke-Review 'Review' } '*Immutable plan evidence was modified*'
-    Write-Host 'Optional preview, partial pending, decision revisions, target contracts, registration, raw validation binding and one-step immutable completion fixtures passed.'
+    # A released target already contained in U0 supplements missing results without reversing newer work.
+    $upstream = Join-Path $fixture 'contained-upstream'
+    $local = Join-Path $fixture 'contained-candidate'
+    $output = Join-Path $local '.tmp/reports/supplement'
+    foreach ($repo in @($upstream, $local)) {
+        $null = New-Item -ItemType Directory -Force $repo
+        $null = Invoke-FixtureGit $repo @('init', '--quiet')
+        $null = Invoke-FixtureGit $repo @('config', 'user.name', 'Fixture')
+        $null = Invoke-FixtureGit $repo @('config', 'user.email', 'fixture@example.invalid')
+        $null = Invoke-FixtureGit $repo @('config', 'core.autocrlf', 'false')
+    }
+    foreach ($name in @('adopt', 'adapt', 'defer', 'excluded', 'original', 'newer', 'older-only', 'renamed-away', 'retained-source', 'mapped-helper')) {
+        Write-FixtureFile $upstream "src/$name.ts" "export const released = '$name';`n"
+    }
+    $null = Invoke-FixtureGit $upstream @('add', '.')
+    $null = Invoke-FixtureGit $upstream @('commit', '--quiet', '-m', 'released target')
+    $target = [string](Invoke-FixtureGit $upstream @('rev-parse', 'HEAD'))
+    foreach ($name in @('adopt', 'adapt', 'newer', 'baseline-only', 'baseline-helper', 'mapped-helper')) {
+        Write-FixtureFile $upstream "src/$name.ts" "export const newer = '$name';`n"
+    }
+    Remove-Item -LiteralPath (Join-Path $upstream 'src/older-only.ts'), (Join-Path $upstream 'src/retained-source.ts')
+    $null = Invoke-FixtureGit $upstream @('mv', 'src/renamed-away.ts', 'src/renamed-newer.ts')
+    $null = Invoke-FixtureGit $upstream @('add', '.')
+    $null = Invoke-FixtureGit $upstream @('commit', '--quiet', '-m', 'registered descendant U0')
+    $containedBase = [string](Invoke-FixtureGit $upstream @('rev-parse', 'HEAD'))
+    foreach ($name in @('newer', 'baseline-only', 'baseline-helper')) {
+        Write-FixtureFile $local "dashboard-src/src/$name.ts" "export const newer = '$name';`n"
+    }
+    Write-FixtureFile $local 'dashboard-src/src/local-name.ts' "export const desktopName = true;`n"
+    Write-FixtureFile $local 'dashboard-src/src/mapped-helper.ts' "export const desktopHelper = true;`n"
+    Copy-Item -LiteralPath (Join-Path $upstream 'src/renamed-newer.ts') -Destination (Join-Path $local 'dashboard-src/src/renamed-newer.ts')
+    Write-FixtureFile $local 'src/Host.cs' 'class Host { }'
+    Write-FixtureFile $local '.gitignore' ".tmp/`n"
+    Write-FixtureFile $local 'tools/check.ps1' "Write-Host 'fixture check'`n"
+    Write-FixtureFile $local 'docs/development.md' '<a id="shared-behavior"></a>'
+    $untouchedPending = @{ id = 'unrelated'; paths = @('dashboard-src/src/newer.ts'); reason = 'Separate feature still pending'; reReviewWhen = 'When its desktop behavior is exercised'; dependencies = @() }
+    $fixturePolicy = [ordered]@{
+        schemaVersion = 2
+        upstream = @{ repository = 'https://example.invalid/upstream.git'; tag = 'registered-newer'; revision = $containedBase; localPrefix = 'dashboard-src/' }
+        historicalReference = @{ tag = 'unavailable-tag'; revision = ('1' * 40) }
+        forkOwnedPaths = @('docs/*', 'tools/*', '.gitignore', 'src/*', 'dashboard-src/src/__tests__/*')
+        mirrors = @()
+        adaptations = @(
+            @{ path = 'dashboard-src/src/local-name.ts'; upstreamPath = 'dashboard-src/src/original.ts'; revision = $containedBase },
+            @{ path = 'dashboard-src/src/local-adapt.ts'; upstreamPath = 'dashboard-src/src/adapt.ts'; revision = $containedBase },
+            @{ path = 'dashboard-src/src/local-retained.ts'; upstreamPath = 'dashboard-src/src/retained-source.ts'; revision = $target },
+            @{ path = 'dashboard-src/src/mapped-helper.ts'; upstreamPath = 'dashboard-src/src/mapped-helper.ts'; revision = $containedBase }
+        )
+        contracts = @(@{ id = 'shared-behavior'; rule = 'docs/development.md#shared-behavior'; paths = @('dashboard-src/src/*'); watch = @(); checks = @('tools/check.ps1'); risk = 'low' })
+        pending = @(
+            @{ id = 'missing-feature'; paths = @('dashboard-src/src/adopt.ts'); reason = 'Missing implementation'; reReviewWhen = 'When supplied'; dependencies = @() },
+            $untouchedPending
+        )
+        knownGaps = @()
+    }
+    Save-FixturePolicy
+    $null = Invoke-FixtureGit $local @('add', '.')
+    $null = Invoke-FixtureGit $local @('commit', '--quiet', '-m', 'local descendant baseline with gaps')
+    Invoke-Review
+    $containedPlan = Read-Record 'plan.json'
+    $expectedMissing = @('dashboard-src/src/adopt.ts', 'dashboard-src/src/local-adapt.ts', 'dashboard-src/src/defer.ts', 'dashboard-src/src/excluded.ts', 'dashboard-src/src/local-retained.ts')
+    Assert-True ($containedPlan.mode -ceq 'supplement' -and (($containedPlan.incoming.path | Sort-Object) -join "`n") -ceq (($expectedMissing | Sort-Object) -join "`n")) 'Contained target did not plan only missing local results through existing mappings.'
+    Assert-True ((($containedPlan.requiredPaths | Sort-Object) -join "`n") -ceq (($expectedMissing | Sort-Object) -join "`n")) 'Supplement required rollback of a present newer or renamed file.'
+    Assert-True ($containedPlan.renameHints.Count -eq 0 -and $containedPlan.triggeredPending.Count -eq 1 -and $containedPlan.triggeredPending[0].id -ceq 'missing-feature') 'Supplement generated reverse renames or triggered unrelated pending.'
+    Assert-True (@((Read-Record 'inventory.json') | Where-Object path -ceq 'dashboard-src/src/older-only.ts').Count -eq 1) 'Full inventory omitted a target file absent from the newer baseline.'
+    Assert-Fails { Invoke-Review 'Prepare' } '*Path requires batch coverage*'
+    Assert-Fails { Invoke-Review 'Prepare' -AdvanceBaseline } '*AdvanceBaseline is not allowed in supplement mode*'
+    $decisions = Read-Record 'decisions.json'
+    $decisions.batches = @(
+        (New-Batch 'missing-feature' @('dashboard-src/src/adopt.ts') 'adopt'),
+        # A present mapping is explicitly reviewed; incoming in localPaths still needs a real U1 result.
+        (New-Batch 'adapt-missing' @('dashboard-src/src/local-name.ts') 'adapt'),
+        (New-Batch 'later' @('dashboard-src/src/defer.ts') 'defer'),
+        (New-Batch 'restore-retained-result' @('dashboard-src/src/local-retained.ts') 'adopt'),
+        (New-Batch 'excluded-feature' @('dashboard-src/src/excluded.ts') 'keep-local')
+    )
+    $decisions.batches[1].localPaths = @('dashboard-src/src/local-adapt.ts')
+    $decisions.batches[4].reason = 'Retain the established exclusion of the upstream native API feature'
+    Save-Decisions
+    Assert-Fails { Invoke-Review 'Prepare' } '*Supplement disposition requires a real local result*'
+    Write-FixtureFile $local 'dashboard-src/src/adopt.ts' "export const newer = 'adopt';`n"
+    Write-FixtureFile $local 'dashboard-src/src/local-retained.ts' "export const released = 'retained-source';`n"
+    Write-FixtureFile $local 'dashboard-src/src/local-adapt.ts' "export const desktopAdapted = true;`n"
+    $decisions.batches[2].action = 'defer'
+    Save-Decisions
+    Assert-Fails { Invoke-Review 'Prepare' } '*Adopt must match exact target source*'
+    Write-FixtureFile $local 'dashboard-src/src/adopt.ts' "export const released = 'adopt';`n"
+    Remove-Item -LiteralPath (Join-Path $local 'dashboard-src/src/local-adapt.ts')
+    Assert-Fails { Invoke-Review 'Prepare' } '*Supplement disposition requires a real local result*'
+    $decisions.batches[1].action = 'replace-local'
+    Save-Decisions
+    Assert-Fails { Invoke-Review 'Prepare' } '*Supplement disposition requires a real local result*'
+    Write-FixtureFile $local 'dashboard-src/src/local-adapt.ts' "export const desktopAdapted = true;`n"
+    Write-FixtureFile $local 'dashboard-src/src/excluded.ts' 'Unreviewed change to a retained absence'
+    Assert-Fails { Invoke-Review 'Prepare' } '*Actual source change is outside adopted/adapted batch paths/localPaths: dashboard-src/src/excluded.ts'
+    Remove-Item -LiteralPath (Join-Path $local 'dashboard-src/src/excluded.ts')
+    $decisions.batches[2].reason = ''
+    Save-Decisions
+    Assert-Fails { Invoke-Review 'Prepare' } '*batch.reason*'
+    $decisions.batches[2].reason = 'Explicitly leave this released feature pending'
+    $decisions.batches[2].reReviewWhen = ''
+    Save-Decisions
+    Assert-Fails { Invoke-Review 'Prepare' } '*batch.reReviewWhen*'
+    $decisions.batches[2].reReviewWhen = 'When the missing feature is implemented'
+    Save-Decisions
+    $savedContractPaths = $fixturePolicy.contracts[0].paths
+    $fixturePolicy.contracts[0].paths = @('dashboard-src/other/*')
+    Save-FixturePolicy
+    Assert-Fails { Invoke-Review 'Prepare' } '*Adaptation requires a contract*'
+    $fixturePolicy.contracts[0].paths = $savedContractPaths
+    Save-FixturePolicy
+    $companionPaths = @('dashboard-src/src/__tests__/adapt.test.ts', 'src/Host.cs', 'dashboard-src/src/baseline-helper.ts', 'dashboard-src/src/mapped-helper.ts')
+    Write-FixtureFile $local $companionPaths[0] "export const localRegression = true;`n"
+    Write-FixtureFile $local $companionPaths[1] 'class Host { public bool SupportsAdaptation => true; }'
+    Write-FixtureFile $local $companionPaths[2] "export const baselineHelperAdapted = true;`n"
+    Write-FixtureFile $local $companionPaths[3] "export const desktopHelperAdapted = true;`n"
+    Assert-Fails { Invoke-Review 'Prepare' } '*Actual source change is outside adopted/adapted batch paths/localPaths*'
+    $decisions.batches[1].localPaths = @('dashboard-src/src/local-adapt.ts') + $companionPaths + @('dashboard-src/src/unknown-companion.ts')
+    Write-FixtureFile $local 'dashboard-src/src/unknown-companion.ts' "export const unknownSource = true;`n"
+    Save-Decisions
+    Assert-Fails { Invoke-Review 'Prepare' } '*Unclassified result path requires explicit target/adaptation provenance*'
+    Remove-Item -LiteralPath (Join-Path $local 'dashboard-src/src/unknown-companion.ts')
+    $decisions.batches[1].localPaths = @('dashboard-src/src/local-adapt.ts') + $companionPaths
+    Save-Decisions
+    Invoke-Review 'Prepare'
+    $containedPrepared = Read-Record 'prepared.json'
+    foreach ($path in $companionPaths) {
+        Assert-True ($path -cin @($containedPrepared.changedPaths.path) -and $path -cin @($containedPrepared.candidateSnapshot.files)) "Declared local companion was omitted from prepared changes or snapshot: $path."
+    }
+    Assert-Fails { Invoke-Review 'Prepare' -AdvanceBaseline } '*AdvanceBaseline is not allowed in supplement mode*'
+    Assert-True ((Read-Record 'prepared.json').preparedHash -ceq $containedPrepared.preparedHash) 'Rejected repeat Prepare altered prepared evidence.'
+    $registered = Read-ForkPolicy -Root $local
+    Assert-True ($registered.upstream.revision -ceq $containedBase -and $registered.upstream.tag -ceq 'registered-newer') 'Supplement rolled back registered baseline SHA or tag.'
+    foreach ($path in @('dashboard-src/src/adopt.ts', 'dashboard-src/src/local-adapt.ts', 'dashboard-src/src/local-name.ts', 'dashboard-src/src/local-retained.ts')) {
+        $mapping = @($registered.adaptations | Where-Object path -ceq $path)[0]
+        Assert-True ($mapping.revision -ceq $target) "Supplement reused descendant provenance for $path."
+    }
+    Assert-True (@($registered.adaptations | Where-Object path -ceq 'dashboard-src/src/local-adapt.ts')[0].upstreamPath -ceq 'dashboard-src/src/adapt.ts') 'Supplement lost accurate renamed source mapping.'
+    Assert-True (@($registered.adaptations).Count -eq 6 -and -not @($registered.adaptations | Where-Object { $_.path -cin $companionPaths -and $_.revision -ceq $target }).Count) 'Supplement invented target provenance for local companions.'
+    Assert-True (@($registered.adaptations | Where-Object path -ceq 'dashboard-src/src/baseline-helper.ts')[0].revision -ceq $containedBase) 'Baseline-only shared companion lost its U0 source.'
+    $originalHelperMapping = @($fixturePolicy.adaptations | Where-Object path -ceq 'dashboard-src/src/mapped-helper.ts')[0]
+    Assert-True ((ConvertTo-Json -InputObject @($registered.adaptations | Where-Object path -ceq 'dashboard-src/src/mapped-helper.ts')[0] -Compress) -ceq (ConvertTo-Json -InputObject $originalHelperMapping -Compress)) 'Shared companion existing U0 mapping was overwritten by U1.'
+    Assert-True (@($registered.adaptations | Where-Object path -ceq 'dashboard-src/src/local-retained.ts')[0].upstreamPath -ceq 'dashboard-src/src/retained-source.ts') 'Retained source lost its explicit historical mapping.'
+    Assert-True ('excluded-feature' -cnotin @($registered.pending.id) -and -not (Test-Path -LiteralPath (Join-Path $local 'dashboard-src/src/excluded.ts'))) 'Established exclusion became a defer or silently acquired a local result.'
+    Assert-True ((ConvertTo-Json -InputObject @($registered.pending | Where-Object id -ceq 'unrelated')[0] -Compress) -ceq (ConvertTo-Json -InputObject $untouchedPending -Compress)) 'Supplement changed unrelated pending.'
+    Assert-True (@($registered.pending.id) -cnotcontains 'missing-feature') 'Adopted missing path did not close its corresponding pending.'
+    $deferred = @($registered.pending | Where-Object id -ceq 'later')[0]
+    Assert-True ($deferred.paths -ccontains 'dashboard-src/src/defer.ts' -and $deferred.reason -ceq $decisions.batches[2].reason -and $deferred.reReviewWhen -ceq $decisions.batches[2].reReviewWhen) 'Deferred supplement lost its reason or reconsideration condition.'
+    Invoke-Review 'Prepare'
+    Add-Evidence
+    Invoke-Review 'Complete'
+    $containedResult = Read-Record 'results.json'
+    Assert-True ($containedResult.policy.upstream.revision -ceq $containedBase -and $containedResult.policy.upstream.tag -ceq 'registered-newer' -and -not $containedResult.advanceBaseline) 'Completion did not preserve descendant baseline.'
+    foreach ($path in $companionPaths) {
+        $snapshotEntry = @($containedResult.candidateSnapshot.manifest | Where-Object path -ceq $path)[0]
+        Assert-True ($null -ne $snapshotEntry -and $snapshotEntry.sha256 -ceq (Get-FileHash -LiteralPath (Join-Path $local $path) -Algorithm SHA256).Hash.ToLowerInvariant()) "Completed snapshot did not bind actual local companion content: $path."
+    }
+    foreach ($name in @('newer', 'baseline-only')) {
+        Assert-True ((Get-NormalizedSourceHash (Join-Path $local "dashboard-src/src/$name.ts")) -ceq (Get-ForkUpstreamHash $upstream $containedBase "src/$name.ts")) "Supplement reversed newer content: $name."
+    }
+    foreach ($name in @('older-only', 'renamed-away')) {
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $local "dashboard-src/src/$name.ts"))) "Supplement reversed a newer baseline deletion or rename: $name."
+    }
+    Assert-True ((Get-NormalizedSourceHash (Join-Path $local 'dashboard-src/src/renamed-newer.ts')) -ceq (Get-ForkUpstreamHash $upstream $containedBase 'src/renamed-newer.ts')) 'Supplement changed the newer renamed file.'
+    Assert-True (([string](Invoke-FixtureGit $upstream @('rev-parse', 'HEAD'))) -ceq $containedBase -and -not @(Invoke-FixtureGit $upstream @('status', '--porcelain')).Count) 'Supplement changed the isolated upstream checkout.'
+    Write-Host 'Optional preview, partial pending, decision revisions, target contracts, registration, raw validation binding, contained-target supplementation and one-step immutable completion fixtures passed.'
 }
 finally {
     if (Test-Path Function:Get-FileHash) { Remove-Item Function:Get-FileHash }

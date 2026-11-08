@@ -192,6 +192,32 @@ it('uses the shared static tooltip from the rule card', () => {
 })
 
 describe('rule table statistics', () => {
+  it('sorts rule counts numerically when the first row has no count', () => {
+    rules.value = [
+      rule({ payload: 'unknown' }),
+      rule({ payload: 'ten', size: 10 }),
+      rule({ payload: 'two', size: 2 }),
+      rule({ type: 'RuleSet', payload: 'provider' }),
+    ]
+    ruleProviderList.value = [{ name: 'provider', ruleCount: 100 }] as RuleProvider[]
+    mount()
+    for (const desc of [false, true]) {
+      const table = createTable({
+        data: rules.value,
+        columns: tableColumns,
+        state: { sorting: [{ id: 'size', desc }] },
+        onStateChange: () => {},
+        renderFallbackValue: null,
+        getCoreRowModel: getCoreRowModel(),
+        getSortedRowModel: getSortedRowModel(),
+      })
+      const expected = ['unknown', 'two', 'ten', 'provider']
+      expect(table.getRowModel().rows.map((row) => row.original.payload)).toEqual(
+        desc ? expected.reverse() : expected,
+      )
+    }
+  })
+
   it('retains separate numeric Hit and Miss sorting and the visible hit timestamp', () => {
     rules.value = [
       rule({

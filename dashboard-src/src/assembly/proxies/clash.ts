@@ -130,13 +130,41 @@ export const fetchProxies = async () => {
   }
 }
 
+const pendingSelections = new Map<
+  string,
+  { session: ReturnType<typeof captureProxyRuntime>; task: Promise<void> }
+>()
+
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {
   const session = captureProxyRuntime()
+  const previous = pendingSelections.get(proxyGroupName)
+  const queued = previous?.session.isCurrent() ?? false
+  const task = Promise.resolve(queued ? previous?.task : undefined)
+    .catch(() => {})
+    .then(() => selectProxyForSession(proxyGroupName, proxyName, session, queued))
+  pendingSelections.set(proxyGroupName, { session, task })
+  try {
+    await task
+  } finally {
+    if (pendingSelections.get(proxyGroupName)?.task === task) {
+      pendingSelections.delete(proxyGroupName)
+    }
+  }
+}
+
+const selectProxyForSession = async (
+  proxyGroupName: string,
+  proxyName: string,
+  session: ReturnType<typeof captureProxyRuntime>,
+  queued: boolean,
+) => {
+  if (!session.isCurrent()) return
   let proxyGroup = proxyMap.value[proxyGroupName]
   if (!proxyGroup) return
 
   if (proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance) return
-  if (proxyGroup.now === proxyName) {
+  // A queued intent must still be written when an earlier write's readback failed or was superseded.
+  if (!queued && proxyGroup.now === proxyName) {
     await fetchProxies()
     if (!session.isCurrent()) return
     proxyGroup = proxyMap.value[proxyGroupName]
@@ -150,16 +178,13 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
 
   await selectProxyAPI(proxyGroupName, proxyName)
   if (!session.isCurrent()) return
-  const selectedGroup = proxyMap.value[proxyGroupName]
-  if (!selectedGroup) return
-  selectedGroup.now = proxyName
-
   if (automaticDisconnection.value) {
     activeConnections.value
       .filter((c) => getConnectionChains(c).includes(proxyGroupName))
       .forEach((c) => disconnectByIdAPI(c.id).catch(() => {}))
   }
-  void fetchProxies().catch(() => {})
+  // Keep this group's queue blocked until the controller's actual selection is read back.
+  await fetchProxies()
 }
 
 const getProviderNameByProxy = (proxyName: string) => {

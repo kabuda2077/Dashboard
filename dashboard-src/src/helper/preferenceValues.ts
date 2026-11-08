@@ -85,6 +85,27 @@ const validFolderState = (value: unknown) =>
       ),
   )
 
+export const getSourceIPLabelKeyError = (key: string): string | undefined => {
+  if (!key.startsWith('/')) return
+  try {
+    new RegExp(key.slice(1), 'i')
+  } catch (error) {
+    return `${key}: ${String(error)}`
+  }
+}
+
+const validSourceIPLabels = (value: unknown) =>
+  Array.isArray(value) &&
+  value.every(
+    (item) =>
+      record(item) &&
+      typeof item.id === 'string' &&
+      typeof item.key === 'string' &&
+      typeof item.label === 'string' &&
+      (item.scope === undefined || strings(item.scope)) &&
+      !getSourceIPLabelKeyError(item.key),
+  )
+
 const validHistorySorting = (value: unknown) =>
   Array.isArray(value) &&
   value.every(
@@ -107,7 +128,9 @@ export const validatePreferenceValues = (values: Record<string, unknown>) => {
   for (const [key, value] of Object.entries(values)) {
     let decoded = value
     if (
-      (key === 'config/proxy-folders' || key === 'config/connection-history-sorting') &&
+      (key === 'config/proxy-folders' ||
+        key === 'config/connection-history-sorting' ||
+        key === 'config/source-ip-label-list') &&
       typeof value === 'string'
     ) {
       try {
@@ -116,6 +139,14 @@ export const validatePreferenceValues = (values: Record<string, unknown>) => {
         throw new Error(`Invalid preference value: ${key}`)
       }
     }
-    if (!isValidPreferenceValue(key, decoded)) throw new Error(`Invalid preference value: ${key}`)
+    // Imports must reject bad regexes before writing any preferences. Runtime
+    // storage reads retain existing entries so the label matcher can isolate
+    // individual invalid regexes without resetting the entire saved list.
+    if (
+      !isValidPreferenceValue(key, decoded) ||
+      (key === 'config/source-ip-label-list' && !validSourceIPLabels(decoded))
+    ) {
+      throw new Error(`Invalid preference value: ${key}`)
+    }
   }
 }

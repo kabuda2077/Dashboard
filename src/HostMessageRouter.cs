@@ -9,6 +9,8 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
     private static readonly HashSet<string> Edges = ["left", "right", "top", "bottom", "topLeft", "topRight", "bottomLeft", "bottomRight"];
     private static readonly HashSet<string> Options = ["startCoreOnLaunch", "minimizeToTray", "lightweightMode", "autostart"];
     internal const int MaximumMessageCharacters = 4 * 1024 * 1024;
+    private readonly object _preferenceSavesLock = new();
+    private readonly HashSet<Task> _pendingPreferenceSaves = [];
 
     public async Task RouteAsync(string json, Action<object> reply)
     {
@@ -31,9 +33,18 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
         }
         if (request.Type == "bootstrap")
         {
+            Task priorSaves;
+            lock (_preferenceSavesLock) priorSaves = Task.WhenAll(_pendingPreferenceSaves);
+            // Snapshot accepted writes only. Later saves must not prolong this bootstrap,
+            // and failed writes still release the barrier with the last committed snapshot.
+            await priorSaves;
             reply(new BootstrapReply(id, handlers.BuildState(), handlers.Preferences()));
             return;
         }
+        var preferenceSave = request.Type == "saveDashboardPreferences"
+            ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+        if (preferenceSave is not null)
+            lock (_preferenceSavesLock) _pendingPreferenceSaves.Add(preferenceSave.Task);
         CommandResult result;
         try
         {
@@ -61,6 +72,14 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
             HostOperationLogger.Error("host-bridge", "Host command failed.", error);
             result = CommandResult.Failed("operationFailed", error.Message);
         }
+        finally
+        {
+            if (preferenceSave is not null)
+            {
+                lock (_preferenceSavesLock) _pendingPreferenceSaves.Remove(preferenceSave.Task);
+                preferenceSave.TrySetResult();
+            }
+        }
         reply(new HostReply(id, result, handlers.BuildState()));
         // The browser must receive its saved-profile acknowledgement before the
         // native owner asks it to flush drafts and decide whether it can exit.
@@ -77,8 +96,6 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
         if (request.ProtocolVersion != HostBridgeJson.ProtocolVersion) throw new ArgumentException("Unsupported host protocol version.");
         if (request.CoreType.HasValue && !Enum.IsDefined(request.CoreType.Value)) throw new ArgumentException("Unknown core kind.");
         if (request.ExpectedRevision is < 0 || request.ExpectedRuntimeEpoch is < 0) throw new ArgumentException("Invalid operation revision.");
-        if (request.ConfirmUnverified && (request.Type != "upgradeCore" || request.ExpectedRevision is null || request.ExpectedRuntimeEpoch is null))
-            throw new ArgumentException("An upgrade confirmation requires its original profile revision and runtime epoch.");
         if (request.Type == "performance")
         {
             if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 100 || request.Name.Any(char.IsControl)

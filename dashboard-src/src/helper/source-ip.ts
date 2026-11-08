@@ -1,3 +1,5 @@
+import { showNotification } from '@/helper/notification'
+import { getSourceIPLabelKeyError } from '@/helper/preferenceValues'
 import { getReverseDNSHostname } from '@/helper/reverse-dns'
 import { sourceIPLabelList } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
@@ -10,6 +12,7 @@ const sourceIPMap = new Map<string, string>()
 const sourceIPRegexList: { regex: RegExp; label: string }[] = []
 type CIDREntry = { cidr: [ipaddr.IPv4 | ipaddr.IPv6, number]; label: string }
 const sourceIPCIDRList: CIDREntry[] = []
+const reportedInvalidKeys = new Set<string>()
 
 const stripZone = (ip: string) => ip.split('%')[0]!
 
@@ -20,6 +23,15 @@ const preprocessSourceIPList = () => {
   sourceIPCIDRList.length = 0
 
   for (const { key, label, scope } of sourceIPLabelList.value) {
+    const error = getSourceIPLabelKeyError(key)
+    if (error) {
+      if (!reportedInvalidKeys.has(key)) {
+        reportedInvalidKeys.add(key)
+        showNotification({ content: error, type: 'alert-error' })
+      }
+      continue
+    }
+
     if (scope && !scope.includes(activeBackend.value?.uuid as string)) {
       continue
     }
@@ -92,7 +104,7 @@ export const getIPLabelFromMap = (ip: string) => {
 
   if (addr) {
     for (const { cidr, label } of sourceIPCIDRList) {
-      if (addr.match(cidr)) {
+      if (addr.kind() === cidr[0].kind() && addr.match(cidr)) {
         return cacheResult(ip, label)
       }
     }

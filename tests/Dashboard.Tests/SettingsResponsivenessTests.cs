@@ -6,7 +6,7 @@ public sealed class SettingsResponsivenessTests : TemporaryDirectoryTest
 {
     [Fact]
     [Trait("Category", "WebViewIntegration")]
-    public async Task SlowPersistenceKeepsTheWindowsMessageLoopResponsiveAndDoesNotPublishBeforeCommit()
+    public async Task ReloadBootstrapWaitsForSlowPreferenceCommitWhileTheWindowsMessageLoopStaysResponsive()
     {
         var root = TestRoot;
         using var release = new ManualResetEventSlim();
@@ -28,16 +28,36 @@ public sealed class SettingsResponsivenessTests : TemporaryDirectoryTest
                 try
                 {
                     var before = store.Current;
+                    var router = new HostMessageRouter(new()
+                    {
+                        ExecuteAsync = async request => { await store.SavePreferencesAsync(request.Preferences!); return CommandResult.Completed(); },
+                        BuildState = () => new(), Preferences = () => store.Current.DashboardPreferences,
+                        ChooseFile = (_, _) => null, OpenLocation = (_, _) => { }, WindowCommand = (_, _) => { },
+                        CheckAppUpdateAsync = () => Task.CompletedTask, OpenAppRelease = () => { }, OpenCoreRepository = () => { }
+                    });
                     block = true;
-                    var save = store.SetOptionAsync("minimizeToTray", !before.DesktopOptions.MinimizeToTray);
+                    var save = router.RouteAsync("""
+                        {"protocolVersion":2,"type":"saveDashboardPreferences","requestId":"old-page","preferences":{"config/theme":"dark"}}
+                        """, _ => { });
                     await entered.Task;
+                    var replies = new List<object>();
+                    var bootstrap = router.RouteAsync("""
+                        {"protocolVersion":2,"type":"bootstrap","requestId":"reloaded-page"}
+                        """, replies.Add);
                     var posted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     form.BeginInvoke(() => posted.SetResult());
                     await posted.Task;
                     Assert.False(save.IsCompleted);
                     Assert.Same(before, store.Current);
+                    Assert.False(bootstrap.IsCompleted);
+                    Assert.Empty(replies);
                     release.Set(); await save;
-                    Assert.NotEqual(before.DesktopOptions.MinimizeToTray, store.Current.DesktopOptions.MinimizeToTray);
+                    await bootstrap;
+                    var preferences = Assert.IsType<BootstrapReply>(Assert.Single(replies)).Preferences;
+                    Assert.Equal("dark", preferences["config/theme"]);
+                    // A subsequent full save based on the reloaded page must retain the accepted theme.
+                    await store.SavePreferencesAsync(new Dictionary<string, string>(preferences) { ["config/language"] = "zh" });
+                    Assert.Equal("dark", new SettingsStore(root).Current.DashboardPreferences["config/theme"]);
                     complete.TrySetResult();
                 }
                 catch (Exception error) { complete.TrySetException(error); }

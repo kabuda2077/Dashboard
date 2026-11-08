@@ -31,7 +31,10 @@ export type HostRuntimeState = {
   networkRevision?: number
   coreTitle?: string
   coreVersion?: string
+  coreUpdateMode?: 'automatic' | 'manual' | 'unknown'
+  coreReleaseUrl?: string
   apiStatus?: 'idle' | 'checking' | 'ready' | 'unauthorized' | 'unreachable'
+  apiIsManaged?: boolean
   apiUrl?: string
   secret?: string
   secretDecryptionFailed?: boolean
@@ -123,7 +126,6 @@ export type HostCommand =
       draft?: CoreProfileDraft
       expectedRevision?: number
       expectedRuntimeEpoch?: number
-      confirmUnverified?: boolean
     }
   | {
       type: 'chooseCoreFile' | 'chooseConfigFile' | 'openCoreLocation' | 'openConfigLocation'

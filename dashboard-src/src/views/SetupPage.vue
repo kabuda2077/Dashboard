@@ -147,7 +147,7 @@ import TextInput from '@/components/common/TextInput.vue'
 import EditBackendModal from '@/components/settings/backend/EditBackendModal.vue'
 import LanguageSelect from '@/components/settings/general/LanguageSelect.vue'
 import { ROUTE_NAME } from '@/constant'
-import { syncSettingsFromCore } from '@/helper/auto-import-settings'
+import { autoSyncSettings, syncSettingsFromCore } from '@/helper/auto-import-settings'
 import { showNotification } from '@/helper/notification'
 import { describeProbeFailure, getBackendProbeUrl } from '@/helper/connectivity'
 import { backendSessionGeneration } from '@/helper/backendSession'
@@ -211,11 +211,13 @@ const editBackend = (backend: Backend) => {
 type SetupForm = Omit<Backend, 'uuid'>
 
 const finishLogin = async () => {
-  try {
-    const synced = await syncSettingsFromCore()
-    if (synced) return
-  } catch (error) {
-    console.error('Failed to sync settings after login:', error)
+  if (autoSyncSettings.value) {
+    try {
+      const synced = await syncSettingsFromCore()
+      if (synced) return
+    } catch (error) {
+      console.error('Failed to sync settings after login:', error)
+    }
   }
   router.push({ name: ROUTE_NAME.proxies })
 }

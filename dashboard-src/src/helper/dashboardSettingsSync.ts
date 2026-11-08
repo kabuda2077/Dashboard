@@ -40,8 +40,6 @@ const drain = async () => {
     }
   } catch (error) {
     failure = error
-    const { notifyRequestError } = await import('@/helper/request-error')
-    notifyRequestError(error)
   } finally {
     const completed = waiters.filter((waiter) => waiter.sequence <= job.sequence)
     waiters = waiters.filter((waiter) => waiter.sequence > job.sequence)
@@ -73,11 +71,16 @@ export const saveDashboardSettingsToHost = (): Promise<void> => {
   return completion
 }
 
+const notifySaveError = async (error: unknown) => {
+  const { notifyRequestError } = await import('@/helper/request-error')
+  notifyRequestError(error)
+}
+
 export const scheduleDashboardSettingsSave = () => {
   if (!hasHostBridge) return
   clearTimeout(timer)
   timer = setTimeout(() => {
-    void saveDashboardSettingsToHost().catch(() => {})
+    void saveDashboardSettingsToHost().catch(notifySaveError)
   }, 300)
 }
 
@@ -92,7 +95,7 @@ export const installDashboardSettingsSync = () => {
       scheduleDashboardSettingsSave()
   }
   const unload = () => {
-    void saveDashboardSettingsToHost().catch(() => {})
+    void saveDashboardSettingsToHost().catch(notifySaveError)
   }
   let stopped = false
   const removeFlush = addHostMessageListener(({ data }) => {
@@ -112,8 +115,11 @@ export const installDashboardSettingsSync = () => {
           (draft) => draft && isDraftDirty(draft),
         )
         postHostMessage({ type: 'preferencesFlushed', requestId, value: !hasUnsavedDraft })
-      } catch {
-        if (!stopped) postHostMessage({ type: 'preferencesFlushed', requestId, value: false })
+      } catch (error) {
+        if (!stopped) {
+          postHostMessage({ type: 'preferencesFlushed', requestId, value: false })
+          void notifySaveError(error)
+        }
       }
     }
     void flush()

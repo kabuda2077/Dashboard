@@ -22,6 +22,14 @@ function Invoke-AuditGit {
     if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed in $Directory" }
     return $lines
 }
+function Test-AuditAncestor {
+    param([string]$Ancestor, [string]$Descendant)
+    $diagnostic = @(git --no-replace-objects -C $UpstreamRoot merge-base --is-ancestor $Ancestor $Descendant 2>&1)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) { return $true }
+    if ($exitCode -eq 1) { return $false }
+    throw "git merge-base --is-ancestor failed (exit $exitCode): $($diagnostic -join ' ')"
+}
 function Get-AuditPaths {
     param([string]$Directory, [string[]]$Arguments)
     $result = @(Invoke-AuditGit $Directory ($Arguments + @('-z')))
@@ -36,8 +44,7 @@ function Get-AuditDigest {
 function Copy-AuditRecord { param($Value); return ,(ConvertFrom-Json (ConvertTo-Json -InputObject $Value -Depth 60)) }
 function Get-AuditSourceSnapshot {
     $head = [string](Invoke-AuditGit $root @('rev-parse', 'HEAD'))
-    $files = [string[]]@(Get-AuditPaths $root @('ls-files', '--cached', '--others', '--exclude-standard') | Sort-Object -Unique)
-    [Array]::Sort($files, [StringComparer]::Ordinal)
+    $files = @(Get-SourceInputPaths -Root $root)
     $manifest = @(foreach ($file in $files) {
         $path = Join-Path $root $file
         $hash = if (Test-Path -LiteralPath $path -PathType Leaf) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() } else { 'MISSING' }
@@ -253,13 +260,35 @@ function Get-ChangedPaths {
         [ordered]@{ path = $path; beforeSha256 = $old[$path]; afterSha256 = $new[$path] }
     }
 }
+function Get-SupplementSourceScope {
+    param($Plan, $Review, $Policy)
+    $scope = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+    if ($Plan.mode -ne 'supplement') { return ,$scope }
+    $prefix = $Plan.policy.upstream.localPrefix
+    foreach ($item in $Plan.incoming) { $scope[$item.path] = $item.upstreamPath }
+    foreach ($path in @($Review.batches | Where-Object action -cin @('adopt', 'adapt', 'replace-local') | ForEach-Object paths)) {
+        if ($scope.ContainsKey($path) -or -not $path.StartsWith($prefix, [StringComparison]::Ordinal)) { continue }
+        $mapping = @($Plan.policy.adaptations | Where-Object path -ceq $path)[0]
+        if (-not $mapping) { $mapping = @($Policy.adaptations | Where-Object path -ceq $path)[0] }
+        if (-not $mapping -and (Test-ForkPathMatch $path @($Policy.forkOwnedPaths))) { continue }
+        $scope[$path] = if ($mapping) { $mapping.upstreamPath } else { $path }
+    }
+    # Only explicit mappings to a reviewed source make localPaths into U1 results.
+    $sources = @($scope.Values)
+    foreach ($mapping in @($Plan.policy.adaptations) + @($Policy.adaptations)) {
+        if ($mapping.upstreamPath -cin $sources -and -not $scope.ContainsKey($mapping.path)) { $scope[$mapping.path] = $mapping.upstreamPath }
+    }
+    return ,$scope
+}
 function Get-CandidatePolicy {
     param($Plan, $Review, $Dispositions, [bool]$Advance)
     $proposal = Copy-AuditRecord $currentPolicy
     $prefix = $Plan.policy.upstream.localPrefix
+    $supplementSources = Get-SupplementSourceScope $Plan $Review $currentPolicy
     if ($proposal.upstream.repository -cne $Plan.policy.upstream.repository -or $proposal.upstream.localPrefix -cne $prefix -or
         $proposal.upstream.revision -cnotin @($Plan.upstreamRevision, $Plan.targetRevision)) { throw 'Candidate policy changed upstream source identity.' }
     if (-not $Advance -and $proposal.upstream.revision -cne $Plan.upstreamRevision) { throw 'Use -AdvanceBaseline consistently for the advanced candidate.' }
+    if ($Plan.mode -eq 'supplement' -and ($Advance -or $proposal.upstream.revision -cne $Plan.upstreamRevision -or $proposal.upstream.tag -cne $Plan.policy.upstream.tag)) { throw 'Supplement mode must preserve the registered baseline revision and tag; AdvanceBaseline is not allowed.' }
     if ($Advance) { $proposal.upstream.revision = $Plan.targetRevision; $proposal.upstream.tag = $Plan.targetRef }
     $pending = [Collections.Generic.List[object]]::new()
     foreach ($item in $Plan.pendingDecisions) {
@@ -327,9 +356,20 @@ function Get-CandidatePolicy {
         if ($targetSource -eq 'MISSING' -and $baseSource -ne 'MISSING') {
             $mappings += [ordered]@{ path = $path; upstreamPath = $path; revision = $Plan.upstreamRevision }
         }
-        elseif (-not $Advance -and $baseSource -eq 'MISSING' -and $targetSource -ne 'MISSING' -and $Dispositions[$path] -in @('adopt', 'adapt', 'replace-local')) {
+        elseif (-not $Advance -and $baseSource -eq 'MISSING' -and $targetSource -ne 'MISSING' -and $Dispositions[$path] -in @('adopt', 'adapt', 'replace-local') -and
+            ($Plan.mode -ne 'supplement' -or $supplementSources.ContainsKey($path))) {
             # Partial adoption keeps U0 but records where the new U1 file came from.
             $mappings += [ordered]@{ path = $path; upstreamPath = $path; revision = $Plan.targetRevision }
+        }
+    }
+    if ($Plan.mode -eq 'supplement') {
+        # Even a same-name U0 file or an existing mapping must record the reviewed U1 source.
+        foreach ($path in $Dispositions.Keys) {
+            if ($Dispositions[$path] -cnotin @('adopt', 'adapt', 'replace-local') -or -not $supplementSources.ContainsKey($path) -or
+                -not (Test-Path -LiteralPath (Join-Path $root $path) -PathType Leaf)) { continue }
+            $sourcePath = $supplementSources[$path]
+            if ((Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $sourcePath.Substring($prefix.Length)) -eq 'MISSING') { throw "Supplement result requires an exact target source mapping: $path" }
+            $mappings = @($mappings | Where-Object path -cne $path) + @([ordered]@{ path = $path; upstreamPath = $sourcePath; revision = $Plan.targetRevision })
         }
     }
     $proposal | Add-Member -Force NoteProperty adaptations @($mappings)
@@ -357,14 +397,29 @@ function Get-CandidatePolicy {
     return $proposal
 }
 function Test-CandidateSources {
-    param($Plan, $Dispositions, $Proposal)
+    param($Plan, $Dispositions, $Proposal, $Review)
     $prefix = $Proposal.upstream.localPrefix
+    $supplementSources = Get-SupplementSourceScope $Plan $Review $Proposal
     $before = @{}; foreach ($row in @(Read-ReviewJson (Join-Path $OutputDirectory 'inventory.json'))) { $before[$row.path] = $row.candidateSha256 }
     foreach ($path in $Dispositions.Keys) {
         $action = $Dispositions[$path]
         $hash = Get-NormalizedSourceHash (Join-Path $root $path)
-        if ($action -eq 'adopt') {
-            if (-not $path.StartsWith($prefix, [StringComparison]::Ordinal) -or $hash -cne (Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $path.Substring($prefix.Length))) { throw "Adopt must match exact target source (including deletions): $path" }
+        $sourcePath = $path
+        if ($Plan.mode -eq 'supplement' -and $supplementSources.ContainsKey($path)) {
+            $sourcePath = $supplementSources[$path]
+            if ($action -in @('adopt', 'adapt', 'replace-local')) {
+                $results = @($path) + @($Proposal.adaptations | Where-Object { $_.upstreamPath -ceq $sourcePath -and $Dispositions.ContainsKey($_.path) -and $Dispositions[$_.path] -in @('adapt', 'replace-local') } | ForEach-Object path)
+                $realResults = @($results | Where-Object { Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf })
+                if (-not $realResults.Count) { throw "Supplement disposition requires a real local result: $path" }
+                foreach ($resultPath in $realResults) {
+                    if (-not @(Get-ForkChangeIds $resultPath $Proposal).Count) { throw "Supplement result requires a contract: $resultPath" }
+                    $provenance = @($Proposal.adaptations | Where-Object { $_.path -ceq $resultPath -and $_.upstreamPath -ceq $sourcePath -and $_.revision -ceq $Plan.targetRevision })
+                    if (-not $provenance.Count) { throw "Supplement result requires exact target provenance: $resultPath" }
+                }
+            }
+        }
+        if ($action -eq 'adopt' -and ($Plan.mode -ne 'supplement' -or $supplementSources.ContainsKey($path))) {
+            if (-not $sourcePath.StartsWith($prefix, [StringComparison]::Ordinal) -or $hash -cne (Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $sourcePath.Substring($prefix.Length))) { throw "Adopt must match exact target source (including deletions): $path" }
         }
         if ($action -in @('keep-local', 'defer')) {
             $oldHash = if ($before.ContainsKey($path)) { $before[$path] } else { 'MISSING' }
@@ -386,6 +441,7 @@ function Test-CandidateSources {
         }
         $mapped = $file -cin @($Proposal.adaptations.path) -or $file -cin @($Proposal.mirrors.path) -or $file -cin @($Proposal.pending | ForEach-Object paths)
         $incomingAdopted = $file.StartsWith($prefix, [StringComparison]::Ordinal) -and $Dispositions.ContainsKey($file) -and $Dispositions[$file] -in @('adopt', 'adapt', 'replace-local') -and
+            ($Plan.mode -ne 'supplement' -or $supplementSources.ContainsKey($file)) -and
             (Get-ForkUpstreamHash $UpstreamRoot $Plan.targetRevision $file.Substring($prefix.Length)) -ne 'MISSING'
         if ($file -cnotin $futureFiles -and -not $mapped -and -not $incomingAdopted) { throw "Unclassified result path requires explicit target/adaptation provenance: $file" }
         $same = $file -cin $futureFiles -and (Get-NormalizedSourceHash (Join-Path $root $file)) -ceq (Get-ForkUpstreamHash $UpstreamRoot $Proposal.upstream.revision $file.Substring($prefix.Length))
@@ -420,7 +476,9 @@ $planPath = Join-Path $OutputDirectory 'plan.json'
 if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
     if ($checkoutRevision -cne $currentPolicy.upstream.revision) { throw 'The upstream checkout must be at the exact reviewed policy SHA.' }
     $target = if ($TargetRef) { [string](Invoke-AuditGit $UpstreamRoot @('rev-parse', ($TargetRef + '^{commit}'))) } else { $checkoutRevision }
-    $null = Invoke-AuditGit $UpstreamRoot @('merge-base', '--is-ancestor', $checkoutRevision, $target)
+    $mode = if ($target -ceq $checkoutRevision -or (Test-AuditAncestor $checkoutRevision $target)) { 'forward' }
+        elseif (Test-AuditAncestor $target $checkoutRevision) { 'supplement' }
+        else { throw 'Target and registered baseline have no ancestor relationship.' }
     Test-ForkMirrors -Root $root -Policy $currentPolicy -UpstreamRoot $UpstreamRoot
     foreach ($mapping in $currentPolicy.adaptations) { if ((Get-ForkUpstreamHash $UpstreamRoot $mapping.revision $mapping.upstreamPath.Substring($currentPolicy.upstream.localPrefix.Length)) -eq 'MISSING') { throw "Adaptation upstream source does not exist: $($mapping.upstreamPath)" } }
     foreach ($name in $names | Where-Object { $_ -notin @('plan.json', 'report.md') }) { if (Test-Path -LiteralPath (Join-Path $OutputDirectory $name)) { throw 'Existing review evidence without its plan; choose a new output directory.' } }
@@ -428,7 +486,10 @@ if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
     foreach ($id in $Revisit) { if ($id -cnotin @($currentPolicy.pending.id)) { throw "Unknown pending ID for Revisit: $id" } }
     $prefix = $currentPolicy.upstream.localPrefix
     $upstreamFiles = @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $checkoutRevision) | ForEach-Object { $prefix + $_ })
-    $rows = @(foreach ($file in @($upstreamFiles + $startSnapshot.files | Sort-Object -Unique)) {
+    $targetFiles = @(Get-AuditPaths $UpstreamRoot @('ls-tree', '-r', '--name-only', $target) | ForEach-Object { $prefix + $_ })
+    $inventoryFiles = @($upstreamFiles) + @($startSnapshot.files)
+    if ($mode -eq 'supplement') { $inventoryFiles += @($targetFiles) + @($currentPolicy.adaptations | ForEach-Object path) }
+    $rows = @(foreach ($file in @($inventoryFiles | Sort-Object -Unique)) {
         $inUpstream = $file -cin $upstreamFiles
         $owned = Test-ForkPathMatch $file @($currentPolicy.forkOwnedPaths)
         if ($owned -and $inUpstream) { throw "Fork-owned path collides with reviewed upstream: $file" }
@@ -441,8 +502,23 @@ if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
             contracts = @(Get-ForkChangeIds $file $currentPolicy) }
     })
     $byPath = @{}; foreach ($row in $rows) { $byPath[$row.path] = $row }
-    $incoming = @(foreach ($file in @(Get-AuditPaths $UpstreamRoot @('diff', '--name-only', '--no-renames', $checkoutRevision, $target))) {
-        $path = $prefix + $file
+    $candidates = if ($mode -eq 'supplement') {
+        foreach ($sourcePath in $targetFiles) {
+            $mappedPaths = @($currentPolicy.adaptations | Where-Object upstreamPath -ceq $sourcePath | ForEach-Object path)
+            if ($sourcePath -cnotin $upstreamFiles -and -not $mappedPaths.Count) { continue }
+            $localPaths = if ($mappedPaths.Count) { $mappedPaths } else { @($sourcePath) }
+            foreach ($localPath in $localPaths) {
+                if (-not (Test-Path -LiteralPath (Join-Path $root $localPath) -PathType Leaf)) { [ordered]@{ path = $localPath; upstreamPath = $sourcePath } }
+            }
+        }
+    } else {
+        foreach ($file in @(Get-AuditPaths $UpstreamRoot @('diff', '--name-only', '--no-renames', $checkoutRevision, $target))) {
+            [ordered]@{ path = $prefix + $file; upstreamPath = $prefix + $file }
+        }
+    }
+    $incoming = @(foreach ($candidate in $candidates) {
+        $path = $candidate.path
+        $file = $candidate.upstreamPath.Substring($prefix.Length)
         $direct = @(Get-ForkChangeIds $path $currentPolicy)
         $groups = @(Get-ForkChangeIds $path $currentPolicy -IncludeWatch)
         $contracts = @($currentPolicy.contracts | Where-Object id -cin $groups)
@@ -450,7 +526,7 @@ if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
         $overlap = $byPath.ContainsKey($path) -and $byPath[$path].upstreamToCandidate -ne 'same'
         $risk = 'low'; foreach ($contract in $contracts) { if ($contract.risk -eq 'high' -or ($contract.risk -eq 'medium' -and $risk -eq 'low')) { $risk = $contract.risk } }
         if (-not $groups.Count) { $risk = 'high' }
-        [ordered]@{ path = $path; localOverlap = $overlap; contracts = $groups; risk = $risk
+        [ordered]@{ path = $path; upstreamPath = $candidate.upstreamPath; localOverlap = $overlap; contracts = $groups; risk = $risk
             attention = if ($owned) { 'fork-owned-collision' } elseif ($overlap) { 'shared-overlap' } elseif ($direct.Count) { 'upstream-change' } elseif ($groups.Count) { 'contract-watch' } else { 'unclassified' }
             targetSha256 = Get-ForkUpstreamHash $UpstreamRoot $target $file }
     })
@@ -462,13 +538,13 @@ if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
     $required = @(@($incoming.path) + @($triggered | ForEach-Object paths) | Sort-Object -Unique)
     $affectedIds = @($required | ForEach-Object { Get-ForkChangeIds $_ $currentPolicy -IncludeWatch } | Sort-Object -Unique)
     $inventoryText = (ConvertTo-Json -InputObject $rows -Depth 40) + [Environment]::NewLine
-    $plan = [ordered]@{ schemaVersion = 4; upstreamRevision = $checkoutRevision; targetRevision = $target; targetRef = if ($TargetRef) { $TargetRef } else { $target }; upstreamRoot = $UpstreamRoot
+    $plan = [ordered]@{ schemaVersion = 4; mode = $mode; upstreamRevision = $checkoutRevision; targetRevision = $target; targetRef = if ($TargetRef) { $TargetRef } else { $target }; upstreamRoot = $UpstreamRoot
         candidateSnapshot = $startSnapshot; candidateDirty = (@(Invoke-AuditGit $root @('status', '--porcelain')).Count -gt 0); policy = $currentPolicy
         inventoryHash = Get-AuditDigest $inventoryText; incoming = $incoming; requiredPaths = $required; pendingDecisions = @($currentPolicy.pending); triggeredPending = $triggered; revisit = $Revisit
         targetDiagnostics = @(Get-TargetDiagnostics $currentPolicy $target $checkoutRevision)
         affectedContracts = @($currentPolicy.contracts | Where-Object id -cin $affectedIds | ForEach-Object { [ordered]@{ id = $_.id; risk = $_.risk; rule = $_.rule } })
         checks = @($currentPolicy.contracts | Where-Object id -cin $affectedIds | ForEach-Object checks | Sort-Object -Unique)
-        renameHints = @(Invoke-AuditGit $UpstreamRoot @('diff', '--name-status', '-M', $checkoutRevision, $target) | Where-Object { $_ -cmatch '^R[0-9]+\s' })
+        renameHints = @(if ($mode -ne 'supplement') { Invoke-AuditGit $UpstreamRoot @('diff', '--name-status', '-M', $checkoutRevision, $target) | Where-Object { $_ -cmatch '^R[0-9]+\s' } })
         commitHints = @(Invoke-AuditGit $UpstreamRoot @('log', '--format=%H %s', '--reverse', ($checkoutRevision + '..' + $target))) }
     $plan.planInputHash = Get-PlanHash $plan
     $review = [ordered]@{ schemaVersion = 4; upstreamRevision = $checkoutRevision; targetRevision = $target; planInputHash = $plan.planInputHash
@@ -486,6 +562,7 @@ if ($Phase -eq 'Plan' -and -not (Test-Path -LiteralPath $planPath)) {
 $plan = Read-ReviewJson $planPath
 if ($plan.schemaVersion -ne 4 -or $plan.planInputHash -cne (Get-PlanHash $plan) -or
     $plan.inventoryHash -cne (Get-AuditDigest ([IO.File]::ReadAllText((Join-Path $OutputDirectory 'inventory.json'))))) { throw 'Immutable plan evidence was modified.' }
+if ($plan.mode -eq 'supplement' -and $AdvanceBaseline) { throw 'AdvanceBaseline is not allowed in supplement mode; preserve the registered baseline.' }
 if ($TargetRef -and [string](Invoke-AuditGit $UpstreamRoot @('rev-parse', ($TargetRef + '^{commit}'))) -cne $plan.targetRevision) { throw 'TargetRef differs from immutable plan.' }
 if ($checkoutRevision -cnotin @($plan.upstreamRevision, $plan.targetRevision)) { throw 'Upstream checkout must remain at U0 or U1; target blobs are read without checkout.' }
 if ($Phase -eq 'Plan') {
@@ -523,7 +600,7 @@ if ($Phase -eq 'Prepare') {
     if ($oldPrepared -and $oldPrepared.advanceBaseline -and $currentPolicy.upstream.revision -ceq $plan.targetRevision) { $advance = $true }
     $proposal = Get-CandidatePolicy $plan $review $dispositions $advance
     $changed = @(Get-ChangedPaths $plan.candidateSnapshot $startSnapshot $dispositions)
-    Test-CandidateSources $plan $dispositions $proposal
+    Test-CandidateSources $plan $dispositions $proposal $review
     Save-DecisionHistory
     Assert-StableSources
     $policyPath = Join-Path $root 'docs/upstream/ownership.json'

@@ -24,15 +24,18 @@
         <component
           :is="item.to ? RouterLink : 'button'"
           v-bind="bindingOf(item)"
-          class="nav-item w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          class="nav-item focus-visible:outline-primary w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2"
           :data-nav-key="item.key"
           :aria-label="item.label"
-          @click="!item.to && emit('select', item.key)"
+          @click="clickHandler(item)"
         >
           <component
             :is="item.icon"
             class="nav-item-icon"
+            :class="[motionOf(item.icon), { 'is-playing': playing.has(item.key) }]"
             aria-hidden="true"
+            @animationend="playing.delete(item.key)"
+            @animationcancel="playing.delete(item.key)"
           />
           <span
             v-if="!collapsed"
@@ -48,8 +51,19 @@
 
 <script setup lang="ts">
 import { useTooltip } from '@/helper/tooltip'
+import {
+  ArrowsRightLeftIcon,
+  Cog6ToothIcon,
+  CubeTransparentIcon,
+  DocumentTextIcon,
+  GlobeAltIcon,
+  HomeIcon,
+  ServerIcon,
+  Squares2X2Icon,
+  SwatchIcon,
+} from '@heroicons/vue/24/outline'
 import { useResizeObserver } from '@vueuse/core'
-import { nextTick, onUnmounted, ref, watch, type Component } from 'vue'
+import { nextTick, onUnmounted, reactive, ref, watch, type Component } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 export type NavMenuItem = {
@@ -70,6 +84,21 @@ const emit = defineEmits<{
   select: [key: string]
 }>()
 
+const ICON_MOTION = new Map<Component, string>([
+  [Squares2X2Icon, 'motion-tiles'],
+  [GlobeAltIcon, 'motion-spin-y'],
+  [ArrowsRightLeftIcon, 'motion-swap'],
+  [SwatchIcon, 'motion-fan'],
+  [DocumentTextIcon, 'motion-flip'],
+  [Cog6ToothIcon, 'motion-gear'],
+  [CubeTransparentIcon, 'motion-cube'],
+  [ServerIcon, 'motion-bounce'],
+  [HomeIcon, 'motion-bounce'],
+])
+
+const motionOf = (icon: Component) => ICON_MOTION.get(icon) ?? 'motion-pop'
+const playing = reactive(new Set<string>())
+
 const containerRef = ref<HTMLElement>()
 const menuRef = ref<HTMLUListElement>()
 const indicatorReady = ref(false)
@@ -81,6 +110,11 @@ const indicatorStyle = ref({
   width: '0px',
 })
 const { showTip } = useTooltip()
+
+const clickHandler = (item: NavMenuItem) => {
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) playing.add(item.key)
+  if (!item.to) emit('select', item.key)
+}
 
 const mouseenterHandler = (e: MouseEvent, item: NavMenuItem) => {
   if (!props.collapsed) return
@@ -176,10 +210,130 @@ defineExpose({ syncIndicator })
 .nav-item-icon {
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
+  transform-origin: center;
 }
 
 .nav-indicator {
   background-color: color-mix(in srgb, var(--color-base-content) 9%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-base-content) 3%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .motion-fan {
+    transform-origin: 30% 80%;
+  }
+
+  .is-playing {
+    animation-duration: 0.6s;
+    animation-timing-function: ease-in-out;
+  }
+
+  .is-playing.motion-tiles {
+    animation-name: nav-tiles;
+    animation-timing-function: cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  .is-playing.motion-gear {
+    animation-name: nav-gear;
+    animation-duration: 0.7s;
+    animation-timing-function: cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  .is-playing.motion-fan {
+    animation-name: nav-fan;
+  }
+
+  .is-playing.motion-pop {
+    animation-name: nav-pop;
+  }
+
+  .is-playing.motion-spin-y {
+    animation-name: nav-spin-y;
+    animation-duration: 0.8s;
+  }
+
+  .is-playing.motion-swap {
+    animation-name: nav-swap;
+  }
+
+  .is-playing.motion-flip {
+    animation-name: nav-flip;
+  }
+
+  .is-playing.motion-cube {
+    animation-name: nav-cube;
+    animation-duration: 0.8s;
+  }
+
+  .is-playing.motion-bounce {
+    animation-name: nav-bounce;
+  }
+}
+
+@keyframes nav-tiles {
+  to {
+    transform: rotate(90deg);
+  }
+}
+
+@keyframes nav-gear {
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+@keyframes nav-fan {
+  50% {
+    transform: rotate(-14deg);
+  }
+}
+
+@keyframes nav-pop {
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+@keyframes nav-spin-y {
+  to {
+    transform: rotateY(360deg);
+  }
+}
+
+@keyframes nav-swap {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes nav-flip {
+  40% {
+    transform: translateY(-3px) rotate(-6deg);
+  }
+  70% {
+    transform: translateY(0) rotate(3deg);
+  }
+}
+
+@keyframes nav-cube {
+  to {
+    transform: rotateX(180deg) rotateY(180deg);
+  }
+}
+
+@keyframes nav-bounce {
+  30% {
+    transform: translateY(-4px) scaleY(1.05);
+  }
+  55% {
+    transform: translateY(0) scaleY(0.92);
+  }
+  75% {
+    transform: translateY(-1px);
+  }
 }
 </style>

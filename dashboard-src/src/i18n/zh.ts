@@ -150,6 +150,7 @@ const zh: LANG_MESSAGE = {
   upgradeToAlpha: '升级到 Alpha',
   updateGeoDatabase: '更新GEO',
   tunMode: 'Tun 模式',
+  tunSettings: 'TUN 设置',
   tunStack: 'TUN 协议栈',
   tunStackHelp: '切换协议栈会重建 TUN，可能中断连接。',
   tunStackUpdateFailed: 'TUN 协议栈切换未获确认，请检查当前状态和核心日志。',
@@ -224,13 +225,11 @@ const zh: LANG_MESSAGE = {
   networkIPLocationLabel: '位置',
   networkIPISP: 'ISP',
   networkIPASN: 'ASN',
-  networkIPLocationLoading: '查询归属中',
   networkIPLocationPartial: '归属信息有限',
-  networkIPLocationPartialHelp:
-    '出口 IP 已检测到；归属服务未提供完整位置、ISP/组织或 ASN 信息，也可能暂时不可用。',
+  networkIPLocationPartialHelp: '服务已返回有效出口 IP，但未提供完整位置、ISP/组织或 ASN 信息。',
   networkInternationalExit: '国际目标出口',
   networkExitHelp:
-    '显示查询目标实际看到的单个出口 IP，遵循当前网络和分流规则，不代表所有节点；归属查询不会替换观测地址。',
+    '国内使用 ipip.net，国外使用“IP信息API”选定的服务，分别一次查询出口 IP 和归属。结果遵循当前网络和分流规则，不代表所有节点。',
   networkLatencyHelp:
     '通过当前 WebView 网络路径发起 HTTP 请求，每站五次。数字为成功样本的中位数，圆点保留失败情况；不等于 Ping、节点延迟，也不能证明 HTTP 状态或网站完整可用。',
   networkRouting: '分流',
@@ -368,7 +367,7 @@ const zh: LANG_MESSAGE = {
   flushSmartWeights: '清空Smart权重',
   IPInfoAPI: 'IP信息API',
   IPInfoAPITip:
-    '此API会用于IP检查中全球节点IP信息查询、连接详情中的IP地理信息查询、面板DNS查询中的IP地理信息查询。',
+    '用于概览页国外出口 IP、位置、ISP/组织及 ASN 的单次查询，以及连接详情的在线 IP 归属查询。国内固定使用 ipip.net；连接列表使用下方的 GeoIP 数据库。',
   general: '通用',
   groupProxiesByProvider: '节点根据提供商分组',
   useSmartGroupSort: 'Smart组根据使用频率排序',

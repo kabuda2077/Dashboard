@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Sockets;
+using System.Text;
 
 namespace Dashboard.Tests;
 
@@ -22,6 +24,30 @@ public sealed class CoreApiProbeTests
         Assert.Equal(new CoreApiStatus("ready", "v2.0.0"), result);
         Assert.Equal(2, calls);
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ManagedProbeChecksTheConnectedProcessEvenWhenTheResponseCloses(bool ipv6)
+    {
+        var address = ipv6 ? IPAddress.IPv6Loopback : IPAddress.Loopback;
+        using var listener = new TcpListener(address, 0);
+        listener.Start();
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var serve = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptTcpClientAsync(budget.Token);
+            await using var stream = socket.GetStream();
+            using var reader = new StreamReader(stream, leaveOpen: true);
+            while (!string.IsNullOrEmpty(await reader.ReadLineAsync(budget.Token))) { }
+            const string body = "{\"version\":\"v2.0.0\"}";
+            await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), budget.Token);
+        });
+        var url = new UriBuilder("http", address.ToString(), ((IPEndPoint)listener.LocalEndpoint).Port).Uri.AbsoluteUri;
+        var result = await CoreApiProbe.ProbeManagedAsync(url, "", Environment.ProcessId, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromMilliseconds(20), budget.Token);
+        await serve;
+        Assert.Equal(new CoreApiStatus("ready", "v2.0.0", true), result);
+    }
+
     [Fact]
     public async Task BadCredentialsAreNotRetriedForThirtySeconds()
     {

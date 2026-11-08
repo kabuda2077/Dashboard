@@ -22,6 +22,9 @@ public sealed class HostBridgeMessagesTests
         Assert.Empty(root.GetProperty("preferences").EnumerateObject());
         Assert.Equal(JsonValueKind.Null, root.GetProperty("state").GetProperty("runtime").GetProperty("processId").ValueKind);
         Assert.Equal("mihomo", root.GetProperty("state").GetProperty("runtime").GetProperty("coreType").GetString());
+        Assert.False(root.GetProperty("state").GetProperty("runtime").GetProperty("apiIsManaged").GetBoolean());
+        Assert.Equal("unknown", root.GetProperty("state").GetProperty("runtime").GetProperty("coreUpdateMode").GetString());
+        Assert.Equal("", root.GetProperty("state").GetProperty("runtime").GetProperty("coreReleaseUrl").GetString());
         // Frontend integration tests consume output of the production serializer, not hand-written JSON.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Dashboard.csproj"))) directory = directory.Parent;
@@ -40,7 +43,7 @@ public sealed class HostBridgeMessagesTests
                 new CoreProfileState(0, $"C:/Dashboard/{AppSettings.WireKind(kind)}.exe", "C:/Dashboard/config", "http://127.0.0.1:9090", "", false)),
             Runtime = new() {
                 CoreType = CoreKind.Mihomo, IsRunning = true, ProcessId = 12345, RuntimeEpoch = 1,
-                ApiStatus = "ready", ApiUrl = "http://127.0.0.1:9090"
+                ApiStatus = "ready", ApiIsManaged = true, ApiUrl = "http://127.0.0.1:9090"
             }
         };
         RoutingProbeResult[] rows = [

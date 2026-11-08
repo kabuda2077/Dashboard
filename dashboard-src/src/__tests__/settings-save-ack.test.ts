@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { startMockHost } from './hostFixture'
 
+const { notify } = vi.hoisted(() => ({ notify: vi.fn() }))
+vi.mock('@/helper/request-error', () => ({ notifyRequestError: notify }))
+
 beforeEach(() => {
+  notify.mockClear()
   vi.resetModules()
   vi.useFakeTimers()
   localStorage.clear()
@@ -53,6 +57,8 @@ it('a failed save remains retryable and is not acknowledged by de-duplication', 
   const first = saveDashboardSettingsToHost().catch((error) => error)
   host.ack(undefined, false)
   expect(await first).toBeInstanceOf(Error)
+  // Explicit callers own feedback, so canceled imports can suppress stale failures.
+  expect(notify).not.toHaveBeenCalled()
   const retry = saveDashboardSettingsToHost()
   host.ack()
   await retry
@@ -60,6 +66,16 @@ it('a failed save remains retryable and is not acknowledged by de-duplication', 
   await saveDashboardSettingsToHost()
   expect(host.post).toHaveBeenCalledTimes(2)
 })
+it('still reports a background save failure', async () => {
+  const host = await startMockHost()
+  const { scheduleDashboardSettingsSave } = await import('@/helper/dashboardSettingsSync')
+  localStorage.setItem('config/theme', 'background')
+  scheduleDashboardSettingsSave()
+  await vi.advanceTimersByTimeAsync(300)
+  host.ack(undefined, false)
+  await vi.waitFor(() => expect(notify).toHaveBeenCalledOnce())
+})
+
 it('timeout rejects instead of pretending disk save succeeded', async () => {
   await startMockHost()
   const { saveDashboardSettingsToHost } = await import('@/helper/dashboardSettingsSync')

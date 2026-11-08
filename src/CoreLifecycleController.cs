@@ -9,8 +9,7 @@ internal sealed class CoreLifecycleController : IDisposable
     private readonly ShutdownTaskTracker _tasks = new();
     private readonly object _sync = new();
     private readonly Func<bool> _isAdministrator;
-    private static readonly HttpClient ApiClient = new(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });
-    private readonly HttpClient _upgradeClient;
+    private readonly Func<string, CoreKind, CancellationToken, Task<string>> _readCoreVersion;
     private CancellationTokenSource? _probe;
     private CoreLaunchSpec? _running;
     private RoutingProbeInbound? _routingInbound;
@@ -21,6 +20,7 @@ internal sealed class CoreLifecycleController : IDisposable
     private NetworkDiagnosticsSnapshot? _networkDiagnostics;
     private string _apiStatus = "idle";
     private string _apiVersion = "";
+    private bool _apiIsManaged;
     private string _operation = "idle";
     private bool _closing;
     private Task<bool>? _shutdownTask;
@@ -30,6 +30,7 @@ internal sealed class CoreLifecycleController : IDisposable
     public long Epoch { get { lock (_sync) return _epoch; } }
     public string ApiVersion { get { lock (_sync) return _apiVersion; } }
     public string ApiStatus { get { lock (_sync) return _apiStatus; } }
+    public bool ApiIsManaged { get { lock (_sync) return _apiIsManaged; } }
     public string Operation { get { lock (_sync) return _operation; } }
     public CoreLaunchSpec? Running { get { lock (_sync) return _running; } }
     public bool IsUpgradeInProgress => Operation == "upgradeCore";
@@ -43,11 +44,11 @@ internal sealed class CoreLifecycleController : IDisposable
         && !running.SameProcessTarget(new CoreLaunchSpec(running.Kind, _settings.Current.Profile(running.Kind)));
 
     public CoreLifecycleController(SettingsStore settings, CoreProcessManager core, Func<bool>? isAdministrator = null,
-        HttpClient? upgradeClient = null)
+        Func<string, CoreKind, CancellationToken, Task<string>>? readCoreVersion = null)
     {
         _settings = settings;
         _core = core;
-        _upgradeClient = upgradeClient ?? CoreUpgradeSupport.SharedClient;
+        _readCoreVersion = readCoreVersion ?? CoreVersionReader.ReadAsync;
         _isAdministrator = isAdministrator ?? DashboardHost.IsRunningAsAdministrator;
         _core.StatusChanged += OnProcessChanged;
     }
@@ -139,8 +140,6 @@ internal sealed class CoreLifecycleController : IDisposable
             if (request.Type == "upgradeCore")
             {
                 if (request.Draft is not null) return CommandResult.Rejected("invalidInput");
-                if (request.ConfirmUnverified && (request.ExpectedRevision is null || request.ExpectedRuntimeEpoch is null))
-                    return CommandResult.Rejected("confirmationExpired");
                 if (request.ExpectedRevision is { } revision && revision != _settings.Current.Profile(kind).Revision)
                     return CommandResult.Rejected("staleRevision");
                 if (request.ExpectedRuntimeEpoch is { } epoch && epoch != Epoch)
@@ -185,14 +184,14 @@ internal sealed class CoreLifecycleController : IDisposable
                 case "switchCore":
                     return await SwitchAsync(kind, saved, token).ConfigureAwait(false);
                 case "upgradeCore":
-                    return await UpgradeAsync(kind, saved, request.ConfirmUnverified, token).ConfigureAwait(false);
+                    return await UpgradeAsync(kind, saved, token).ConfigureAwait(false);
                 default:
                     return CommandResult.Rejected("unknownCommand");
             }
         }
+        catch (HttpRequestException error) when (error.InnerException is CoreApiOwnershipException) { return CommandResult.Rejected("apiNotManaged"); }
         catch (SettingsConflictException) { return CommandResult.Rejected("staleRevision"); }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { return new("cancelled", "cancelled", Saved: saved); }
-        catch (UnverifiedReleaseException error) { return new("rejected", "confirmationRequired", error.Message, saved); }
         catch (Exception error)
         {
             HostOperationLogger.Error("core", $"Core operation {request.Type} failed.", error);
@@ -201,7 +200,7 @@ internal sealed class CoreLifecycleController : IDisposable
         }
     }
 
-    private async Task<CommandResult> StartAsync(CoreLaunchSpec spec, bool saved, CancellationToken token, bool waitForApi = false)
+    private async Task<CommandResult> StartAsync(CoreLaunchSpec spec, bool saved, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (_closing) return CommandResult.Rejected("closing");
@@ -223,15 +222,7 @@ internal sealed class CoreLifecycleController : IDisposable
         lock (_sync) { _running = spec; _connection = spec.Profile; _routingInbound = inbound; }
         await _core.StartAsync(spec, token).ConfigureAwait(false);
         if (!_core.IsRunning) return CommandResult.Failed("processStartFailed", saved: saved);
-        var probe = Connect(spec.Profile);
-        if (waitForApi)
-        {
-            var epoch = Epoch;
-            await probe.WaitAsync(token).ConfigureAwait(false);
-            token.ThrowIfCancellationRequested();
-            if (!_core.IsRunning || Epoch != epoch || ApiStatus != "ready")
-                throw new InvalidOperationException("升级后内核 API 未就绪，正在恢复原内核。");
-        }
+        _ = Connect(spec.Profile);
         return CommandResult.Completed("processStarted", saved);
     }
 
@@ -290,48 +281,51 @@ internal sealed class CoreLifecycleController : IDisposable
         catch (Exception error) { HostOperationLogger.Error("core", "One-shot recovery failed; no further restart attempted.", error); }
     }
 
-    private async Task<CommandResult> UpgradeAsync(CoreKind kind, bool saved, bool confirmUnverified, CancellationToken token)
+    private async Task<CommandResult> UpgradeAsync(CoreKind kind, bool saved, CancellationToken token)
     {
         if (_core.IsRunning && RequiresRestart) return CommandResult.Rejected("restartRequired");
         var profile = _settings.Current.Profile(kind);
         if (profile.SecretDecryptionFailed) return CommandResult.Rejected("credentialRecoveryRequired");
-        if (kind == CoreKind.Mihomo)
+        string raw;
+        try { raw = await _readCoreVersion(profile.ExePath, kind, token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception error)
         {
-            if (!_core.IsRunning || ApiStatus != "ready") return CommandResult.Rejected("apiNotReady");
-            var result = await MihomoApiUpdater.UpgradeAsync(profile.ApiUrl, profile.Secret, token).ConfigureAwait(false);
-            if (result.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
-            _ = Connect(profile);
-            return CommandResult.Completed("upgraded", saved);
+            HostOperationLogger.Error("version", "Unable to identify core update source.", error);
+            return CommandResult.Rejected("unknownCoreSource");
         }
-        var previous = _core.IsRunning ? Running : null;
-        CoreUpgradeResult? upgrade = null;
+        var source = CoreUpdateSource.Resolve(raw, kind);
+        if (source.Mode != "automatic")
+            return CommandResult.Rejected(source.Mode == "manual" ? "manualCoreUpdate" : "unknownCoreSource");
+        if (!_core.IsRunning || ApiStatus != "ready") return CommandResult.Rejected("apiNotReady");
+        if (!ApiIsManaged) return CommandResult.Rejected("apiNotManaged");
+        var previousPid = _core.BeginSelfUpgrade();
         try
         {
-            upgrade = await SingBoxUpdater.UpgradeAsync(profile.ExePath,
-                () => { CancelProbe(); _core.Stop(TimeSpan.FromSeconds(8)); }, token, confirmUnverified,
-                _upgradeClient, CoreVersionReader.ReadAsync).ConfigureAwait(false);
-            if (upgrade.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
-            if (previous is not null)
+            var result = await MihomoApiUpdater.UpgradeAsync(profile.ApiUrl, profile.Secret, previousPid, token,
+                owner => _core.OwnsProcess(owner, previousPid)).ConfigureAwait(false);
+            if (result.IsAlreadyLatest) return CommandResult.Completed("alreadyLatest", saved);
+            using var recovery = CancellationTokenSource.CreateLinkedTokenSource(token);
+            var timing = ProbeTiming;
+            recovery.CancelAfter(timing.TotalTimeout);
+            try
             {
-                var started = await StartAsync(new(kind, profile), saved, token, waitForApi: true).ConfigureAwait(false);
-                if (started.Status != "completed") throw new InvalidOperationException("升级后内核未能启动。");
+                while (_core.ProcessId is not { } pid || pid == previousPid)
+                    await Task.Delay(timing.RetryDelay, recovery.Token).ConfigureAwait(false);
+                OnProcessChanged(_core, EventArgs.Empty);
+                var probe = Connect(profile, recovery.Token);
+                var epoch = Epoch;
+                await probe.ConfigureAwait(false);
+                if (!_core.IsRunning || Epoch != epoch || ApiStatus != "ready" || !ApiIsManaged)
+                    return CommandResult.Failed("upgradeUnconfirmed", saved: saved);
+                return CommandResult.Completed("upgraded", saved);
             }
-            return CommandResult.Completed("upgraded", saved);
-        }
-        catch (Exception) when (!_closing && !token.IsCancellationRequested)
-        {
-            if (upgrade is { IsAlreadyLatest: false } && File.Exists(upgrade.BackupPath))
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
             {
-                try
-                {
-                    await _core.StopAsync().ConfigureAwait(false);
-                    CoreUpgradeSupport.ReplaceCoreWithRollback(upgrade.BackupPath, profile.ExePath, upgrade.BackupPath);
-                }
-                catch (Exception recoveryError) { HostOperationLogger.Error("upgrade", "Upgrade rollback failed; backup retained.", recoveryError); throw; }
+                return CommandResult.Failed("upgradeUnconfirmed", saved: saved);
             }
-            if (previous is not null && !_core.IsRunning) await RecoverAsync(kind, previous, token).ConfigureAwait(false);
-            throw;
         }
+        finally { _core.EndSelfUpgrade(); }
     }
 
     private void OnProcessChanged(object? sender, EventArgs args)
@@ -347,6 +341,7 @@ internal sealed class CoreLifecycleController : IDisposable
                 _networkDiagnostics = null;
                 _apiStatus = pid is null ? "idle" : "checking";
                 _apiVersion = "";
+                _apiIsManaged = false;
             }
         }
         if (pid is null) CancelProbe();
@@ -362,10 +357,10 @@ internal sealed class CoreLifecycleController : IDisposable
         return CommandResult.Completed();
     }
 
-    private Task Connect(CoreProfile profile)
+    private Task Connect(CoreProfile profile, CancellationToken operationToken = default)
     {
         CancelProbe();
-        if (_closing || !_core.IsRunning) return Task.CompletedTask;
+        if (_closing || _core.ProcessId is not { } processId) return Task.CompletedTask;
         CancellationTokenSource probe;
         long epoch;
         lock (_sync)
@@ -374,8 +369,9 @@ internal sealed class CoreLifecycleController : IDisposable
             epoch = ++_epoch;
             _networkDiagnostics = null;
             _apiVersion = "";
+            _apiIsManaged = false;
             _apiStatus = profile.SecretDecryptionFailed ? "unauthorized" : "checking";
-            probe = CancellationTokenSource.CreateLinkedTokenSource(_tasks.Token);
+            probe = CancellationTokenSource.CreateLinkedTokenSource(_tasks.Token, operationToken);
             _probe = probe;
         }
         Publish();
@@ -385,17 +381,28 @@ internal sealed class CoreLifecycleController : IDisposable
             try
             {
                 var result = profile.SecretDecryptionFailed ? new CoreApiStatus("unauthorized", "")
-                    : await CoreApiProbe.ProbeAsync(ApiClient, profile.ApiUrl, profile.Secret,
-                        timing.RequestTimeout, timing.TotalTimeout, timing.RetryDelay, probe.Token).ConfigureAwait(false);
+                    : await CoreApiProbe.ProbeManagedAsync(profile.ApiUrl, profile.Secret, processId,
+                        timing.RequestTimeout, timing.TotalTimeout, timing.RetryDelay, probe.Token,
+                        owner => _core.OwnsProcess(owner, processId)).ConfigureAwait(false);
                 lock (_sync)
                 {
-                    if (_closing || epoch != _epoch || probe.IsCancellationRequested || !_core.IsRunning) return;
+                    if (_closing || epoch != _epoch || probe.IsCancellationRequested || _core.ProcessId != processId) return;
                     _apiStatus = result.Status;
+                    _apiIsManaged = result.IsManaged;
                     _apiVersion = result.Version;
                 }
                 Publish();
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                lock (_sync)
+                {
+                    if (_closing || epoch != _epoch || _core.ProcessId != processId) return;
+                    _apiStatus = "unreachable";
+                    _apiIsManaged = false;
+                }
+                Publish();
+            }
             catch (Exception error)
             {
                 lock (_sync)
@@ -403,6 +410,7 @@ internal sealed class CoreLifecycleController : IDisposable
                     if (_closing || epoch != _epoch || probe.IsCancellationRequested || !_core.IsRunning) return;
                     _apiStatus = "unreachable";
                     _apiVersion = "";
+                    _apiIsManaged = false;
                 }
                 HostOperationLogger.Error("api", "API readiness probe failed.", error);
                 Publish();

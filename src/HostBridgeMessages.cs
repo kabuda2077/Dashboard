@@ -31,7 +31,6 @@ internal sealed record HostRequest
     public string? Edge { get; init; }
     public string? Name { get; init; }
     public double? DurationMs { get; init; }
-    public bool ConfirmUnverified { get; init; }
     public IReadOnlyList<string>? TargetIds { get; init; }
     public NetworkDiagnosticsSnapshot? NetworkDiagnostics { get; init; }
 }
@@ -70,7 +69,10 @@ internal record DashboardRuntimeState
     public long NetworkRevision { get; init; }
     public string CoreTitle { get; init; } = "";
     public string CoreVersion { get; init; } = "";
+    public string CoreUpdateMode { get; init; } = "unknown";
+    public string CoreReleaseUrl { get; init; } = "";
     public string ApiStatus { get; init; } = "idle";
+    public bool ApiIsManaged { get; init; }
     public string ApiUrl { get; init; } = "";
     public string Secret { get; init; } = "";
     public bool SecretDecryptionFailed { get; init; }

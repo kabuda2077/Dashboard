@@ -2,8 +2,8 @@
   "schemaVersion": 2,
   "upstream": {
     "repository": "https://github.com/Zephyruso/zashboard.git",
-    "tag": "e5b48b4e8fe5c727170a57444c969f01aca3fbad",
-    "revision": "e5b48b4e8fe5c727170a57444c969f01aca3fbad",
+    "tag": "v3.30.0",
+    "revision": "bf4f00bb8d905f8a78f627af7cf84457c4db53c4",
     "localPrefix": "dashboard-src/"
   },
   "historicalReference": {
@@ -37,6 +37,7 @@
     "dashboard-src/src/assets/styles/dashboard-desktop.css",
     "dashboard-src/src/components/common/WindowControls.vue",
     "dashboard-src/src/components/overview/MiniSparkline.vue",
+    "dashboard-src/src/components/overview/RoutingCheck.vue",
     "dashboard-src/src/components/settings/backend/EditBackendModal.vue",
     "dashboard-src/src/components/settings/backend/TopDownloadConnections.vue",
     "dashboard-src/src/components/settings/CoreProfileFields.vue",
@@ -57,6 +58,8 @@
     "dashboard-src/src/helper/dashboardStartup.ts",
     "dashboard-src/src/helper/hostDraft.ts",
     "dashboard-src/src/helper/hostNotice.ts",
+    "dashboard-src/src/helper/networkDiagnostics.ts",
+    "dashboard-src/src/helper/routing-test.ts",
     "dashboard-src/src/helper/persistenceBarrier.ts",
     "dashboard-src/src/helper/preferenceValues.ts",
     "dashboard-src/src/helper/settingsChanges.ts",
@@ -227,7 +230,7 @@
         "dashboard-src/src/__tests__/backend-runtime-config.test.ts",
         "dashboard-src/src/__tests__/http-cancellation.test.ts",
         "dashboard-src/src/__tests__/core-draft.test.ts",
-        "dashboard-src/src/__tests__/upgrade-confirmation.test.ts"
+        "dashboard-src/src/__tests__/core-update-source.test.ts"
       ],
       "risk": "high",
       "rule": "docs/development.md#host-session"

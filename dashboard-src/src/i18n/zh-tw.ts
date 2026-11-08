@@ -150,6 +150,7 @@ const zhTW: LANG_MESSAGE = {
   upgradeToAlpha: '升級到 Alpha',
   updateGeoDatabase: '更新GEO',
   tunMode: 'Tun 模式',
+  tunSettings: 'TUN 設定',
   tunStack: 'TUN 協定堆疊',
   tunStackHelp: '切換協定堆疊會重建 TUN，可能中斷連線。',
   tunStackUpdateFailed: 'TUN 協定堆疊切換未獲確認，請檢查目前狀態與核心日誌。',
@@ -224,13 +225,11 @@ const zhTW: LANG_MESSAGE = {
   networkIPLocationLabel: '位置',
   networkIPISP: 'ISP',
   networkIPASN: 'ASN',
-  networkIPLocationLoading: '查詢歸屬中',
   networkIPLocationPartial: '歸屬資訊有限',
-  networkIPLocationPartialHelp:
-    '出口 IP 已檢測到；歸屬服務未提供完整位置、ISP/組織或 ASN 資訊，也可能暫時無法使用。',
+  networkIPLocationPartialHelp: '服務已傳回有效出口 IP，但未提供完整位置、ISP/組織或 ASN 資訊。',
   networkInternationalExit: '國際目標出口',
   networkExitHelp:
-    '顯示查詢目標實際看到的單一出口 IP，遵循目前網路與分流規則，不代表所有節點；歸屬查詢不會替換觀測位址。',
+    '國內使用 ipip.net，國外使用「IP資訊API」選定的服務，分別一次查詢出口 IP 和歸屬。結果遵循目前網路與分流規則，不代表所有節點。',
   networkLatencyHelp:
     '透過目前 WebView 網路路徑發起 HTTP 請求，每站五次。數字為成功樣本的中位數，圓點保留失敗情況；不等於 Ping、節點延遲，也不能證明 HTTP 狀態或網站完整可用。',
   networkRouting: '分流',
@@ -369,7 +368,7 @@ const zhTW: LANG_MESSAGE = {
   flushSmartWeights: '清空Smart權重',
   IPInfoAPI: 'IP資訊API',
   IPInfoAPITip:
-    '此API會用於IP檢查中全球節點IP資訊查詢、連接詳情中的IP地理資訊查詢、面板DNS查詢中的IP地理資訊查詢。',
+    '用於概覽頁國外出口 IP、位置、ISP/組織及 ASN 的單次查詢，以及連線詳情的線上 IP 歸屬查詢。國內固定使用 ipip.net；連線清單使用下方的 GeoIP 資料庫。',
   general: '通用',
   groupProxiesByProvider: '節點根據提供商分組',
   useSmartGroupSort: 'Smart組根據使用頻率排序',

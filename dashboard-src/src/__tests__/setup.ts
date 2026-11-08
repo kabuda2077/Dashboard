@@ -63,7 +63,8 @@ const createDatabase = (name: string): IDBDatabase => {
       const transaction = {
         oncomplete: null as (() => void) | null,
         objectStore: () => ({
-          openCursor: () => createSuccessRequest<IDBCursorWithValue | null>(null),
+          openCursor: () =>
+            createSuccessRequest<IDBCursorWithValue | null>(null, () => transaction.oncomplete?.()),
           put: () => createSuccessRequest(undefined, () => transaction.oncomplete?.()),
           clear: () => createSuccessRequest(undefined, () => transaction.oncomplete?.()),
           delete: () => createSuccessRequest(undefined, () => transaction.oncomplete?.()),

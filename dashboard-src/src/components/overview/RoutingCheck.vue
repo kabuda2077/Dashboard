@@ -1,6 +1,9 @@
 <template>
   <section class="network-test-page">
-    <div class="flex items-center justify-between">
+    <div
+      v-if="!hideHeader"
+      class="flex items-center justify-between"
+    >
       <div
         class="text-base-content/60 text-xs font-semibold tracking-wider uppercase"
         :title="$t('networkRoutingHelp')"
@@ -8,7 +11,7 @@
         {{ $t('networkRouting') }}
       </div>
       <button
-        class="btn btn-ghost btn-xs btn-circle"
+        class="network-icon-button"
         type="button"
         :disabled="routingTargets.every((target) => target.checking.value) || !backendSessionReady"
         :aria-label="$t('networkTestRouting')"
@@ -21,62 +24,70 @@
       </button>
     </div>
     <div class="network-test-grid network-routing-grid">
-      <div
+      <button
         v-for="target in routingTargets"
         :key="target.id"
-        class="flex min-w-0 flex-col justify-center gap-2"
         :data-routing-target="target.id"
+        type="button"
+        class="network-bento-tile"
+        :disabled="target.checking.value || !backendSessionReady"
+        :aria-label="$t('networkTestTarget', { name: $t(`networkTarget_${target.id}`) })"
+        :aria-busy="target.checking.value"
+        @click="getRouting([target.id])"
       >
-        <button
-          type="button"
-          class="network-target-button"
-          :disabled="target.checking.value || !backendSessionReady"
-          :aria-label="$t('networkTestTarget', { name: $t(`networkTarget_${target.id}`) })"
-          :aria-busy="target.checking.value"
-          @click="getRouting([target.id])"
-        >
-          <div class="flex min-w-0 items-center gap-2">
+        <div class="network-tile-top">
+          <div class="network-tile-title-wrap">
             <span
-              class="min-w-0 truncate text-sm font-medium"
+              class="network-tile-dot"
+              :class="routingDotColor(target.result.value)"
+            />
+            <span
+              class="network-tile-name"
               :title="target.url"
             >
               {{ $t(`networkTarget_${target.id}`) }}
             </span>
-            <span
-              v-if="target.checking.value"
-              class="loading loading-spinner h-3 w-3 shrink-0"
-              aria-hidden="true"
-            />
-            <span class="text-base-content/45 shrink-0 text-[10px]">
-              {{ $t(target.region === 'domestic' ? 'networkDomestic' : 'networkInternational') }}
-            </span>
           </div>
-          <span
-            v-if="target.checking.value && target.result.value.status === 'idle'"
-            class="text-base-content/45 flex h-5 items-center gap-2 text-xs"
-            role="status"
-          >
-            <span class="loading loading-spinner loading-xs" />{{ $t('checking') }}
+          <span class="network-tile-badge">
+            {{ $t(target.region === 'domestic' ? 'networkDomestic' : 'networkInternational') }}
           </span>
-          <span
-            v-else
-            class="truncate text-sm"
-            :class="
-              target.result.value.status === 'observed'
-                ? 'text-base-content'
-                : 'text-base-content/45'
-            "
-            :title="
-              target.result.value.status === 'observed'
-                ? $t('networkRouteObserved')
-                : resultText(target.result.value)
-            "
-            role="status"
-          >
-            {{ resultText(target.result.value) }}
-          </span>
-        </button>
-      </div>
+        </div>
+        <span
+          v-if="target.checking.value && target.result.value.status === 'idle'"
+          class="text-base-content/45 mt-2 flex h-5 items-center gap-2 text-xs"
+          role="status"
+        >
+          <span class="loading loading-spinner loading-xs" />{{ $t('checking') }}
+        </span>
+        <span
+          v-else
+          class="network-tile-route-val"
+          :class="
+            target.result.value.status === 'observed' ? 'text-base-content' : 'text-base-content/45'
+          "
+          :title="
+            target.result.value.status === 'observed'
+              ? $t('networkRouteObserved')
+              : resultText(target.result.value)
+          "
+          role="status"
+        >
+          {{ resultText(target.result.value) }}
+        </span>
+        <div
+          class="network-tile-track relative"
+          aria-hidden="true"
+        >
+          <div
+            v-if="target.result.value.status === 'observed'"
+            class="network-tile-track-fill bg-low-latency w-full"
+          />
+          <div
+            v-if="target.checking.value"
+            class="network-routing-activity"
+          />
+        </div>
+      </button>
     </div>
   </section>
 </template>
@@ -89,10 +100,16 @@ import { toRef } from 'vue'
 import { BoltIcon } from '@heroicons/vue/24/outline'
 import { useI18n } from 'vue-i18n'
 
-const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ active?: boolean; hideHeader?: boolean }>(), {
+  active: true,
+  hideHeader: false,
+})
 useNetworkDiagnosticsPage('routing', toRef(props, 'active'))
 const { t } = useI18n()
 type RoutingResult = (typeof routingTargets)[number]['result']['value']
+
+const routingDotColor = (result: RoutingResult) =>
+  result.status === 'observed' ? 'bg-low-latency' : 'bg-base-content/20'
 const resultText = (result: RoutingResult) => {
   if (result.status === 'observed')
     return result.direct ? `🇨🇳 ${t('direct')}` : (result.node ?? t('networkRouteUnconfirmed'))
@@ -107,3 +124,30 @@ const resultText = (result: RoutingResult) => {
   return t('networkRouteUnconfirmed')
 }
 </script>
+
+<style scoped>
+.network-routing-activity {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--color-base-content) 25%, transparent);
+  transform: translateX(93%);
+  animation: network-routing-scan 1.3s ease-in-out infinite;
+}
+@keyframes network-routing-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(286%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .network-routing-activity {
+    animation: none;
+  }
+}
+</style>

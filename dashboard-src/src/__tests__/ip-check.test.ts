@@ -1,20 +1,14 @@
-import { getIPFromCloudflareAPI, getIPFromIpipnetAPI, getIPInfo } from '@/api/geoip'
+import { getIPFromIpipnetAPI, getIPInfo } from '@/api/geoip'
 import IPCheck from '@/components/overview/IPCheck.vue'
+import { IP_INFO_API } from '@/constant'
 import { backendSessionGeneration, backendSessionReady } from '@/helper/backendSession'
-import {
-  getIPs,
-  ipForChina,
-  ipForGlobal,
-  isCheckingIPs,
-  resetNetworkChecks,
-} from '@/helper/overview'
+import { getIPs, ipForChina, ipForGlobal, isCheckingIPs, resetIPChecks } from '@/helper/overview'
 import { i18n } from '@/i18n'
 import { autoIPCheck, IPInfoAPI } from '@/store/settings'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App, type Ref } from 'vue'
 
 vi.mock('@/api/geoip', () => ({
-  getIPFromCloudflareAPI: vi.fn(),
   getIPFromIpipnetAPI: vi.fn(),
   getIPInfo: vi.fn(),
 }))
@@ -34,10 +28,11 @@ vi.mock('@/i18n', async () => ({
         networkIPLocationLabel: 'Location',
         networkIPISP: 'ISP',
         networkIPASN: 'ASN',
-        networkIPLocationLoading: 'Looking up location',
         networkIPLocationPartial: 'Limited location data',
         networkIPLocationPartialHelp: 'Location unavailable',
         networkInfo: 'Network',
+        networkDomestic: 'Domestic',
+        networkInternational: 'International',
         ipScreenshotTip: 'Privacy',
         networkExitHelp: 'Observed exit',
         networkTestIPs: 'Check IPs',
@@ -49,7 +44,7 @@ vi.mock('@/i18n', async () => ({
 vi.mock('@/helper/tooltip', () => ({ useTooltip: () => ({ showTip: vi.fn() }) }))
 vi.mock('@/store/settings', async () => {
   const { ref } = await import('vue')
-  return { autoIPCheck: ref(true), IPInfoAPI: ref('fixture') }
+  return { autoIPCheck: ref(true), IPInfoAPI: ref('ip.sb') }
 })
 const deferred = <T>() => {
   let resolve!: (value: T) => void
@@ -77,19 +72,18 @@ const globalResult = (ip: string, country = 'Hong Kong') => ({
 let app: App | undefined
 let root: HTMLDivElement | undefined
 beforeEach(() => {
-  resetNetworkChecks()
+  resetIPChecks()
   vi.resetAllMocks()
   sessionGeneration.value = 0
   sessionReady.value = true
   autoIPCheck.value = true
-  IPInfoAPI.value = 'fixture' as typeof IPInfoAPI.value
+  IPInfoAPI.value = IP_INFO_API.IPSB
   i18n.global.locale.value = 'en'
-  vi.mocked(getIPFromCloudflareAPI).mockResolvedValue({ ip: v4, loc: 'US' })
   vi.mocked(getIPFromIpipnetAPI).mockResolvedValue(chinaResult())
-  vi.mocked(getIPInfo).mockImplementation(async (ip) => globalResult(ip))
+  vi.mocked(getIPInfo).mockResolvedValue(globalResult(v4))
 })
 afterEach(() => {
-  resetNetworkChecks()
+  resetIPChecks()
   app?.unmount()
   app = undefined
   root?.remove()
@@ -104,15 +98,14 @@ const mount = () => {
   app.use(i18n)
   app.mount(root)
 }
-const serviceElement = (service: 'cloudflare' | 'ipip') =>
+const serviceElement = (service: 'global' | 'ipip') =>
   root!.querySelector(`[data-ip-service="${service}"]`)!
 
-it('observes each service once and enriches only the observed Cloudflare address without replacing it', async () => {
-  vi.mocked(getIPInfo).mockImplementation(async (ip) => ({ ...globalResult(ip), ip: '192.0.2.99' }))
+it('observes the global exit and details with one selected-source self-query alongside IPIP', async () => {
   await getIPs()
-  expect(getIPFromCloudflareAPI).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal))
   expect(getIPFromIpipnetAPI).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal))
-  expect(getIPInfo).toHaveBeenCalledExactlyOnceWith(v4, 'fixture', expect.any(AbortSignal))
+  expect(getIPInfo).toHaveBeenCalledExactlyOnceWith('', IPInfoAPI.value, expect.any(AbortSignal))
+  expect(ipForGlobal.value.locationState).toBe('ready')
   expect(ipForGlobal.value.ipWithPrivacy).toEqual(['Hong Kong Region City', v4])
   expect(ipForGlobal.value.detailsWithPrivacy).toEqual({
     location: 'Hong Kong Region City',
@@ -131,7 +124,7 @@ it('observes each service once and enriches only the observed Cloudflare address
 it.each([v4, v6, '::ffff:192.0.2.5'])(
   'renders one address per service and keeps %s and location details out of hidden DOM and titles',
   async (ip) => {
-    vi.mocked(getIPFromCloudflareAPI).mockResolvedValue({ ip, loc: 'US' })
+    vi.mocked(getIPInfo).mockResolvedValue(globalResult(ip))
     vi.mocked(getIPFromIpipnetAPI).mockResolvedValue(chinaResult(ip))
     mount()
     await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
@@ -142,34 +135,67 @@ it.each([v4, v6, '::ffff:192.0.2.5'])(
         expect(service.ip[1]).toBe('2001:db8:1234:5678:****:****:****:****')
       }
     }
-    expect(getIPFromCloudflareAPI).toHaveBeenCalledTimes(1)
+    expect(getIPInfo).toHaveBeenCalledExactlyOnceWith('', IPInfoAPI.value, expect.any(AbortSignal))
     expect(getIPFromIpipnetAPI).toHaveBeenCalledTimes(1)
     expect(root!.querySelectorAll('[data-ip-service]')).toHaveLength(2)
     expect(root!.querySelectorAll('.network-ip-address')).toHaveLength(2)
     expect(root!.querySelectorAll('.network-ip-location')).toHaveLength(2)
     expect(root!.querySelectorAll('[data-ip-family]')).toHaveLength(0)
-    expect(root!.textContent).not.toMatch(/IPv4|IPv6|Domestic|International/)
+    expect(root!.textContent).not.toMatch(/IPv4|IPv6/)
+    expect(serviceElement('ipip').querySelector('.network-tile-badge')!.textContent).toContain(
+      'Domestic',
+    )
+    expect(serviceElement('global').querySelector('.network-tile-badge')!.textContent).toContain(
+      'International',
+    )
+    expect(serviceElement('global').querySelector('.network-ip-provider-name')!.textContent).toBe(
+      IPInfoAPI.value,
+    )
+    expect(
+      [...serviceElement('global').querySelectorAll('.network-ip-detail .network-ip-label')].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Location', 'ASN', 'ISP'])
+    expect(
+      [...serviceElement('ipip').querySelectorAll('.network-ip-detail .network-ip-label')].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Location'])
+    expect(serviceElement('ipip').querySelector('.network-ip-asn')).toBeNull()
+    const location = serviceElement('global').querySelector(
+      '.network-ip-location .network-ip-value',
+    )!
+    const isp = serviceElement('global').querySelector('.network-ip-isp .network-ip-value')!
+    const asn = serviceElement('global').querySelector('.network-ip-asn .network-ip-value')!
+    const domesticLocation = serviceElement('ipip').querySelector(
+      '.network-ip-location .network-ip-value',
+    )!
+    expect(location.getAttribute('title')).toBe('Hong Kong ** ** **')
+    expect(isp.getAttribute('title')).toBe('Example **')
+    expect(asn.getAttribute('title')).toBe('AS64500 ** ** **')
+    expect(domesticLocation.getAttribute('title')).toBe('China ** ** **')
     expect(root!.textContent).toContain('Hong Kong ** ** **')
     expect(root!.innerHTML).not.toContain(ip)
     expect(root!.innerHTML).not.toContain('Example ISP')
     expect(root!.innerHTML).not.toContain('Example ASN Org')
     expect(
-      serviceElement('cloudflare').querySelector('.network-ip-isp .network-ip-value')!.textContent,
+      serviceElement('global').querySelector('.network-ip-isp .network-ip-value')!.textContent,
     ).toBe('Example **')
-    expect(
-      serviceElement('cloudflare').querySelector('.network-ip-asn .network-ip-value')!.textContent,
-    ).toBe('AS64500 ** ** **')
+    expect(asn.textContent).toBe('AS64500')
+    expect(root!.innerHTML).not.toContain('Hong Kong Region City')
     expect(root!.innerHTML).not.toContain('China Region')
     root!.querySelector<HTMLButtonElement>('button')!.click()
     await nextTick()
-    expect(serviceElement('cloudflare').textContent).toContain(ip)
-    expect(serviceElement('cloudflare').textContent).toContain('Hong Kong Region City')
-    expect(serviceElement('cloudflare').querySelector('.network-ip-isp')!.textContent).toContain(
+    expect(serviceElement('global').textContent).toContain(ip)
+    expect(serviceElement('global').textContent).toContain('Hong Kong Region City')
+    expect(serviceElement('global').querySelector('.network-ip-isp')!.textContent).toContain(
       'Example ISP',
     )
-    expect(serviceElement('cloudflare').querySelector('.network-ip-asn')!.textContent).toContain(
-      'AS64500 Example ASN Org',
-    )
+    expect(asn.textContent).toBe('AS64500')
+    expect(asn.getAttribute('title')).toBe('AS64500 Example ASN Org')
+    expect(location.getAttribute('title')).toBe('Hong Kong Region City')
+    expect(isp.getAttribute('title')).toBe('Example ISP')
+    expect(domesticLocation.getAttribute('title')).toBe('China Region')
     expect(serviceElement('ipip').querySelector('.network-ip-details')).toBeNull()
     expect(serviceElement('ipip').textContent).toContain(ip)
     expect(serviceElement('ipip').textContent).toContain('China Region')
@@ -179,11 +205,15 @@ it.each([v4, v6, '::ffff:192.0.2.5'])(
     expect(root!.innerHTML).not.toContain('Example ISP')
     expect(root!.innerHTML).not.toContain('Example ASN Org')
     expect(
-      serviceElement('cloudflare').querySelector('.network-ip-isp .network-ip-value')!.textContent,
+      serviceElement('global').querySelector('.network-ip-isp .network-ip-value')!.textContent,
     ).toBe('Example **')
-    expect(
-      serviceElement('cloudflare').querySelector('.network-ip-asn .network-ip-value')!.textContent,
-    ).toBe('AS64500 ** ** **')
+    expect(asn.textContent).toBe('AS64500')
+    expect(asn.getAttribute('title')).toBe('AS64500 ** ** **')
+    expect(location.getAttribute('title')).toBe('Hong Kong ** ** **')
+    expect(isp.getAttribute('title')).toBe('Example **')
+    expect(domesticLocation.getAttribute('title')).toBe('China ** ** **')
+    expect(root!.innerHTML).not.toContain('Hong Kong Region City')
+    expect(root!.innerHTML).not.toContain('China Region')
   },
 )
 
@@ -196,76 +226,111 @@ it.each([
   vi.mocked(getIPInfo).mockResolvedValue({ ...globalResult(v4), ...info })
   mount()
   await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
-  const hidden = serviceElement('cloudflare')
+  const hidden = serviceElement('global')
   expect(hidden.querySelector('.network-ip-isp .network-ip-value')?.textContent ?? '').toBe(
     !info.organization ? '' : info.organization === 'Solo' ? 'Solo' : 'Different **',
   )
-  expect(hidden.querySelector('.network-ip-asn .network-ip-value')?.textContent ?? '').toBe(
-    !info.asn ? '' : info.asnOrganization ? 'AS64501 ** **' : 'AS64501',
+  expect(ipForGlobal.value.detailsWithPrivacy.organization).toBe(info.organization)
+  expect(ipForGlobal.value.detailsWithPrivacy.asn).toBe(
+    info.asn ? `AS64501${info.asnOrganization ? ` ${info.asnOrganization}` : ''}` : '',
   )
+  expect(hidden.querySelector('.network-ip-asn .network-ip-value')?.textContent ?? '').toBe(
+    info.asn ? 'AS64501' : '',
+  )
+  expect(
+    hidden.querySelector('.network-ip-asn .network-ip-value')?.getAttribute('title') ?? '',
+  ).toBe(!info.asn ? '' : info.asnOrganization ? 'AS64501 ** **' : 'AS64501')
+  if (info.organization === 'Different ISP')
+    expect(hidden.innerHTML).not.toContain(info.organization)
+  if (info.asnOrganization) expect(hidden.innerHTML).not.toContain(info.asnOrganization)
   root!.querySelector<HTMLButtonElement>('button')!.click()
   await nextTick()
-  const foreign = serviceElement('cloudflare')
+  const foreign = serviceElement('global')
   expect(foreign.querySelector('.network-ip-isp')?.textContent ?? '').toBe(
     info.organization ? `ISP${info.organization}` : '',
   )
-  const asnText = foreign.querySelector('.network-ip-asn')?.textContent ?? ''
-  expect(asnText).toBe(
-    info.asn ? `ASNAS64501${info.asnOrganization ? ` ${info.asnOrganization}` : ''}` : '',
+  expect(
+    foreign.querySelector('.network-ip-isp .network-ip-value')?.getAttribute('title') ?? '',
+  ).toBe(info.organization)
+  expect(foreign.querySelector('.network-ip-asn')?.textContent ?? '').toBe(
+    info.asn ? 'ASNAS64501' : '',
   )
+  expect(
+    foreign.querySelector('.network-ip-asn .network-ip-value')?.getAttribute('title') ?? '',
+  ).toBe(info.asn ? `AS64501${info.asnOrganization ? ` ${info.asnOrganization}` : ''}` : '')
   expect(foreign.querySelector('.network-ip-location')!.textContent).not.toContain('Different ISP')
   expect(serviceElement('ipip').querySelector('.network-ip-details')).toBeNull()
-  if (!info.asn) expect(foreign.textContent).not.toContain('Orphaned ASN organization')
+  if (!info.asn) expect(foreign.innerHTML).not.toContain('Orphaned ASN organization')
   expect(getIPInfo).toHaveBeenCalledTimes(1)
 })
 
 it.each(['malformed', 'failed'] as const)(
-  'keeps the IPIP result independent when Cloudflare is %s',
+  'keeps the IPIP result independent when the selected global query is %s',
   async (scenario) => {
-    if (scenario === 'failed')
-      vi.mocked(getIPFromCloudflareAPI).mockRejectedValue(new Error('offline'))
-    else vi.mocked(getIPFromCloudflareAPI).mockResolvedValue({ ip: '<img src=x>', loc: 'US' })
-    await getIPs()
+    if (scenario === 'failed') vi.mocked(getIPInfo).mockRejectedValue(new Error('offline'))
+    else vi.mocked(getIPInfo).mockResolvedValue(globalResult('<img src=x>'))
+    mount()
+    await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
     expect(ipForChina.value.state).toBe('ready')
     expect(ipForGlobal.value.state).toBe('failed')
     expect(ipForGlobal.value.ipWithPrivacy[1]).toBe('')
-    expect(getIPInfo).not.toHaveBeenCalled()
+    expect(ipForGlobal.value.detailsWithPrivacy).toEqual({
+      location: '',
+      organization: '',
+      asn: '',
+    })
+    expect(serviceElement('global').textContent).toContain('Not obtained')
+    expect(serviceElement('global').querySelector('.network-ip-location')).toBeNull()
+    expect(root!.innerHTML).not.toContain('<img')
+    expect(getIPInfo).toHaveBeenCalledExactlyOnceWith('', IPInfoAPI.value, expect.any(AbortSignal))
   },
 )
 
-it('publishes Cloudflare before enrichment and independently of a pending IPIP response', async () => {
+it('starts both queries in parallel and publishes global exit and details while IPIP is pending', async () => {
   const pending = deferred<Awaited<ReturnType<typeof getIPInfo>>>()
   const ipip = deferred<Awaited<ReturnType<typeof getIPFromIpipnetAPI>>>()
   vi.mocked(getIPInfo).mockReturnValue(pending.promise)
   vi.mocked(getIPFromIpipnetAPI).mockReturnValue(ipip.promise)
   const task = getIPs()
+  expect(getIPInfo).toHaveBeenCalledExactlyOnceWith('', IPInfoAPI.value, expect.any(AbortSignal))
+  expect(getIPFromIpipnetAPI).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal))
+  expect(ipForGlobal.value.state).toBe('loading')
+  expect(ipForGlobal.value.locationState).toBe('idle')
+  pending.resolve(globalResult(v4))
   await vi.waitFor(() => expect(ipForGlobal.value.state).toBe('ready'))
-  expect(ipForGlobal.value.ipWithPrivacy).toEqual(['US', v4])
-  expect(ipForGlobal.value.locationState).toBe('loading')
+  expect(ipForGlobal.value.ipWithPrivacy).toEqual(['Hong Kong Region City', v4])
+  expect(ipForGlobal.value.locationState).toBe('ready')
   expect(ipForGlobal.value.detailsWithPrivacy).toEqual({
-    location: 'US',
-    organization: '',
-    asn: '',
+    location: 'Hong Kong Region City',
+    organization: 'Example ISP',
+    asn: 'AS64500 Example ASN Org',
   })
   expect(ipForChina.value.state).toBe('loading')
-  pending.resolve(globalResult(v4))
-  await vi.waitFor(() => expect(ipForGlobal.value.locationState).toBe('ready'))
   expect(isCheckingIPs.value).toBe(true)
   ipip.resolve(chinaResult())
   await task
+  expect(getIPInfo).toHaveBeenCalledTimes(1)
 })
 
-it.each(['failed', 'incomplete'] as const)(
-  'retains the observed address and marks only its location partial when enrichment is %s',
-  async (scenario) => {
-    if (scenario === 'failed') vi.mocked(getIPInfo).mockRejectedValue(new Error('GeoIP failed'))
-    else vi.mocked(getIPInfo).mockResolvedValue({ ...globalResult(v4), asn: '' })
-    await getIPs()
+it.each([
+  { asn: '' },
+  { country: '', region: '', city: '', organization: '', asn: '', asnOrganization: undefined },
+])(
+  'keeps a valid address ready with partial details when fields are absent: %j',
+  async (fields) => {
+    vi.mocked(getIPInfo).mockResolvedValue({ ...globalResult(v4), ...fields })
+    mount()
+    await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
     expect(ipForGlobal.value.state).toBe('ready')
     expect(ipForGlobal.value.ipWithPrivacy[1]).toBe(v4)
     expect(ipForGlobal.value.locationState).toBe('partial')
     expect(ipForChina.value.state).toBe('ready')
-    if (scenario === 'failed') expect(ipForGlobal.value.ipWithPrivacy[0]).toBe('US')
+    expect(serviceElement('global').textContent).toContain('Limited location data')
+    expect(serviceElement('global').querySelector('.network-ip-asn')).toBeNull()
+    root!.querySelector<HTMLButtonElement>('button')!.click()
+    await nextTick()
+    expect(serviceElement('global').querySelector('.network-ip-address')!.textContent).toContain(v4)
+    expect(getIPInfo).toHaveBeenCalledTimes(1)
   },
 )
 
@@ -280,13 +345,14 @@ it('shared automatic/manual work survives remount and duplicate clicks without r
   mount()
   expect(root!.querySelectorAll<HTMLButtonElement>('button')[1].disabled).toBe(true)
   await getIPs()
-  expect(getIPFromCloudflareAPI).toHaveBeenCalledTimes(1)
+  expect(getIPInfo).toHaveBeenCalledTimes(1)
   expect(getIPFromIpipnetAPI).toHaveBeenCalledTimes(1)
-  expect(root!.textContent).toContain('Looking up location')
+  expect(serviceElement('global').textContent).toContain('Querying')
+  expect(serviceElement('global').querySelector('.network-ip-location')).toBeNull()
   pending.resolve(globalResult(v4))
   await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
   root!.querySelectorAll<HTMLButtonElement>('button')[1].click()
-  await vi.waitFor(() => expect(getIPFromCloudflareAPI).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(getIPInfo).toHaveBeenCalledTimes(2))
   await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
 })
 
@@ -294,27 +360,31 @@ it('does not auto-query when disabled, but the manual button starts a check', as
   autoIPCheck.value = false
   mount()
   await nextTick()
-  expect(getIPFromCloudflareAPI).not.toHaveBeenCalled()
+  expect(getIPInfo).not.toHaveBeenCalled()
+  expect(getIPFromIpipnetAPI).not.toHaveBeenCalled()
   expect(root!.textContent).toContain('Not tested')
   root!.querySelectorAll<HTMLButtonElement>('button')[1].click()
   await vi.waitFor(() => expect(ipForGlobal.value.state).toBe('ready'))
 })
 
 it.each(['source', 'generation', 'readiness'] as const)(
-  'cancels old enrichment on %s changes and old completion cannot clear new busy state',
+  'cancels old queries on %s changes and old completion cannot clear new busy state',
   async (transition) => {
     const old = deferred<Awaited<ReturnType<typeof getIPInfo>>>()
     const current = deferred<Awaited<ReturnType<typeof getIPInfo>>>()
     vi.mocked(getIPInfo).mockReturnValue(old.promise)
     const oldTask = getIPs()
+    mount()
+    expect(serviceElement('global').querySelector('.network-ip-provider-name')!.textContent).toBe(
+      IP_INFO_API.IPSB,
+    )
     await vi.waitFor(() => expect(getIPInfo).toHaveBeenCalledTimes(1))
     const oldSignals = [
-      vi.mocked(getIPFromCloudflareAPI).mock.calls[0][0]!,
       vi.mocked(getIPFromIpipnetAPI).mock.calls[0][0]!,
       vi.mocked(getIPInfo).mock.calls[0][2]!,
     ]
     vi.mocked(getIPInfo).mockReturnValue(current.promise)
-    if (transition === 'source') IPInfoAPI.value = 'new-source' as typeof IPInfoAPI.value
+    if (transition === 'source') IPInfoAPI.value = IP_INFO_API.IPWHOIS
     else {
       if (transition === 'generation') sessionGeneration.value++
       else sessionReady.value = false
@@ -325,17 +395,24 @@ it.each(['source', 'generation', 'readiness'] as const)(
     expect(oldSignals.every((signal) => signal.aborted)).toBe(true)
     const newTask = transition === 'source' ? undefined : getIPs()
     await vi.waitFor(() => expect(getIPInfo).toHaveBeenCalledTimes(2))
+    await nextTick()
+    expect(serviceElement('global').querySelector('.network-ip-provider-name')!.textContent).toBe(
+      IPInfoAPI.value,
+    )
+    expect(getIPFromIpipnetAPI).toHaveBeenCalledTimes(2)
     expect(getIPInfo).toHaveBeenLastCalledWith(
-      v4,
-      transition === 'source' ? 'new-source' : 'fixture',
+      '',
+      transition === 'source' ? IP_INFO_API.IPWHOIS : IP_INFO_API.IPSB,
       expect.any(AbortSignal),
     )
     old.resolve(globalResult(v4, 'Old'))
     await oldTask
     expect(isCheckingIPs.value).toBe(true)
-    expect(ipForGlobal.value.locationState).toBe('loading')
+    expect(ipForGlobal.value.state).toBe('loading')
+    expect(ipForGlobal.value.locationState).toBe('idle')
+    expect(ipForGlobal.value.ipWithPrivacy[1]).toBe('')
     expect(ipForGlobal.value.detailsWithPrivacy).toEqual({
-      location: 'US',
+      location: '',
       organization: '',
       asn: '',
     })
@@ -348,31 +425,44 @@ it.each(['source', 'generation', 'readiness'] as const)(
 )
 
 it.each(['source', 'generation'] as const)(
-  'late address observations after %s changes cannot overwrite current results or start old enrichment',
+  'ignores late replies after unmount and a %s change',
   async (transition) => {
-    const oldTrace = deferred<Awaited<ReturnType<typeof getIPFromCloudflareAPI>>>()
+    const oldGlobal = deferred<Awaited<ReturnType<typeof getIPInfo>>>()
     const oldIpip = deferred<Awaited<ReturnType<typeof getIPFromIpipnetAPI>>>()
-    vi.mocked(getIPFromCloudflareAPI).mockReturnValueOnce(oldTrace.promise)
+    vi.mocked(getIPInfo).mockReturnValueOnce(oldGlobal.promise)
     vi.mocked(getIPFromIpipnetAPI).mockReturnValueOnce(oldIpip.promise)
     const oldTask = getIPs()
+    mount()
+    app!.unmount()
+    app = undefined
+    root!.remove()
+    root = undefined
     const signals = [
-      vi.mocked(getIPFromCloudflareAPI).mock.calls[0][0]!,
+      vi.mocked(getIPInfo).mock.calls[0][2]!,
       vi.mocked(getIPFromIpipnetAPI).mock.calls[0][0]!,
     ]
-    if (transition === 'source') IPInfoAPI.value = 'new-source' as typeof IPInfoAPI.value
+    if (transition === 'source') IPInfoAPI.value = IP_INFO_API.IPWHOIS
     else sessionGeneration.value++
     expect(signals.every((signal) => signal.aborted)).toBe(true)
     if (transition === 'source') await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
-    oldTrace.resolve({ ip: v6, loc: 'Old' })
+    oldGlobal.resolve(globalResult(v6, 'Old'))
     oldIpip.resolve(chinaResult(v6))
     await oldTask
     expect(isCheckingIPs.value).toBe(false)
     if (transition === 'source') {
-      expect(getIPInfo).toHaveBeenCalledExactlyOnceWith(v4, 'new-source', expect.any(AbortSignal))
-      expect(ipForGlobal.value.ipWithPrivacy[1]).toBe(v4)
+      expect(getIPInfo).toHaveBeenCalledTimes(2)
+      expect(getIPInfo).toHaveBeenLastCalledWith('', IP_INFO_API.IPWHOIS, expect.any(AbortSignal))
+      expect(getIPFromIpipnetAPI).toHaveBeenCalledTimes(2)
+      expect(ipForGlobal.value.ipWithPrivacy).toEqual(['Hong Kong Region City', v4])
       expect(ipForChina.value.ipWithPrivacy[1]).toBe('192.0.2.3')
+      mount()
+      await nextTick()
+      expect(serviceElement('global').querySelector('.network-ip-provider-name')!.textContent).toBe(
+        IP_INFO_API.IPWHOIS,
+      )
+      expect(getIPInfo).toHaveBeenCalledTimes(2)
     } else {
-      expect(getIPInfo).not.toHaveBeenCalled()
+      expect(getIPInfo).toHaveBeenCalledTimes(1)
       for (const service of [ipForChina.value, ipForGlobal.value]) {
         expect(service.state).toBe('idle')
         expect(service.ipWithPrivacy).toEqual([])
@@ -381,8 +471,11 @@ it.each(['source', 'generation'] as const)(
   },
 )
 
-it('malformed IPIP data fails independently and uses the current locale', async () => {
-  vi.mocked(getIPFromIpipnetAPI).mockResolvedValue({ data: { ip: v4, location: [null] } } as never)
+it.each([
+  { data: { ip: v4, location: [null] } },
+  { data: { ip: '999.0.2.3', location: ['China', 'Region'] } },
+])('malformed IPIP data fails independently and uses the current locale: %j', async (data) => {
+  vi.mocked(getIPFromIpipnetAPI).mockResolvedValue(data as never)
   i18n.global.locale.value = 'zh'
   await getIPs()
   expect(ipForChina.value.state).toBe('failed')
@@ -390,55 +483,66 @@ it('malformed IPIP data fails independently and uses the current locale', async 
   expect(ipForGlobal.value.state).toBe('ready')
 })
 
-it('requests each original service hostname once without literal targets, credentials or fallback', async () => {
-  const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
-  const fetchMock = vi
-    .spyOn(globalThis, 'fetch')
-    .mockResolvedValueOnce(new Response(`ip=${v4}\nloc=HK\n`))
-    .mockResolvedValueOnce(Response.json(chinaResult()))
-  expect(await api.getIPFromCloudflareAPI()).toEqual({ ip: v4, loc: 'HK' })
-  expect(await api.getIPFromIpipnetAPI()).toEqual(chinaResult())
-  expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-    'https://www.cloudflare.com/cdn-cgi/trace',
-    'https://myip.ipip.net/json',
-  ])
-  for (const call of fetchMock.mock.calls) {
-    expect(call[1]).toMatchObject({
-      credentials: 'omit',
-      referrerPolicy: 'no-referrer',
-      cache: 'no-store',
-      signal: expect.any(AbortSignal),
-    })
-  }
-})
-
-it.each(['cloudflare', 'ipip'] as const)(
-  'forwards cancellation to the %s request',
-  async (service) => {
+it.each([
+  { source: IP_INFO_API.IPSB, url: 'https://api.ip.sb/geoip' },
+  { source: IP_INFO_API.IPWHOIS, url: 'https://ipwho.is' },
+  { source: IP_INFO_API.IPAPI, url: 'https://api.ipapi.is' },
+])(
+  'self-queries $source and IPIP once without a specified IP or credentials',
+  async ({ source, url }) => {
     const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async (_url, options) =>
-        new Promise((_resolve, reject) => {
-          options!.signal!.addEventListener(
-            'abort',
-            () => reject(new DOMException('Aborted', 'AbortError')),
-            { once: true },
-          )
-        }),
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ ip: v4, success: true }))
+      .mockResolvedValueOnce(Response.json(chinaResult()))
+    IPInfoAPI.value = source
+    vi.mocked(getIPInfo).mockImplementation(api.getIPInfo)
+    vi.mocked(getIPFromIpipnetAPI).mockImplementation(api.getIPFromIpipnetAPI)
+    mount()
+    await vi.waitFor(() => expect(isCheckingIPs.value).toBe(false))
+    expect(ipForGlobal.value.state).toBe('ready')
+    expect(ipForGlobal.value.ipWithPrivacy[1]).toBe(v4)
+    expect(ipForChina.value.state).toBe('ready')
+    expect(getIPInfo).toHaveBeenCalledExactlyOnceWith('', source, expect.any(AbortSignal))
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([url, 'https://myip.ipip.net/json'])
+    expect(serviceElement('global').querySelector('.network-ip-provider-name')!.textContent).toBe(
+      source,
     )
-    const controller = new AbortController()
-    const task =
-      service === 'cloudflare'
-        ? api.getIPFromCloudflareAPI(controller.signal)
-        : api.getIPFromIpipnetAPI(controller.signal)
-    controller.abort()
-    await expect(task).rejects.toThrow('Aborted')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]).toMatchObject({
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        cache: 'no-store',
+        signal: expect.any(AbortSignal),
+      })
+    }
   },
 )
 
+it.each(['global', 'ipip'] as const)('forwards cancellation to the %s request', async (service) => {
+  const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
+    async (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options!.signal!.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        )
+      }),
+  )
+  const controller = new AbortController()
+  const task =
+    service === 'global'
+      ? api.getIPInfo('', IP_INFO_API.IPSB, controller.signal)
+      : api.getIPFromIpipnetAPI(controller.signal)
+  controller.abort()
+  await expect(task).rejects.toThrow('Aborted')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
 it.each(['request', 'body'] as const)(
-  'bounds the Cloudflare %s with an eight-second timeout',
+  'bounds the selected global query %s with an eight-second timeout',
   async (phase) => {
     const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
     vi.useFakeTimers()
@@ -452,9 +556,9 @@ it.each(['request', 'body'] as const)(
           )
         })
       if (phase === 'request') return (await pending()) as never
-      return { ok: true, text: pending } as Response
+      return { ok: true, json: pending } as unknown as Response
     })
-    const task = api.getIPFromCloudflareAPI()
+    const task = api.getIPInfo('', IP_INFO_API.IPSB)
     const rejected = expect(task).rejects.toThrow('Aborted')
     await vi.advanceTimersByTimeAsync(8000)
     await rejected
@@ -469,37 +573,59 @@ it('rejects HTTP errors without retry or fallback', async () => {
   const fetchMock = vi
     .spyOn(globalThis, 'fetch')
     .mockResolvedValue(new Response('', { status: 503 }))
-  await expect(api.getIPFromCloudflareAPI()).rejects.toThrow('503')
+  await expect(api.getIPInfo('', IP_INFO_API.IPSB)).rejects.toThrow('503')
   expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
 it.each([
   {
     apiName: 'IPSB' as const,
-    data: { organization: 'ISP owner', asn: 64500, asn_organization: 'ASN owner' },
+    data: {
+      isp: 'ISP owner',
+      organization: 'Company owner',
+      asn: 64500,
+      asn_organization: 'ASN owner',
+    },
+    organization: 'ISP owner',
+    url: `https://api.ip.sb/geoip/${v4}`,
+  },
+  {
+    apiName: 'IPSB' as const,
+    data: { organization: 'Company owner', asn: 64500, asn_organization: 'ASN owner' },
+    organization: 'Company owner',
+    url: `https://api.ip.sb/geoip/${v4}`,
+  },
+  {
+    apiName: 'IPSB' as const,
+    data: { asn: 64500, asn_organization: 'ASN owner' },
+    organization: 'ASN owner',
+    url: `https://api.ip.sb/geoip/${v4}`,
   },
   {
     apiName: 'IPWHOIS' as const,
     data: { success: true, connection: { isp: 'ISP owner', asn: 64500, org: 'ASN owner' } },
-  },
-])('keeps ISP and ASN organization distinct from $apiName metadata', async ({ apiName, data }) => {
-  const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
-  const { IP_INFO_API } = await import('@/constant')
-  const fetchMock = vi
-    .spyOn(globalThis, 'fetch')
-    .mockResolvedValue(Response.json({ ip: v4, ...data }))
-  expect(await api.getIPInfo(v4, IP_INFO_API[apiName])).toMatchObject({
-    ip: v4,
     organization: 'ISP owner',
-    asn: '64500',
-    asnOrganization: 'ASN owner',
-  })
-  expect(fetchMock).toHaveBeenCalledTimes(1)
-})
+    url: `https://ipwho.is/${v4}`,
+  },
+])(
+  'decodes $apiName organization as $organization for an explicit IP',
+  async ({ apiName, data, organization, url }) => {
+    const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ ip: v4, ...data }))
+    expect(await api.getIPInfo(v4, IP_INFO_API[apiName])).toMatchObject({
+      ip: v4,
+      organization,
+      asn: '64500',
+      asnOrganization: 'ASN owner',
+    })
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(url, expect.any(Object))
+  },
+)
 
 it('decodes flat, nested and nullable ipapi.is metadata for an explicit IP', async () => {
   const api = await vi.importActual<typeof import('@/api/geoip')>('@/api/geoip')
-  const { IP_INFO_API } = await import('@/constant')
   const fetchMock = vi
     .spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce(
@@ -536,5 +662,7 @@ it('decodes flat, nested and nullable ipapi.is metadata for an explicit IP', asy
     organization: '',
     asn: '',
   })
-  expect(fetchMock).toHaveBeenCalledWith('https://api.ipapi.is/?q=1.1.1.1', expect.any(Object))
+  expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(
+    Array(3).fill('https://api.ipapi.is/?q=1.1.1.1'),
+  )
 })

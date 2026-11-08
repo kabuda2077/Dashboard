@@ -4,7 +4,11 @@
       <div class="core-toolbar core-runtime-toolbar">
         <span
           class="core-runtime-dot"
-          :class="hostState.isRunning && backendConnectionStatus === 'ready' ? 'bg-success' : 'bg-warning'"
+          :class="
+            hostState.isRunning && backendConnectionStatus === 'ready' && hostState.apiIsManaged
+              ? 'bg-success'
+              : 'bg-warning'
+          "
           role="img"
           :aria-label="runtimeStatusText"
           :title="runtimeStatusText"
@@ -50,7 +54,7 @@
       </div>
     </CtrlsBar>
     <div
-      class="core-content mx-auto w-full max-w-7xl p-3"
+      class="core-content w-full p-3 md:pr-2"
       :style="{ paddingBottom: padding.paddingBottom }"
     >
       <div
@@ -58,6 +62,18 @@
         class="dashboard-note mb-3"
       >
         {{ t('desktop.hostRequired') }}
+      </div>
+
+      <div
+        v-if="
+          hostState.isRunning &&
+          backendConnectionStatus === 'ready' &&
+          hostState.apiIsManaged === false
+        "
+        class="dashboard-note text-warning mb-3"
+        role="status"
+      >
+        {{ t('desktop.result.apiNotManaged') }}
       </div>
 
       <div
@@ -69,6 +85,8 @@
           <div class="settings-grid core-profile-fields">
             <CoreProfileFields
               :draft="activeDraft"
+              @edit="(field, value) => (activeDraft!.values[field] = value)"
+              @replace-secret="activeDraft!.replaceSecret = $event"
               id-prefix="core"
               :busy="busy"
               @choose="chooseFile"
@@ -225,6 +243,8 @@
           <div class="settings-grid core-profile-fields my-4">
             <CoreProfileFields
               :draft="draft"
+              @edit="(field, value) => (draft!.values[field] = value)"
+              @replace-secret="draft!.replaceSecret = $event"
               :id-prefix="setupVisible ? 'core' : 'core-switch'"
               :busy="busy"
               compact
@@ -383,6 +403,9 @@ const runtimeStatusText = computed(() =>
       ? [`PID ${hostState.value.processId}`]
       : []),
     t(`desktop.connection.${backendConnectionStatus.value}`),
+    ...(backendConnectionStatus.value === 'ready' && hostState.value.apiIsManaged === false
+      ? [t('desktop.result.apiNotManaged')]
+      : []),
   ].join(' · '),
 )
 const setupStartedKind = ref<CoreKind>()
@@ -458,16 +481,9 @@ const desktopOptions: { key: keyof DesktopOptions }[] = [
   { key: 'autostart' },
 ]
 
-type UpgradeContext = { kind: CoreKind; revision: number; epoch: number }
-const matchesUpgradeContext = (context: UpgradeContext) =>
-  hostState.value.coreType === context.kind &&
-  hostState.value.profiles?.[context.kind]?.revision === context.revision &&
-  hostState.value.runtimeEpoch === context.epoch
-
 const run = async (
   type:
     'saveProfile' | 'start' | 'restart' | 'switchCore' | 'stop' | 'upgradeCore' | 'completeSetup',
-  confirmation?: UpgradeContext,
   switchTarget?: CoreKind,
 ): Promise<CommandResult | undefined> => {
   if (busy.value || !hasHostBridge) return
@@ -477,15 +493,6 @@ const run = async (
     (type === 'stop' || type === 'restart' || type === 'upgradeCore' || type === 'completeSetup'
       ? (hostState.value.coreType ?? kind.value)
       : kind.value)
-  const upgradeContext: UpgradeContext = confirmation ?? {
-    kind: target,
-    revision: hostState.value.profiles?.[target]?.revision ?? -1,
-    epoch: hostState.value.runtimeEpoch ?? -1,
-  }
-  if (confirmation && !matchesUpgradeContext(confirmation)) {
-    showHostNotice('operationContextChanged', 'warning')
-    return
-  }
   const entry = coreDrafts[target]
   const submitted = entry ? { ...entry.values } : undefined
   const includeDraft =
@@ -495,14 +502,15 @@ const run = async (
   const command: HostCommand = {
     type,
     coreType: target,
-    confirmUnverified: !!confirmation,
     ...(type === 'upgradeCore'
-      ? { expectedRevision: upgradeContext.revision, expectedRuntimeEpoch: upgradeContext.epoch }
+      ? {
+          expectedRevision: hostState.value.profiles?.[target]?.revision ?? -1,
+          expectedRuntimeEpoch: hostState.value.runtimeEpoch ?? -1,
+        }
       : {}),
     ...(includeDraft ? { expectedRevision: entry.base.revision, draft: toProfileEdit(entry) } : {}),
   }
   pending.value = true
-  let needsConfirmation = false
   let result: CommandResult | undefined
   try {
     result = await commandHost(command)
@@ -516,12 +524,7 @@ const run = async (
       coreDrafts[target] === entry
     )
       acceptCoreDraft(entry, submitted, canonical)
-    needsConfirmation = result.code === 'confirmationRequired'
-    if (
-      !needsConfirmation &&
-      result.status !== 'cancelled' &&
-      result.status !== 'elevationRequired'
-    )
+    if (result.status !== 'cancelled' && result.status !== 'elevationRequired')
       showHostNotice(
         result.message ?? result.code,
         result.status === 'completed' ? 'success' : 'error',
@@ -530,17 +533,6 @@ const run = async (
     showHostNotice(error instanceof Error ? error.message : String(error), 'error')
   } finally {
     pending.value = false
-  }
-  if (needsConfirmation) {
-    if (!matchesUpgradeContext(upgradeContext)) {
-      showHostNotice('operationContextChanged', 'warning')
-      return
-    }
-    const { confirmed } = await showConfirmDialog({
-      title: t('desktop.unverifiedTitle'),
-      message: t('desktop.unverifiedMessage'),
-    })
-    if (confirmed) return await run('upgradeCore', upgradeContext)
   }
   return result
 }
@@ -621,7 +613,7 @@ const confirmSwitch = async () => {
     cancelSwitch()
     return
   }
-  const result = await run('switchCore', undefined, context.target)
+  const result = await run('switchCore', context.target)
   if (result?.status === 'completed' || result?.status === 'elevationRequired') cancelSwitch()
 }
 const startSetup = async () => {
@@ -636,7 +628,7 @@ const startSetup = async () => {
       ? 'restart'
       : 'switchCore'
     : 'start'
-  const result = await run(type, undefined, target)
+  const result = await run(type, target)
   if (result?.status === 'completed') setupStartedKind.value = target
 }
 watch(
@@ -673,7 +665,11 @@ const confirmReload = () => {
   const context = reloadConfirmation.value
   reloadConfirmation.value = undefined
   if (context) applyReload(context)
-  void nextTick(() => profileDialog.value?.querySelector<HTMLInputElement>('#core-exe')?.focus())
+  void nextTick(() =>
+    profileDialog.value
+      ?.querySelector<HTMLInputElement>(switchContext.value ? '#core-switch-exe' : '#core-exe')
+      ?.focus(),
+  )
 }
 const reloadDraft = async () => {
   const target = kind.value,

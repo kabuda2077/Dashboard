@@ -272,13 +272,21 @@ export const probeClashChannel = async (
       signal: controller.signal,
     })
     throwIfProbeAborted(signal)
-    return res.ok
-      ? { ok: true }
-      : {
-          ok: false,
-          kind: res.status === 401 ? 'unauthorized' : 'http',
-          message: `HTTP ${res.status}`,
-        }
+    if (res.ok) {
+      const data = await res.json().catch((error) => {
+        if (controller.signal.aborted || !(error instanceof SyntaxError)) throw error
+        return null
+      })
+      throwIfProbeAborted(signal)
+      return typeof data?.version === 'string' && data.version.length > 0
+        ? { ok: true }
+        : { ok: false, kind: 'http', message: 'Invalid Clash API version response' }
+    }
+    return {
+      ok: false,
+      kind: res.status === 401 ? 'unauthorized' : 'http',
+      message: `HTTP ${res.status}`,
+    }
   } catch {
     throwIfProbeAborted(signal)
     return { ok: false, kind: controller.signal.aborted ? 'timeout' : 'network' }

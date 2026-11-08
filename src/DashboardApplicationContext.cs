@@ -345,10 +345,15 @@ internal sealed class DashboardApplicationContext : ApplicationContext
                 arguments.Add("--diagnostic-log");
             }
 
+            using var handoff = new ElevationHandoff();
+            arguments.Add("--expected-user-sid");
+            arguments.Add(handoff.UserSid);
+            arguments.Add("--elevation-handoff");
+            arguments.Add(handoff.PipeName);
             var handedOff = await RelaunchAfterConfirmationAsync(
                 ConfirmCurrentWindowExitAsync,
                 () => _host.RelaunchAfterAutostartAsync(
-                    () =>
+                    async () =>
                     {
                         using var replacement = Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(" ", arguments))
                         {
@@ -356,6 +361,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
                             UseShellExecute = true,
                             Verb = "runas"
                         }) ?? throw new InvalidOperationException("未能创建管理员进程。");
+                        await handoff.WaitForReadyAsync(replacement.WaitForExitAsync());
                     },
                     FinishExitAsync));
             if (!handedOff)

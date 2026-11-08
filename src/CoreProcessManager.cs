@@ -6,6 +6,7 @@ namespace Dashboard;
 public sealed class CoreProcessManager : IDisposable
 {
     private const int MaxLogLines = 500;
+    private const int MaxLogLineLength = 8192;
     private const int LogEventFlushIntervalMs = 125;
     private readonly Queue<string> _logLines = new(MaxLogLines);
     private readonly object _logLinesLock = new();
@@ -17,6 +18,10 @@ public sealed class CoreProcessManager : IDisposable
     private readonly object _operationLock = new();
     private bool _disposed;
     private Process? _process;
+    private CoreProcessJob? _processJob;
+    private bool _expectSelfRestart;
+    private CancellationTokenSource? _outputCancellation;
+    private Task? _outputTask;
 
     private readonly Action<Process> _killProcess;
     private readonly Func<Process, int, bool> _waitForExit;
@@ -93,6 +98,38 @@ public sealed class CoreProcessManager : IDisposable
 
     internal Task StopAsync(TimeSpan? timeout = null) => Task.Run(() => Stop(timeout ?? TimeSpan.FromSeconds(3)));
 
+    internal bool OwnsProcess(int processId, int expectedRoot)
+    {
+        lock (_processLock)
+            return !_disposed && _process is { } root && IsProcessRunning(root) && root.Id == expectedRoot
+                && (processId == expectedRoot || _processJob?.ContainsProcess(processId) == true);
+    }
+
+    private void DisposeProcessJob()
+    {
+        lock (_processLock)
+        {
+            _processJob?.Dispose();
+            _processJob = null;
+        }
+    }
+
+    internal int BeginSelfUpgrade()
+    {
+        lock (_processLock)
+        {
+            if (_disposed || _process is null || !IsProcessRunning(_process))
+                throw new InvalidOperationException("The managed core is not running.");
+            _expectSelfRestart = true;
+            return _process.Id;
+        }
+    }
+
+    internal void EndSelfUpgrade()
+    {
+        lock (_processLock) _expectSelfRestart = false;
+    }
+
     private void StartOwnedProcess(CoreLaunchSpec spec)
     {
         DisposeExitedProcess();
@@ -133,54 +170,38 @@ public sealed class CoreProcessManager : IDisposable
             StandardErrorEncoding = Encoding.UTF8
         };
 
-        var process = new Process
-        {
-            StartInfo = startInfo,
-            EnableRaisingEvents = true
-        };
-        var processId = 0;
-        string? Redact(string? line) => string.IsNullOrEmpty(spec.Profile.Secret) ? line : line?.Replace(spec.Profile.Secret, "[redacted]", StringComparison.Ordinal);
-        process.OutputDataReceived += (_, e) => AppendLog(Redact(e.Data));
-        process.ErrorDataReceived += (_, e) => AppendLog(Redact(e.Data));
-        process.Exited += (_, _) =>
-        {
-            if (processId == 0 || !ShouldSuppressExitedLog(processId))
-            {
-                AppendLog($"{coreName} exited with code {GetExitCodeText(process)}.");
-            }
-            bool current;
-            lock (_processLock) current = ReferenceEquals(_process, process);
-            if (current) StatusChanged?.Invoke(this, EventArgs.Empty);
-        };
-        lock (_processLock)
-        {
-            _process = process;
-        }
+        StartProcess(startInfo, coreName, spec.Profile.Secret);
+    }
 
-        bool started;
-        try { started = process.Start(); }
+    private void StartProcess(ProcessStartInfo startInfo, string coreName, string? secret)
+    {
+        var job = new CoreProcessJob();
+        var process = new Process { StartInfo = startInfo };
+        lock (_processLock) _process = process;
+        try
+        {
+            if (!process.Start()) throw new InvalidOperationException($"{coreName} 启动失败。");
+            job.Add(process);
+            lock (_processLock) _processJob = job;
+        }
         catch
         {
-            lock (_processLock) { if (ReferenceEquals(_process, process)) _process = null; }
-            process.Dispose();
+            try { if (IsProcessRunning(process)) process.Kill(entireProcessTree: true); }
+            finally
+            {
+                lock (_processLock) { if (ReferenceEquals(_process, process)) _process = null; }
+                process.Dispose();
+                job.Dispose();
+            }
             throw;
         }
-        if (!started)
-        {
-            process.Dispose();
-            lock (_processLock)
-            {
-                if (ReferenceEquals(_process, process))
-                {
-                    _process = null;
-                }
-            }
-            throw new InvalidOperationException($"{coreName} 启动失败。");
-        }
 
-        processId = process.Id;
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+        var processId = process.Id;
+        var cancellation = new CancellationTokenSource();
+        _outputCancellation = cancellation;
+        // Own the entire output/exit lifetime. Each pipe gets its own reader so a busy
+        // stdout cannot prevent stderr from being drained (including synchronous reads).
+        _outputTask = Task.Run(() => ObserveProcessAsync(process, coreName, secret, cancellation));
         AppendLog($"{coreName} started. pid={processId}");
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -197,6 +218,7 @@ public sealed class CoreProcessManager : IDisposable
 
     private void StopOwnedProcess(TimeSpan waitTimeout)
     {
+        EndSelfUpgrade();
         if (!IsRunning)
         {
             DisposeExitedProcess();
@@ -230,6 +252,9 @@ public sealed class CoreProcessManager : IDisposable
             // A failed kill/wait must not discard ownership of a live process.
             if (!IsProcessRunning(process))
             {
+                CompleteOutput();
+                DisposeProcessJob();
+                ShouldSuppressExitedLog(process.Id);
                 lock (_processLock)
                 {
                     if (ReferenceEquals(_process, process)) _process = null;
@@ -240,6 +265,162 @@ public sealed class CoreProcessManager : IDisposable
         }
     }
 
+    private async Task ObserveProcessAsync(Process process, string coreName, string? secret,
+        CancellationTokenSource cancellation)
+    {
+        var stdout = Task.Run(() => ReadOutputAsync(process.StandardOutput, secret, cancellation));
+        var stderr = Task.Run(() => ReadOutputAsync(process.StandardError, secret, cancellation));
+        var readers = Task.WhenAll(stdout, stderr);
+        var observed = process;
+        try
+        {
+            while (true)
+            {
+                await observed.WaitForExitAsync(cancellation.Token).ConfigureAwait(false);
+                Process? restarted = null;
+                lock (_processLock)
+                {
+                    if (_expectSelfRestart && !_disposed && !cancellation.IsCancellationRequested && ReferenceEquals(_process, observed))
+                    {
+                        restarted = _processJob?.FindRestartedCore(process.StartInfo.FileName, observed.Id);
+                        if (restarted is not null) _process = restarted;
+                    }
+                }
+                if (restarted is null) break;
+                AppendLog($"{coreName} self-upgrade restarted. pid={restarted.Id}");
+                ThreadPool.QueueUserWorkItem(_ => NotifyProcessChanged(restarted, coreName));
+                if (!ReferenceEquals(observed, process)) observed.Dispose();
+                observed = restarted;
+            }
+            // A descendant may keep an inherited pipe open after the core exits.
+            // Allow buffered final lines to drain, then cancel our reads as well.
+            try { await readers.WaitAsync(TimeSpan.FromSeconds(2), cancellation.Token).ConfigureAwait(false); }
+            catch (TimeoutException) { }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("core", "Unable to observe core process exit.", error);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await readers.ConfigureAwait(false);
+            if (!ReferenceEquals(observed, process)) process.Dispose();
+        }
+
+        // Notifications can call Stop/Dispose themselves. Dispatch only after the
+        // owned reads finish, without making their completion depend on this callback
+        // acquiring _operationLock while Stop is joining them.
+        ThreadPool.QueueUserWorkItem(_ => NotifyProcessChanged(observed, coreName));
+    }
+
+    private void NotifyProcessChanged(Process process, string coreName)
+    {
+        lock (_operationLock)
+        {
+            lock (_processLock)
+            {
+                if (!ReferenceEquals(_process, process) || _disposed) return;
+            }
+            if (!IsProcessRunning(process) && !ShouldSuppressExitedLog(process.Id))
+                AppendLog($"{coreName} exited with code {GetExitCodeText(process)}.");
+            try { StatusChanged?.Invoke(this, EventArgs.Empty); }
+            catch (Exception error) { HostOperationLogger.Error("core", "Core status notification failed.", error); }
+        }
+    }
+
+    private async Task ReadOutputAsync(StreamReader reader, string? secret, CancellationTokenSource cancellation)
+    {
+        var token = cancellation.Token;
+        var buffer = new char[2048];
+        var line = new StringBuilder(MaxLogLineLength);
+        var truncated = false;
+        var afterCarriageReturn = false;
+        void Emit()
+        {
+            var text = line.ToString();
+            if (!string.IsNullOrEmpty(secret))
+            {
+                // A retained prefix can end inside a secret. Find the unmatched
+                // tail after complete occurrences first, so overlapping prefixes
+                // (e.g. secret "aaa" in "aaaa") cannot undo complete redaction.
+                var unmatchedStart = 0;
+                if (truncated)
+                {
+                    int match;
+                    while ((match = text.IndexOf(secret, unmatchedStart, StringComparison.Ordinal)) >= 0)
+                        unmatchedStart = match + secret.Length;
+                }
+                var redacted = text.Replace(secret, "[redacted]", StringComparison.Ordinal);
+                if (truncated)
+                {
+                    for (var length = Math.Min(secret.Length - 1, text.Length - unmatchedStart); length > 0; length--)
+                    {
+                        if (!text.AsSpan(text.Length - length).SequenceEqual(secret.AsSpan(0, length))) continue;
+                        redacted = redacted[..^length] + "[redacted]";
+                        break;
+                    }
+                }
+                text = redacted;
+            }
+            lock (_processLock)
+            {
+                if (ReferenceEquals(_outputCancellation, cancellation) && !_disposed)
+                    AppendLog(truncated ? text + " [truncated]" : text);
+            }
+            line.Clear();
+            truncated = false;
+        }
+
+        try
+        {
+            int count;
+            while ((count = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) > 0)
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var character = buffer[i];
+                    if (character == '\r' || character == '\n')
+                    {
+                        if (character != '\n' || !afterCarriageReturn) Emit();
+                        afterCarriageReturn = character == '\r';
+                    }
+                    else
+                    {
+                        afterCarriageReturn = false;
+                        if (line.Length < MaxLogLineLength) line.Append(character);
+                        else truncated = true;
+                    }
+                }
+            }
+            if (line.Length > 0 || truncated) Emit();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            HostOperationLogger.Error("core", "Unable to read core output.", error);
+        }
+    }
+
+    private void CompleteOutput()
+    {
+        var completion = _outputTask;
+        var cancellation = _outputCancellation;
+        if (completion is null) return;
+        try
+        {
+            cancellation?.Cancel();
+            completion.GetAwaiter().GetResult();
+        }
+        finally
+        {
+            _outputTask = null;
+            _outputCancellation = null;
+            cancellation?.Dispose();
+        }
+    }
+
     private void AppendLog(string? line)
     {
         if (string.IsNullOrWhiteSpace(line))
@@ -247,7 +428,7 @@ public sealed class CoreProcessManager : IDisposable
             return;
         }
 
-        if (line.Length > 8192) line = line[..8192] + " [truncated]";
+        if (line.Length > MaxLogLineLength) line = line[..MaxLogLineLength] + " [truncated]";
         var entry = $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
         lock (_logLinesLock)
         {
@@ -306,10 +487,14 @@ public sealed class CoreProcessManager : IDisposable
             {
                 return;
             }
-
-            _process = null;
         }
 
+        CompleteOutput();
+        DisposeProcessJob();
+        lock (_processLock)
+        {
+            if (ReferenceEquals(_process, process)) _process = null;
+        }
         process.Dispose();
     }
 
@@ -370,7 +555,7 @@ public sealed class CoreProcessManager : IDisposable
     {
         lock (_operationLock)
         {
-            _disposed = true;
+            lock (_processLock) _disposed = true;
             DisposeOwnedProcess();
         }
     }
@@ -405,6 +590,12 @@ public sealed class CoreProcessManager : IDisposable
                     }
                 }
             ),
+                ("Core output readers", CompleteOutput),
+                ("Core process job", () =>
+                {
+                    if (IsRunning) return;
+                    DisposeProcessJob();
+                }),
                 ("Exited core process", () => exitedProcess?.Dispose()));
         }
     }

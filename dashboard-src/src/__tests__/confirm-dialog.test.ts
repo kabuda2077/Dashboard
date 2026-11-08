@@ -1,7 +1,38 @@
-import { confirmDialogState, resolveConfirmDialog, showConfirmDialog } from '@/helper/confirm-dialog'
+import {
+  confirmDialogState,
+  resolveConfirmDialog,
+  showConfirmDialog,
+} from '@/helper/confirm-dialog'
 import { describe, expect, it } from 'vitest'
 
 describe('confirm dialog queue', () => {
+  it.each([true, false])(
+    'cancels an active or queued request (%s) without losing the next dialog',
+    async (cancelActive) => {
+      const controller = new AbortController()
+      const first = showConfirmDialog(
+        { message: 'first' },
+        cancelActive ? controller.signal : undefined,
+      )
+      const second = showConfirmDialog(
+        { message: 'second' },
+        cancelActive ? undefined : controller.signal,
+      )
+      controller.abort()
+      await expect(cancelActive ? first : second).resolves.toEqual({
+        confirmed: false,
+        checked: false,
+      })
+      expect(confirmDialogState.value?.message).toBe(cancelActive ? 'second' : 'first')
+      resolveConfirmDialog(true)
+      await expect(cancelActive ? second : first).resolves.toEqual({
+        confirmed: true,
+        checked: false,
+      })
+      expect(confirmDialogState.value).toBeUndefined()
+    },
+  )
+
   it('resolves queued confirmations in order', async () => {
     const first = showConfirmDialog({ message: 'first' })
     const second = showConfirmDialog({ message: 'second' })

@@ -70,6 +70,18 @@ it('Core preserves edits through runtime messages and does not submit them with 
   await nextTick()
   expect(input.value).toBe('C:/typing.exe')
 })
+it('marks an external API while preserving the connection and current draft', async () => {
+  const host = await mount({ setupCompleted: true, apiIsManaged: false })
+  expect(root.querySelector('[role=status]')?.textContent).toContain('此 API 不属于当前受管核心')
+  expect(root.querySelector('.core-runtime-dot')?.classList.contains('bg-warning')).toBe(true)
+  const input = await edit('#core-exe', 'C:/typing.exe')
+  host.runtime({ apiIsManaged: true })
+  await nextTick()
+  expect(root.querySelector('[role=status]')).toBeNull()
+  expect(root.querySelector('.core-runtime-dot')?.classList.contains('bg-success')).toBe(true)
+  expect(input.value).toBe('C:/typing.exe')
+})
+
 it('file selection fills a draft but never saves it implicitly', async () => {
   const host = await mount({ setupCompleted: true })
   const choose = [...root.querySelectorAll('button')].find(
@@ -276,6 +288,7 @@ it.each([false, true])('reload confirmation stays inside the native switch dialo
   prompt.querySelectorAll<HTMLButtonElement>('button')[confirmed ? 1 : 0]!.click()
   await nextTick()
   expect(root.querySelector<HTMLInputElement>('#core-switch-exe')!.value).toBe(confirmed ? 'C:/remote.exe' : 'C:/keep-unless-confirmed.exe')
+  expect(document.activeElement).toBe(root.querySelector(confirmed ? '#core-switch-exe' : '[data-testid=reload-dialog-draft]'))
   expect(host.post.mock.calls.some(([request]) => request.type === 'saveProfile' || request.type === 'switchCore')).toBe(false)
 })
 

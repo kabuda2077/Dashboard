@@ -42,7 +42,7 @@
 }
 
 .core-layout {
-  @apply grid items-stretch gap-6;
+  @apply grid items-stretch gap-3;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -102,7 +102,7 @@
 
 .core-runtime-toolbar {
   @apply relative flex min-w-0 items-center gap-2 text-sm;
-  width: calc((100cqw - 1.5rem) / 2);
+  width: calc((100cqw - 0.75rem) / 2);
   container: core-runtime / inline-size;
 }
 
@@ -232,6 +232,10 @@
 .ctrls-bar .tabs.tabs-xs .tab {
   height: 2.25rem;
   min-height: 2.25rem;
+}
+
+.ctrls-bar .nav-menu.nav-menu-horizontal {
+  background-color: color-mix(in srgb, var(--color-base-content) 6%, var(--color-base-100));
 }
 
 .ctrls-bar .nav-menu-horizontal > .nav-item {

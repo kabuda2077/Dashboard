@@ -1,6 +1,7 @@
 import { backendSessionGeneration, backendSessionReady } from '@/helper/backendSession'
 import { isResolvableIP, reverseName } from '@/helper/reverse-dns'
 import { getIPLabelFromMap } from '@/helper/source-ip'
+import { showNotification } from '@/helper/notification'
 import { resolveClientHostname, sourceIPLabelList } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -8,6 +9,7 @@ import { nextTick } from 'vue'
 
 const dns = vi.hoisted(() => ({ query: vi.fn() }))
 vi.mock('@/assembly/config', () => ({ queryDNS: dns.query }))
+vi.mock('@/helper/notification', () => ({ showNotification: vi.fn() }))
 vi.mock('@/helper/backendSession', async () => {
   const { ref } = await import('vue')
   const generation = ref(0)
@@ -81,6 +83,40 @@ it('preserves raw-zone regex matching, CIDR matching and label cache invalidatio
   activeBackend.value = { uuid: 'local' } as typeof activeBackend.value
   await nextTick()
   expect(getIPLabelFromMap('fe80::1%eth0')).toBe('updated')
+})
+
+it('matches each address family after skipping CIDRs from the other family', async () => {
+  sourceIPLabelList.value = [
+    { id: 'v6', key: 'fe80::/10', label: 'IPv6 network' },
+    { id: 'v4', key: '192.0.2.0/24', label: 'IPv4 network' },
+  ]
+  await nextTick()
+  expect(getIPLabelFromMap('192.0.2.10')).toBe('IPv4 network')
+  sourceIPLabelList.value.reverse()
+  await nextTick()
+  expect(getIPLabelFromMap('fe80::1%eth0')).toBe('IPv6 network')
+  expect(getIPLabelFromMap('2001:db8::1')).toBe('2001:db8::1')
+  expect(getIPLabelFromMap('198.51.100.1')).toBe('198.51.100.1')
+})
+
+it('isolates a stored invalid regex and reports it once while valid labels keep working', async () => {
+  vi.mocked(showNotification).mockClear()
+  sourceIPLabelList.value = [
+    { id: 'broken', key: '/[', label: 'broken' },
+    { id: 'valid', key: '/^192\\.0\\.2\\.', label: 'valid' },
+  ]
+  await nextTick()
+  expect(getIPLabelFromMap('192.0.2.10')).toBe('valid')
+  expect(showNotification).toHaveBeenCalledOnce()
+  expect(showNotification).toHaveBeenCalledWith({
+    content: expect.stringContaining('/['),
+    type: 'alert-error',
+  })
+  sourceIPLabelList.value[1].label = 'updated'
+  activeBackend.value = { uuid: 'other' } as typeof activeBackend.value
+  await nextTick()
+  expect(getIPLabelFromMap('192.0.2.10')).toBe('updated')
+  expect(showNotification).toHaveBeenCalledOnce()
 })
 
 it('retains IPv4 exact and CIDR labels and raw unmatched addresses', async () => {

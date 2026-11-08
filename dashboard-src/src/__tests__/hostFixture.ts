@@ -17,6 +17,9 @@ export const makeHostSnapshot = (patch: HostState = {}): HostSnapshot => {
     processId: 1,
     runtimeEpoch: 1,
     apiStatus: 'ready',
+    apiIsManaged: true,
+    coreUpdateMode: state.runtime.coreUpdateMode ?? 'unknown',
+    coreReleaseUrl: state.runtime.coreReleaseUrl ?? '',
   }
   for (const [key, value] of Object.entries(patch)) {
     if (key in state.runtime) (state.runtime as Record<string, unknown>)[key] = value

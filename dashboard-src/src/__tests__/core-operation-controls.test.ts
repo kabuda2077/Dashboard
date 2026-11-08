@@ -2,6 +2,13 @@ import { expect, it, vi } from 'vitest'
 import { createApp, nextTick, ref } from 'vue'
 import { makeHostSnapshot } from './hostFixture'
 
+const releasePost = vi.hoisted(() => vi.fn())
+vi.mock('@/composables/hostBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/hostBridge')>()),
+  hasHostBridge: true,
+  postHostMessage: releasePost,
+}))
+
 vi.mock('@/assembly/config', () => ({
   flushDNSCacheAPI: vi.fn(),
   flushFakeIPAPI: vi.fn(),
@@ -38,14 +45,27 @@ vi.mock('@/composables/useBackendRuntimeConfig', () => ({
 }))
 
 it.each([
-  [false, 'en-US'], [true, 'en-US'], [false, 'zh-CN'], [true, 'zh-CN'],
+  [false, 'en-US'],
+  [true, 'en-US'],
+  [false, 'zh-CN'],
+  [true, 'zh-CN'],
 ] as const)(
   'localizes Core operations without changing their order or wiring (sing-box=%s, locale=%s)',
   async (singBox, locale) => {
     const { isSingBoxCore } = await import('@/assembly/version')
     ;(isSingBoxCore as { value: boolean }).value = singBox
     const { applyHostState } = await import('@/composables/hostBridge')
-    applyHostState(makeHostSnapshot({ coreUpdateAvailable: true }))
+    releasePost.mockClear()
+    const source = singBox
+      ? {
+          coreUpdateMode: 'manual' as const,
+          coreReleaseUrl: 'https://github.com/reF1nd/sing-box-releases/releases',
+        }
+      : {
+          coreUpdateMode: 'automatic' as const,
+          coreReleaseUrl: 'https://github.com/MetaCubeX/mihomo/releases',
+        }
+    applyHostState(makeHostSnapshot({ coreUpdateAvailable: true, ...source }))
     const { coreHostActionsKey } = await import('@/composables/coreHostActions')
     const { default: Component } = await import('@/components/settings/backend/BackendSettings.vue')
     const app = createApp(Component)
@@ -59,7 +79,7 @@ it.each([
     app.provide(coreHostActionsKey, {
       isRunning: ref(true),
       isCoreUpgrading: ref(false),
-      canUpgradeCore: ref(true),
+      canUpgradeCore: ref(!singBox),
       restartCore,
       upgradeCore,
     })
@@ -74,18 +94,35 @@ it.each([
         t('flushDNSCache'),
         t('flushFakeIP'),
         ...(!singBox ? [t('updateGeoDatabase')] : []),
-        t('desktop.upgrade'),
+        t(singBox ? 'desktop.coreReleasePage' : 'desktop.upgrade'),
       ])
       expect(root.textContent).toContain(locale === 'en-US' ? 'Current downloads' : '当前下载')
       expect(buttons[1].textContent).toContain(locale === 'en-US' ? 'Restart core' : '重启内核')
       buttons[1].click()
       buttons.at(-1)!.click()
       expect(restartCore).toHaveBeenCalledOnce()
-      expect(upgradeCore).toHaveBeenCalledOnce()
-      expect(buttons.at(-1)!.parentElement!.querySelector('.indicator-item')).not.toBeNull()
-      applyHostState(makeHostSnapshot({ coreUpdateAvailable: false }))
+      if (singBox) {
+        expect(upgradeCore).not.toHaveBeenCalled()
+        expect(releasePost).toHaveBeenCalledWith({ type: 'openCoreRepository' })
+        expect(buttons.at(-1)!.title).toBe(t('desktop.manualCoreUpdateHint'))
+        expect(root.querySelector('.indicator-item')).toBeNull()
+      } else {
+        expect(upgradeCore).toHaveBeenCalledOnce()
+        expect(buttons.at(-1)!.parentElement!.querySelector('.indicator-item')).not.toBeNull()
+      }
+      applyHostState(makeHostSnapshot({ coreUpdateAvailable: false, ...source }))
       await nextTick()
       expect(buttons.at(-1)!.parentElement!.querySelector('.indicator-item')).toBeNull()
+      if (singBox) {
+        applyHostState(makeHostSnapshot({ coreUpdateMode: 'unknown', coreReleaseUrl: '' }))
+        await nextTick()
+        const release = root.querySelector<HTMLButtonElement>('[data-testid=core-release-page]')!
+        expect(release.disabled).toBe(true)
+        expect(release.title).toBe(t('desktop.unknownCoreSourceHint'))
+        releasePost.mockClear()
+        release.click()
+        expect(releasePost).not.toHaveBeenCalled()
+      }
     } finally {
       app.unmount()
       i18n.global.locale.value = previousLocale

@@ -4,10 +4,11 @@ namespace Dashboard.Tests;
 
 public sealed class HostMessageRouterTests : TemporaryDirectoryTest
 {
-    private static HostMessageRouter Router(List<string> calls, Func<HostRequest, Task<CommandResult>>? execute = null) => new(new()
+    private static HostMessageRouter Router(List<string> calls, Func<HostRequest, Task<CommandResult>>? execute = null,
+        Func<IReadOnlyDictionary<string, string>>? preferences = null) => new(new()
     {
         ExecuteAsync = execute ?? (request => { calls.Add(request.Type); return Task.FromResult(CommandResult.Completed()); }),
-        BuildState = () => new(), Preferences = () => new Dictionary<string, string>(),
+        BuildState = () => new(), Preferences = preferences ?? (() => new Dictionary<string, string>()),
         ChooseFile = (_, _) => { calls.Add("choose"); return "C:/chosen.exe"; },
         OpenLocation = (_, _) => calls.Add("location"),
         WindowCommand = (type, _) => calls.Add(type),
@@ -15,6 +16,72 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
         OpenAppRelease = () => calls.Add("release"), OpenCoreRepository = () => calls.Add("repository"),
         RequestElevation = () => calls.Add("elevation")
     });
+
+    [Fact]
+    public async Task BootstrapWaitsForEveryPreviouslyAcceptedSaveButNotLaterSaves()
+    {
+        var writes = Enumerable.Range(0, 3).Select(_ => new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
+        var nextWrite = 0;
+        var router = Router(new(), _ => writes[nextWrite++].Task);
+        Task Save(string id) => router.RouteAsync(JsonSerializer.Serialize(new
+        {
+            protocolVersion = 2, type = "saveDashboardPreferences", requestId = id,
+            preferences = new Dictionary<string, string> { ["config/theme"] = id }
+        }), _ => { });
+        var first = Save("first");
+        var second = Save("second");
+        var replies = new List<object>();
+        var bootstrap = router.RouteAsync("""
+            {"protocolVersion":2,"type":"bootstrap","requestId":"reload"}
+            """, replies.Add);
+        var later = Save("later");
+        Assert.False(bootstrap.IsCompleted);
+        Assert.Empty(replies);
+        writes[1].SetResult(CommandResult.Completed());
+        await second;
+        Assert.False(bootstrap.IsCompleted);
+        writes[0].SetResult(CommandResult.Completed());
+        await first;
+        await bootstrap.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsType<BootstrapReply>(Assert.Single(replies));
+        Assert.False(later.IsCompleted);
+        writes[2].SetResult(CommandResult.Completed());
+        await later;
+    }
+
+    [Fact]
+    public async Task FailedSaveReleasesBootstrapAndDoesNotPoisonFutureSaves()
+    {
+        var write = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IReadOnlyDictionary<string, string> committed = new Dictionary<string, string> { ["config/theme"] = "old" };
+        var router = Router(new(), _ => write.Task, () => committed);
+        Task Save() => router.RouteAsync("""
+            {"protocolVersion":2,"type":"saveDashboardPreferences","requestId":"save","preferences":{"config/theme":"new"}}
+            """, _ => { });
+        var save = Save();
+        var replies = new List<object>();
+        var bootstrap = router.RouteAsync("""
+            {"protocolVersion":2,"type":"bootstrap","requestId":"reload"}
+            """, replies.Add);
+        Assert.False(bootstrap.IsCompleted);
+        write.SetException(new IOException("Disk unavailable."));
+        await save;
+        await bootstrap.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Same(committed, Assert.IsType<BootstrapReply>(Assert.Single(replies)).Preferences);
+
+        write = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        save = Save();
+        replies.Clear();
+        bootstrap = router.RouteAsync("""
+            {"protocolVersion":2,"type":"bootstrap","requestId":"reload-again"}
+            """, replies.Add);
+        Assert.False(bootstrap.IsCompleted);
+        committed = new Dictionary<string, string> { ["config/theme"] = "new" };
+        write.SetResult(CommandResult.Completed());
+        await save;
+        await bootstrap.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Same(committed, Assert.IsType<BootstrapReply>(Assert.Single(replies)).Preferences);
+    }
 
     [Theory]
     [InlineData("{}")]
@@ -98,9 +165,9 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
     }
 
     [Theory]
-    [InlineData("{\"protocolVersion\":2,\"type\":\"upgradeCore\",\"coreType\":\"sing-box\",\"requestId\":\"u\",\"confirmUnverified\":true}")]
+    [InlineData("{\"protocolVersion\":2,\"type\":\"upgradeCore\",\"coreType\":\"mihomo\",\"requestId\":\"u\",\"expectedRevision\":-1}")]
     [InlineData("{\"protocolVersion\":2,\"type\":\"upgradeCore\",\"coreType\":\"sing-box\",\"requestId\":\"u\",\"expectedRuntimeEpoch\":-1}")]
-    public void UpgradeConfirmationRequiresBoundedContext(string json) => Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(json));
+    public void UpgradeRejectsNegativeContext(string json) => Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(json));
 
     [Fact]
     public async Task DiagnosticsAcceptOnlyBoundContextAndWhitelistedUniqueSubsets()

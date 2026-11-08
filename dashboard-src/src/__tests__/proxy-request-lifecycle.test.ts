@@ -52,9 +52,18 @@ vi.mock('@/store/settings', async () => {
     speedtestUrl: ref('https://fixture.example/204'), groupTestUrls: ref([]), iconReflectList: ref([]),
   }
 })
+const selectionSnapshot = (now: string) => ({
+  data: {
+    proxies: {
+      G: { name: 'G', type: 'Selector', all: ['a', 'b', 'new'], now },
+    },
+  },
+})
 beforeEach(() => {
+  epoch.value++
   resetProxies()
-  vi.mocked(selectProxyAPI).mockClear()
+  vi.mocked(selectProxyAPI).mockReset().mockResolvedValue(undefined as never)
+  vi.mocked(fetchProxiesAPI).mockReset().mockResolvedValue(selectionSnapshot('new') as never)
 })
 it('selection rereads the group replaced by a refresh', async () => {
   proxyMap.value = {
@@ -63,6 +72,56 @@ it('selection rereads the group replaced by a refresh', async () => {
   } as never
   await handlerProxySelect('G', 'a')
   expect(selectProxyAPI).toHaveBeenCalledWith('G', 'a')
+})
+it.each([false, true])('serializes A → B → A and reads actual state (failed first readback=%s)', async (failedReadback) => {
+  let actual = 'a'
+  let release!: () => void
+  const blocked = new Promise<void>((resolve) => { release = resolve })
+  proxyMap.value = selectionSnapshot(actual).data.proxies as never
+  vi.mocked(fetchProxiesAPI).mockImplementation(async () => selectionSnapshot(actual) as never)
+  if (failedReadback) vi.mocked(fetchProxiesAPI).mockRejectedValueOnce(new Error('readback failed'))
+  vi.mocked(selectProxyAPI).mockImplementation(async (_group, name) => {
+    if (name === 'b') await blocked
+    actual = name
+    return undefined as never
+  })
+  const first = handlerProxySelect('G', 'b').catch((error) => error)
+  await vi.waitFor(() => expect(selectProxyAPI).toHaveBeenCalledOnce())
+  const last = handlerProxySelect('G', 'a')
+  await Promise.resolve()
+  expect(selectProxyAPI).toHaveBeenCalledOnce()
+  release()
+  await Promise.all([first, last])
+  expect(vi.mocked(selectProxyAPI).mock.calls).toEqual([['G', 'b'], ['G', 'a']])
+  expect(actual).toBe('a')
+  expect(proxyMap.value.G?.now).toBe('a')
+  expect(fetchProxiesAPI).toHaveBeenCalledTimes(2)
+})
+it('keeps the controller readback when it differs from the requested node', async () => {
+  proxyMap.value = selectionSnapshot('a').data.proxies as never
+  await handlerProxySelect('G', 'b')
+  expect(proxyMap.value.G?.now).toBe('new')
+})
+it.each(['epoch', 'reset'])('discards queued selections after %s without blocking new work', async (change) => {
+  let release!: () => void
+  vi.mocked(selectProxyAPI).mockImplementationOnce(
+    () => new Promise((resolve) => { release = () => resolve(undefined as never) }),
+  )
+  proxyMap.value = selectionSnapshot('a').data.proxies as never
+  const first = handlerProxySelect('G', 'b')
+  await vi.waitFor(() => expect(selectProxyAPI).toHaveBeenCalledOnce())
+  const queued = handlerProxySelect('G', 'a')
+  if (change === 'epoch') epoch.value++
+  else resetProxies()
+  proxyMap.value = selectionSnapshot('a').data.proxies as never
+  await handlerProxySelect('G', 'new')
+  expect(selectProxyAPI).toHaveBeenCalledTimes(2)
+  expect(proxyMap.value.G?.now).toBe('new')
+  release()
+  await Promise.all([first, queued])
+  expect(selectProxyAPI).toHaveBeenCalledTimes(2)
+  expect(fetchProxiesAPI).toHaveBeenCalledOnce()
+  expect(proxyMap.value.G?.now).toBe('new')
 })
 it('same-epoch reset invalidates a pending proxy snapshot', async () => {
   let finish!: (value: unknown) => void

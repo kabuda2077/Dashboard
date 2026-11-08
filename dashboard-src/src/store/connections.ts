@@ -92,6 +92,18 @@ export const initConnections = () => {
   initAggregatedDataMap()
   const session = captureBackendSession()
   const ws = fetchConnectionsAPI()
+  let latestActive: Connection[] | undefined
+  let pendingClosed: Connection[] = []
+  const flush = () => {
+    if (!session.isCurrent() || isPaused.value || document.visibilityState === 'hidden') return
+    if (latestActive) activeConnections.value = latestActive
+    if (pendingClosed.length) {
+      closedConnections.value = closedConnections.value.concat(pendingClosed).slice(-500)
+      pendingClosed = []
+    }
+  }
+  const stopPauseWatch = watch(isPaused, flush, { flush: 'sync' })
+  document.addEventListener('visibilitychange', flush)
   const unwatch = watch(ws.data, (snapshot) => {
     if (!snapshot || !session.isCurrent()) return
 
@@ -101,19 +113,13 @@ export const initConnections = () => {
     }
     activeConnectionCount.value = snapshot.active.length
 
-    if (isPaused.value || document.visibilityState === 'hidden') {
-      // Continue collecting closed-history even while the visible lists are paused.
-      if (snapshot.closed.length) saveConnectionHistory(snapshot.closed)
-      return
-    }
-
-    activeConnections.value = snapshot.active
-    activeConnectionCount.value = activeConnections.value.length
-
+    latestActive = snapshot.active
     if (snapshot.closed.length > 0) {
-      closedConnections.value = closedConnections.value.concat(snapshot.closed).slice(-500)
+      // Aggregate every closure once, independently of the bounded, paused display list.
       saveConnectionHistory(snapshot.closed)
+      pendingClosed = pendingClosed.concat(snapshot.closed).slice(-500)
     }
+    flush()
   })
 
   let stopIdleWatch: (() => void) | undefined
@@ -135,7 +141,11 @@ export const initConnections = () => {
 
   cancel = () => {
     stopIdleWatch?.()
+    stopPauseWatch()
+    document.removeEventListener('visibilitychange', flush)
     unwatch()
+    latestActive = undefined
+    pendingClosed = []
     ws.close()
   }
 }

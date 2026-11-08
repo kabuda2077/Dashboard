@@ -102,10 +102,9 @@ export const removeBackend = (id: string) => {
   if (hasHostBridge) return
   backendList.value = backendList.value.filter((item) => item.uuid !== id)
   if (browserUuid.value === id) browserUuid.value = backendList.value[0]?.uuid ?? ''
-  sourceIPLabelList.value.forEach((label) => {
-    if (label.scope?.includes(id)) {
-      label.scope = label.scope.filter((scope) => scope !== id)
-      if (!label.scope.length) delete label.scope
-    }
+  sourceIPLabelList.value = sourceIPLabelList.value.filter((label) => {
+    if (!label.scope?.includes(id)) return true
+    label.scope = label.scope.filter((scope) => scope !== id)
+    return label.scope.length > 0
   })
 }

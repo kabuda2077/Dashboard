@@ -76,7 +76,7 @@ const setTitleByName = (name: string | symbol | undefined) => {
   }
 }
 
-router.beforeEach((to, from) => {
+router.beforeEach((to) => {
   if (hasHostBridge && to.name === ROUTE_NAME.setup) return { name: ROUTE_NAME.core }
   if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.core].includes(to.name as ROUTE_NAME)) {
     return { name: hasHostBridge ? ROUTE_NAME.core : ROUTE_NAME.setup }

@@ -4,10 +4,18 @@ using System.Text.Json;
 
 namespace Dashboard;
 
-internal sealed record CoreApiStatus(string Status, string Version);
+internal sealed record CoreApiStatus(string Status, string Version, bool IsManaged = false);
 
 internal static class CoreApiProbe
 {
+    internal static async Task<CoreApiStatus> ProbeManagedAsync(string apiUrl, string secret, int processId,
+        TimeSpan requestTimeout, TimeSpan totalTimeout, TimeSpan retryDelay, CancellationToken cancellationToken, Func<int, bool>? ownsProcess = null)
+    {
+        using var connection = new CoreApiConnection(processId, ownsProcess, requireOwnership: false);
+        var result = await ProbeAsync(connection.Client, apiUrl, secret, requestTimeout, totalTimeout, retryDelay, cancellationToken).ConfigureAwait(false);
+        return result with { IsManaged = result.Status == "ready" && connection.IsManaged };
+    }
+
     internal static async Task<CoreApiStatus> ProbeAsync(HttpClient client, string apiUrl, string secret,
         TimeSpan requestTimeout, TimeSpan totalTimeout, TimeSpan retryDelay, CancellationToken cancellationToken)
     {

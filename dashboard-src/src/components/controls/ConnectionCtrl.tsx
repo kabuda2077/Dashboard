@@ -1,4 +1,4 @@
-import { disconnectAllAPI, disconnectByIdAPI } from '@/assembly/connections'
+import { disconnectByIdAPI } from '@/assembly/connections'
 import {
   CONNECTION_CARD_GROUPABLE_KEYS,
   connectionCardGroupKey,
@@ -82,18 +82,14 @@ const closeTargets = computed(() => {
 })
 
 const handlerClickCloseAll = () => {
-  const targets = closeTargets.value
-  if (!targets.length) return
+  const targetIds = [...new Set(closeTargets.value.map((conn) => conn.id))]
+  if (!targetIds.length) return
 
   const session = captureBackendSession()
-  if (targets.length === new Set(activeConnections.value).size) {
-    void runManualRequest(() => disconnectAllAPI())
-  } else {
-    targets.forEach((conn) => {
-      if (!session.isCurrent() || !closeTargets.value.includes(conn)) return
-      void runManualRequest(() => disconnectByIdAPI(conn.id))
-    })
-  }
+  targetIds.forEach((id) => {
+    if (!session.isCurrent() || !closeTargets.value.some((conn) => conn.id === id)) return
+    void runManualRequest(() => disconnectByIdAPI(id))
+  })
 }
 
 export default defineComponent({

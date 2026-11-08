@@ -7,7 +7,12 @@ import { initConnections, resetConnections, stopConnections } from '@/store/conn
 import { initSatistic, resetStatistics, stopSatistic } from '@/store/overview'
 import { smartOrderMap, smartWeightsMap } from '@/store/smart'
 import { onScopeDispose, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import { backendSessionGeneration, backendSessionReady } from './backendSession'
+import {
+  backendSessionGeneration,
+  backendSessionReady,
+  captureBackendSession,
+} from './backendSession'
+import { notifyRequestErrorForSession } from './request-error'
 
 export const resetBackendRuntime = () => {
   resetConnections()
@@ -25,10 +30,13 @@ export const resetBackendRuntime = () => {
 export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
   const started = new Set<string>()
   const pending = new Map<string, Promise<unknown>>()
+  let rulesAttempt = 0
   const ensure = (key: string, action: () => unknown) => {
     if (!backendSessionReady.value || started.has(key) || pending.has(key)) return
     started.add(key)
     const epoch = backendSessionGeneration.value
+    const session = captureBackendSession()
+    const attempt = key === 'rules' ? ++rulesAttempt : 0
     const task: Promise<unknown> = Promise.resolve()
       .then(() => {
         if (
@@ -38,8 +46,13 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
         )
           return action()
       })
-      .catch(() => {
-        if (pending.get(key) === task) started.delete(key)
+      .catch(async (error) => {
+        if (pending.get(key) !== task) return
+        started.delete(key)
+        pending.delete(key)
+        if (key === 'rules') await notifyRequestErrorForSession(error, {
+          isCurrent: () => session.isCurrent() && attempt === rulesAttempt,
+        })
       })
       .finally(() => {
         if (pending.get(key) === task) pending.delete(key)
@@ -73,6 +86,7 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
         if (previous !== undefined && !pending.has('proxies')) started.delete('proxies')
         ensure('proxies', fetchProxies)
       }
+      if (name === 'rules') ensure('rules', fetchRules)
     },
   )
   const visible = () => {
@@ -82,6 +96,7 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
   }
   document.addEventListener('visibilitychange', visible)
   const stop = () => {
+    rulesAttempt++
     stopSession()
     stopRoute()
     pending.clear()

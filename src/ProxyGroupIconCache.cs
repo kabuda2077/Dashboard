@@ -199,7 +199,9 @@ public sealed class ProxyGroupIconCache
         HashSet<string> active;
         lock (_sync) active = _cachedFiles.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var retained = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in new DirectoryInfo(CacheDirectory).EnumerateFiles().OrderByDescending(file => file.LastWriteTimeUtc))
+        foreach (var file in new DirectoryInfo(CacheDirectory).EnumerateFiles()
+            .OrderByDescending(file => active.Contains(file.Name))
+            .ThenByDescending(file => file.LastWriteTimeUtc))
         {
             if (file.Extension != ".tmp" && retained.Count < MaxCacheFiles && retainedBytes + file.Length <= MaxCacheBytes
                 && (active.Contains(file.Name) || DateTime.UtcNow - file.LastWriteTimeUtc < CacheLifetime))
@@ -310,6 +312,7 @@ public sealed class ProxyGroupIconCache
 
         var inProxyGroups = false;
         var proxyGroupsIndent = 0;
+        int? rootIndent = null;
 
         foreach (var rawLine in File.ReadLines(configPath))
         {
@@ -321,19 +324,24 @@ public sealed class ProxyGroupIconCache
 
             var indent = CountIndent(withoutComment);
             var line = withoutComment.Trim();
+            if (line is "---" or "..." || line.StartsWith('%')) continue;
 
-            if (inProxyGroups && indent <= proxyGroupsIndent)
+            var isSequenceItem = line == "-" || (line.Length > 1 && line[0] == '-' && char.IsWhiteSpace(line[1]));
+            if (rootIndent is null && !isSequenceItem && line.Contains(':')) rootIndent = indent;
+            // YAML permits the group's sequence dashes to align with its top-level key.
+            if (inProxyGroups && (indent < proxyGroupsIndent || (indent == proxyGroupsIndent && !isSequenceItem)))
             {
                 inProxyGroups = false;
             }
 
-            if (!inProxyGroups && line.Equals("proxy-groups:", StringComparison.OrdinalIgnoreCase))
+            if (!inProxyGroups && indent == rootIndent && line.Equals("proxy-groups:", StringComparison.OrdinalIgnoreCase))
             {
                 inProxyGroups = true;
                 proxyGroupsIndent = indent;
                 continue;
             }
 
+            if (isSequenceItem) line = line[1..].TrimStart();
             if (!inProxyGroups || !TryReadYamlValue(line, "icon", out var iconValue))
             {
                 continue;

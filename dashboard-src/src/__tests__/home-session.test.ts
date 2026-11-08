@@ -11,7 +11,9 @@ const calls = vi.hoisted(() => ({
   rules: vi.fn(),
   logs: vi.fn(),
   statistics: vi.fn(),
+  notify: vi.fn(),
 }))
+vi.mock('@/helper/notification', () => ({ showNotification: calls.notify }))
 vi.mock('@/assembly/config', () => ({
   resetConfigs: calls.reset,
   startConfigRuntime: calls.config,
@@ -180,6 +182,65 @@ it('reuses an in-flight proxy load across route visits and retries after failure
   document.dispatchEvent(new Event('visibilitychange'))
   await settle()
   expect(calls.proxies).toHaveBeenCalledTimes(2)
+})
+
+it('shows an initial rules error and retries on Rules entry without restarting streams', async () => {
+  const { start, route } = await mountRuntime()
+  route.value = 'core'
+  calls.rules.mockRejectedValueOnce(new Error('rules unavailable'))
+  start()
+  await settle()
+  expect(calls.notify).toHaveBeenCalledWith(expect.objectContaining({
+    content: 'rules unavailable', type: 'alert-error',
+  }))
+  route.value = 'rules'
+  await settle()
+  expect(calls.rules).toHaveBeenCalledTimes(2)
+  route.value = 'core'
+  await settle()
+  route.value = 'rules'
+  await settle()
+  expect(calls.rules).toHaveBeenCalledTimes(2)
+  expect(calls.connections).toHaveBeenCalledOnce()
+})
+
+it.each(['Rules entry', 'visibility recovery'])('retries during a pending rules diagnosis on %s', async (trigger) => {
+  const { start, route } = await mountRuntime()
+  route.value = 'core'
+  const requestErrors = await import('@/helper/request-error')
+  let finishDiagnosis!: () => void
+  const diagnosis = new Promise<void>((resolve) => { finishDiagnosis = resolve })
+  const notify = vi.spyOn(requestErrors, 'notifyRequestErrorForSession').mockReturnValueOnce(diagnosis)
+  calls.rules.mockRejectedValueOnce(new Error('network error'))
+  start()
+  await settle()
+  expect(notify).toHaveBeenCalledOnce()
+  const failedAttempt = notify.mock.calls[0][1]
+  expect(failedAttempt.isCurrent()).toBe(true)
+  if (trigger === 'Rules entry') route.value = 'rules'
+  else document.dispatchEvent(new Event('visibilitychange'))
+  await settle()
+  expect(calls.rules).toHaveBeenCalledTimes(2)
+  expect(failedAttempt.isCurrent()).toBe(false)
+  finishDiagnosis()
+  await settle()
+  expect(calls.rules).toHaveBeenCalledTimes(2)
+})
+
+it('does not report a stale rules failure or retry successful rules in the new session', async () => {
+  const { start, host, route } = await mountRuntime()
+  let fail!: (error: Error) => void
+  calls.rules.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+  start()
+  await settle()
+  host.runtime({ runtimeEpoch: 2 })
+  await settle()
+  fail(new Error('obsolete rules failure'))
+  await settle()
+  route.value = 'rules'
+  await settle()
+  expect(calls.rules).toHaveBeenCalledTimes(2)
+  expect(calls.notify).not.toHaveBeenCalled()
 })
 
 it.each(['connections', 'rules', 'proxies', 'statistics', 'logs'] as const)(

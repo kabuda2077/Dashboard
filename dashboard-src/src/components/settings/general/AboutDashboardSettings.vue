@@ -7,7 +7,12 @@
         <div class="text-base-content/65 text-sm">{{ currentAppVersion }}</div>
       </div>
       <div class="setting-item">
-        <div class="setting-item-label flex min-w-0 items-center gap-2">
+        <div
+          class="setting-item-label flex min-w-0 items-center gap-2"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <span>应用更新</span>
           <span
             v-if="hostState.isAppUpdateChecking"
@@ -33,6 +38,7 @@
             class="btn btn-square btn-sm dashboard-action-btn"
             :disabled="hostState.isAppUpdateChecking"
             title="检查 Dashboard 更新"
+            aria-label="检查 Dashboard 更新"
             @click="checkAppUpdate"
           >
             <ArrowPathIcon
@@ -46,6 +52,7 @@
               hostState.appUpdateAvailable ? 'btn-primary' : 'btn-square dashboard-action-btn'
             "
             title="打开 GitHub Release"
+            :aria-label="hostState.appUpdateAvailable ? undefined : '打开 GitHub Release'"
             @click="postHostMessage({ type: 'openAppRelease' })"
           >
             <ArrowTopRightOnSquareIcon class="h-4 w-4" />

@@ -1,11 +1,15 @@
 import { getStorageAPI } from '@/assembly/storage'
 import { hasHostBridge } from '@/composables/hostBridge'
+import { useDashboardStorage } from '@/composables/use-storage'
 import { captureBackendSession } from '@/helper/backendSession'
 import { showConfirmDialog } from '@/helper/confirm-dialog'
 import { saveDashboardSettingsToHost } from '@/helper/dashboardSettingsSync'
 import { showNotification } from '@/helper/notification'
-import { useDashboardStorage } from '@/composables/use-storage'
-import { applyDashboardSettingsToStorage, parseSettingsDocument } from '@/helper/utils'
+import {
+  applyDashboardSettingsToStorage,
+  clearDashboardSettingsFromStorage,
+  parseSettingsDocument,
+} from '@/helper/utils'
 import { i18n } from '@/i18n'
 import { useStorage } from '@vueuse/core'
 import { isEmpty } from 'lodash'
@@ -21,6 +25,25 @@ export const skipSyncSettingsConfirm = useStorage('cache/skip-sync-settings-conf
 
 const autoImportSettingsHash = useStorage('cache/auto-import-settings-hash', '')
 const autoSyncSettingsHash = useStorage('cache/auto-sync-settings-hash', '')
+let importController: AbortController | undefined
+
+const cancelSettingsImport = () => {
+  importController?.abort()
+  importController = undefined
+}
+const beginSettingsImport = () => {
+  cancelSettingsImport()
+  importController = new AbortController()
+  return importController.signal
+}
+const applyImportedSettings = async (settings: Record<string, unknown>, signal: AbortSignal) => {
+  await cancelBackgroundUpdates()
+  if (signal.aborted) return false
+  applyDashboardSettingsToStorage(settings)
+  await saveDashboardSettingsToHost()
+  return !signal.aborted
+}
+
 const calculateSettingsHash = async (settings: Record<string, unknown>) => {
   const sortedKeys = Object.keys(settings).sort()
   const hashString = sortedKeys.map((key) => `${key}:${settings[key]}`).join('|')
@@ -48,19 +71,24 @@ const getImportOverriddenKeys = (settings: Record<string, unknown>) =>
 export const confirmSettingsOverride = async (
   overriddenKeys: string[],
   messageKey: 'importSettingsConfirm' | 'syncSettingsConfirm',
+  signal?: AbortSignal,
 ) => {
-  if (overriddenKeys.length === 0) return false
+  if (signal?.aborted || overriddenKeys.length === 0) return false
 
   const isSync = messageKey === 'syncSettingsConfirm'
   const skipConfirm = isSync ? skipSyncSettingsConfirm : skipImportSettingsConfirm
   if (skipConfirm.value) return true
 
-  const { confirmed, checked } = await showConfirmDialog({
-    title: i18n.global.t(isSync ? 'syncSettings' : 'importSettings'),
-    message: i18n.global.t(messageKey, { keys: overriddenKeys.join('\n') }),
-    checkboxText: i18n.global.t('dontAskAgainAlwaysApply'),
-  })
+  const { confirmed, checked } = await showConfirmDialog(
+    {
+      title: i18n.global.t(isSync ? 'syncSettings' : 'importSettings'),
+      message: i18n.global.t(messageKey, { keys: overriddenKeys.join('\n') }),
+      checkboxText: i18n.global.t('dontAskAgainAlwaysApply'),
+    },
+    signal,
+  )
 
+  if (signal?.aborted) return false
   if (confirmed && checked) skipConfirm.value = true
   return confirmed
 }
@@ -78,47 +106,58 @@ export const syncSettingsFromCore = async ({
     return false
   }
 
+  const signal = beginSettingsImport()
   const session = captureBackendSession()
-  const { data } = await getStorageAPI()
+  const current = () => session.isCurrent() && !signal.aborted
+  try {
+    const { data } = await getStorageAPI()
 
-  if (!session.isCurrent() || !data || isEmpty(data)) {
-    return false
+    if (!current() || !data || isEmpty(data)) {
+      return false
+    }
+
+    data['config/auto-sync-settings'] = JSON.stringify(autoSyncSettings.value)
+
+    const newHash = await calculateSettingsHash(data)
+    if (!current()) return false
+
+    if (!force && autoSyncSettingsHash.value === newHash) {
+      return false
+    }
+
+    if (
+      confirm &&
+      !(await confirmSettingsOverride(
+        getOverriddenSettingKeys(data),
+        'syncSettingsConfirm',
+        signal,
+      ))
+    ) {
+      if (current()) autoSyncSettingsHash.value = newHash
+      return false
+    }
+    if (!current()) return false
+
+    await cancelBackgroundUpdates()
+    if (!current()) return false
+    applyDashboardSettingsToStorage(data)
+    await saveDashboardSettingsToHost()
+    if (!current()) return false
+    autoSyncSettingsHash.value = newHash
+
+    if (notify) {
+      showNotification({
+        content: 'syncSettingsSuccess',
+        type: 'alert-success',
+      })
+    }
+
+    location.reload()
+    return true
+  } catch (error) {
+    if (!current()) return false
+    throw error
   }
-
-  data['config/auto-sync-settings'] = JSON.stringify(autoSyncSettings.value)
-
-  const newHash = await calculateSettingsHash(data)
-  if (!session.isCurrent()) return false
-
-  if (!force && autoSyncSettingsHash.value === newHash) {
-    return false
-  }
-
-  if (
-    confirm &&
-    !(await confirmSettingsOverride(getOverriddenSettingKeys(data), 'syncSettingsConfirm'))
-  ) {
-    if (session.isCurrent()) autoSyncSettingsHash.value = newHash
-    return false
-  }
-  if (!session.isCurrent()) return false
-
-  await cancelBackgroundUpdates()
-  if (!session.isCurrent()) return false
-  applyDashboardSettingsToStorage(data)
-  await saveDashboardSettingsToHost()
-  if (!session.isCurrent()) return false
-  autoSyncSettingsHash.value = newHash
-
-  if (notify) {
-    showNotification({
-      content: 'syncSettingsSuccess',
-      type: 'alert-success',
-    })
-  }
-
-  location.reload()
-  return true
 }
 export const importSettingsFromUrl = async ({
   force = false,
@@ -127,55 +166,100 @@ export const importSettingsFromUrl = async ({
   force?: boolean
   confirm?: boolean
 } = {}) => {
-  const res = await fetch(importSettingsUrl.value)
-  const errorHandler = () => {
-    showNotification({
-      content: 'importFailed',
-      params: { url: res.url },
-      type: 'alert-error',
-    })
-  }
-  if (!res.ok) {
-    errorHandler()
-    return false
-  }
-  let settings: Record<string, unknown> = {}
+  const signal = beginSettingsImport()
   try {
-    settings = parseSettingsDocument(await res.json())
-  } catch {
-    errorHandler()
-    return false
-  }
+    const res = await fetch(importSettingsUrl.value, { signal })
+    if (signal.aborted) return false
+    const errorHandler = () => {
+      if (signal.aborted) return
+      showNotification({
+        content: 'importFailed',
+        params: { url: res.url },
+        type: 'alert-error',
+      })
+    }
+    if (!res.ok) {
+      errorHandler()
+      return false
+    }
+    let settings: Record<string, unknown> = {}
+    try {
+      settings = parseSettingsDocument(await res.json())
+    } catch {
+      errorHandler()
+      return false
+    }
 
-  if (!settings) {
-    errorHandler()
-    return false
-  }
+    if (!settings) {
+      errorHandler()
+      return false
+    }
 
-  const newHash = await calculateSettingsHash(settings)
+    if (signal.aborted) return false
+    const newHash = await calculateSettingsHash(settings)
+    if (signal.aborted) return false
 
-  if (newHash === autoImportSettingsHash.value && !force) {
-    return false
-  }
+    if (newHash === autoImportSettingsHash.value && !force) {
+      return false
+    }
 
-  if (
-    confirm &&
-    !(await confirmSettingsOverride(getImportOverriddenKeys(settings), 'importSettingsConfirm'))
-  ) {
+    if (
+      confirm &&
+      !(await confirmSettingsOverride(
+        getImportOverriddenKeys(settings),
+        'importSettingsConfirm',
+        signal,
+      ))
+    ) {
+      if (!signal.aborted) autoImportSettingsHash.value = newHash
+      return false
+    }
+    if (signal.aborted) return false
+
+    showNotification({
+      content: 'importing',
+    })
+    if (settings[IMPORT_SETTINGS_URL_KEY] === '') {
+      delete settings[IMPORT_SETTINGS_URL_KEY]
+    }
+    if (!(await applyImportedSettings(settings, signal))) return false
     autoImportSettingsHash.value = newHash
-    return false
+    location.reload()
+    return true
+  } catch (error) {
+    if (signal.aborted) return false
+    throw error
   }
+}
 
-  showNotification({
-    content: 'importing',
-  })
-  if (settings[IMPORT_SETTINGS_URL_KEY] === '') {
-    delete settings[IMPORT_SETTINGS_URL_KEY]
+export const resetDashboardSettings = async () => {
+  const signal = beginSettingsImport()
+  try {
+    await cancelBackgroundUpdates()
+    if (signal.aborted) return false
+    clearDashboardSettingsFromStorage()
+    await saveDashboardSettingsToHost()
+    if (signal.aborted) return false
+    location.reload()
+    return true
+  } catch (error) {
+    if (signal.aborted) return false
+    throw error
   }
-  await cancelBackgroundUpdates()
-  applyDashboardSettingsToStorage(settings)
-  await saveDashboardSettingsToHost()
-  autoImportSettingsHash.value = newHash
-  location.reload()
-  return true
+}
+
+export const importSettingsFromFile = async (file: File) => {
+  const signal = beginSettingsImport()
+  try {
+    const text = await file.text()
+    if (signal.aborted) return false
+    const settings = parseSettingsDocument(JSON.parse(text))
+    showNotification({ content: 'importing' })
+    if (!(await applyImportedSettings(settings, signal))) return false
+    location.reload()
+    return true
+  } catch (error) {
+    if (signal.aborted) return false
+    throw error
+  }
 }

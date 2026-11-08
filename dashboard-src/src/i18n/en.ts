@@ -143,6 +143,7 @@ const en = {
   automaticDisconnection: 'Auto disconnect on node switch',
   backend: 'Backend',
   tunMode: 'TUN mode',
+  tunSettings: 'TUN settings',
   tunStack: 'TUN stack',
   tunStackHelp: 'Changing the stack rebuilds TUN and may interrupt connections.',
   tunStackUpdateFailed:
@@ -226,13 +227,12 @@ const en = {
   networkIPLocationLabel: 'Location',
   networkIPISP: 'ISP',
   networkIPASN: 'ASN',
-  networkIPLocationLoading: 'Looking up location',
   networkIPLocationPartial: 'Limited location data',
   networkIPLocationPartialHelp:
-    'The exit IP was detected. The location service may lack location, ISP/organization or ASN details, or be temporarily unavailable.',
+    'The service returned a valid exit IP but did not provide complete location, ISP/organization or ASN details.',
   networkInternationalExit: 'International target exit',
   networkExitHelp:
-    'The single exit IP observed by each target follows current network and routing rules, not every node. Location lookup never replaces the observed address.',
+    'The domestic card uses ipip.net; the international card uses the selected IP info API. Each obtains its observed exit IP and attribution in one request. Results follow current network and routing rules and do not represent every node.',
   networkLatencyHelp:
     'Five HTTP response-time samples per target through the current WebView network path. The number is the median of successful samples; dots include failures. Not Ping, node latency, or proof of HTTP status or website availability.',
   networkRouting: 'Routing',
@@ -380,7 +380,7 @@ const en = {
   flushSmartWeights: 'Clear smart weights',
   IPInfoAPI: 'IP info API',
   IPInfoAPITip:
-    "This API is used to look up global node IP information during IP checks, and for IP geolocation lookups in connection details and zashboard's DNS query feature.",
+    'Used for a single request for the international exit IP, location, ISP/organization and ASN on Overview, and for online IP attribution in connection details. The domestic card always uses ipip.net; the connection list uses the GeoIP databases below.',
   general: 'General',
   groupProxiesByProvider: 'Group proxies by provider',
   useSmartGroupSort: 'Sort smart groups by usage frequency',

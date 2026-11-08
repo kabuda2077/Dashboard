@@ -44,6 +44,14 @@ internal static class Program
                 || string.Equals(arg, "--scheduled-start", StringComparison.OrdinalIgnoreCase));
             var startCore = args.Any(arg => string.Equals(arg, "--start-core", StringComparison.OrdinalIgnoreCase));
             var elevatedRestart = args.Any(arg => string.Equals(arg, "--elevated-restart", StringComparison.OrdinalIgnoreCase));
+            var handoffIndex = Array.FindIndex(args, arg => string.Equals(arg, "--elevation-handoff", StringComparison.OrdinalIgnoreCase));
+            if (handoffIndex >= 0)
+            {
+                var expectedSidIndex = Array.FindIndex(args, arg => string.Equals(arg, "--expected-user-sid", StringComparison.OrdinalIgnoreCase));
+                if (!elevatedRestart || handoffIndex + 1 >= args.Length || expectedSidIndex < 0 || expectedSidIndex + 1 >= args.Length)
+                    throw new ArgumentException("管理员接力参数不完整。");
+                ElevationHandoff.ConfirmReplacement(args[expectedSidIndex + 1], args[handoffIndex + 1]);
+            }
             DashboardApplicationContext? context = null;
             var activationPending = 0;
             if (!SingleInstance.TryCreate(

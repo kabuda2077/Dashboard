@@ -14,12 +14,12 @@ internal sealed class IsolatedCore : IAsyncDisposable
     public CoreKind Kind { get; }
     public string Executable => Store.Current.Profile(Kind).ExePath;
 
-    private IsolatedCore(CoreKind kind, HttpClient? upgradeClient)
+    private IsolatedCore(CoreKind kind)
     {
         Kind = kind;
         Directory.CreateDirectory(Root);
         Store = new SettingsStore(Root);
-        Controller = new CoreLifecycleController(Store, Process, () => true, upgradeClient);
+        Controller = new CoreLifecycleController(Store, Process, () => true);
     }
 
     public static int FreePort()
@@ -31,11 +31,11 @@ internal sealed class IsolatedCore : IAsyncDisposable
         return port;
     }
 
-    public static async Task<IsolatedCore> CreateAsync(CoreKind kind, HttpClient? upgradeClient = null, string? apiOverride = null)
+    public static async Task<IsolatedCore> CreateAsync(CoreKind kind, string? apiOverride = null)
     {
         var source = Environment.GetEnvironmentVariable("DASHBOARD_TEST_CORES_DIR")
             ?? throw new InvalidOperationException("Set DASHBOARD_TEST_CORES_DIR to the explicitly prepared validation cores.");
-        var fixture = new IsolatedCore(kind, upgradeClient);
+        var fixture = new IsolatedCore(kind);
         var name = AppSettings.WireKind(kind);
         var executable = Path.Combine(fixture.Root, name + ".exe");
         File.Copy(Path.Combine(source, name, name + ".exe"), executable);

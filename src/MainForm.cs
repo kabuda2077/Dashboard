@@ -33,6 +33,11 @@ public sealed class MainForm : Form
     private bool _initialized;
     private bool _dashboardInitialized;
     private Task? _dashboardInitializationTask;
+    private int _dashboardInitializationVersion;
+    private ulong? _dashboardNavigationId;
+    private long _dashboardNavigationStartedAt;
+    private TaskCompletionSource<bool>? _dashboardNavigationCompletion;
+    private Panel? _dashboardFailurePanel;
     private long _webViewInitializationSequence;
     private long _activeWebViewInitializationId;
     private long _activeWebViewInitializationStartedAt;
@@ -261,16 +266,43 @@ public sealed class MainForm : Form
 
     private async Task InitializeDashboardAsync(string trigger)
     {
-        if (!await InitializeWebViewAsync(trigger))
+        var version = ++_dashboardInitializationVersion;
+        HideDashboardFailure();
+        if (!HasDashboardWebView() && !await InitializeWebViewAsync(trigger))
         {
-            _dashboardInitializationTask = null;
+            if (version == _dashboardInitializationVersion && !IsDisposed && !Disposing)
+            {
+                if (_webView is { } failedView) ResetFailedWebView(failedView);
+                ShowDashboardFailure();
+            }
             return;
         }
+        if (version != _dashboardInitializationVersion || IsDisposed || Disposing) return;
 
-        LoadDashboard();
-        RefreshStatus();
-        _dashboardInitialized = true;
+        if (await LoadDashboardAsync() && version == _dashboardInitializationVersion) RefreshStatus();
     }
+
+    private void ShowDashboardFailure()
+    {
+        _dashboardInitialized = false;
+        if (_dashboardFailurePanel is null)
+        {
+            _dashboardFailurePanel = new Panel { Dock = DockStyle.Fill, Name = "dashboardLoadFailure" };
+            var retry = new Button { Text = "重试加载 Dashboard", Name = "retryDashboard", AutoSize = true, Dock = DockStyle.Top };
+            retry.Click += async (_, _) => await EnsureDashboardInitializedAsync("visible-retry");
+            _dashboardFailurePanel.Controls.Add(retry);
+            _dashboardFailurePanel.Controls.Add(new Label
+            {
+                Text = "Dashboard 加载失败。请重试，或从托盘重新打开窗口。",
+                AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(16)
+            });
+            _contentPanel.Controls.Add(_dashboardFailurePanel);
+        }
+        _dashboardFailurePanel.Show();
+        _dashboardFailurePanel.BringToFront();
+    }
+
+    private void HideDashboardFailure() => _dashboardFailurePanel?.Hide();
 
     private void BindEvents()
     {
@@ -436,6 +468,7 @@ public sealed class MainForm : Form
                 var settingsMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
 
                 webView.CoreWebView2.NavigationStarting += OnDashboardNavigationStarting;
+                webView.CoreWebView2.NavigationCompleted += OnDashboardNavigationCompleted;
                 webView.CoreWebView2.NewWindowRequested += OnDashboardNewWindowRequested;
                 webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 HostOperationLogger.Info(
@@ -522,32 +555,48 @@ public sealed class MainForm : Form
             MessageBoxIcon.Error);
     }
 
-    private void LoadDashboard()
+    private Task<bool> LoadDashboardAsync()
     {
         var coreWebView = _webView?.CoreWebView2;
-        if (coreWebView is null)
+        if (coreWebView is null) return Task.FromResult(false);
+
+        _dashboardInitialized = false;
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _dashboardNavigationCompletion = completion;
+        try
         {
-            return;
+            // An error document can retain the dashboard URL. Navigating to that
+            // same URL/fragment may only change its hash, so force a real reload.
+            if (_webViewTrust.IsTrustedDocument(coreWebView.Source)) coreWebView.Reload();
+            else coreWebView.Navigate(new Uri(_dashboardUri, "#/core").ToString());
         }
-
-        var initializationId = _activeWebViewInitializationId;
-        var initializationStartedAt = _activeWebViewInitializationStartedAt;
-        var navigationStartedAt = Stopwatch.GetTimestamp();
-        coreWebView.NavigationCompleted += (_, args) =>
+        catch (Exception error)
         {
-            HostOperationLogger.Info(
-                "performance",
-                $"webview:navigationCompleted id={initializationId} success={args.IsSuccess} "
-                    + $"status={args.WebErrorStatus} navigationMs={Stopwatch.GetElapsedTime(navigationStartedAt).TotalMilliseconds:0.0} "
-                    + $"totalMs={Stopwatch.GetElapsedTime(initializationStartedAt).TotalMilliseconds:0.0}");
-            if (args.IsSuccess && ReferenceEquals(coreWebView, _webView?.CoreWebView2)
-                && _webViewTrust.IsTrustedDocument(coreWebView.Source))
-            {
-                SendStateToDashboard();
-            }
-        };
+            HostOperationLogger.Error("webview", "Failed to navigate to Dashboard.", error);
+            ShowDashboardFailure();
+            completion.TrySetResult(false);
+        }
+        return completion.Task;
+    }
 
-        coreWebView.Navigate(new Uri(_dashboardUri, "#/core").ToString());
+    private void OnDashboardNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+    {
+        var current = _webView?.CoreWebView2;
+        if (current is null || !ReferenceEquals(sender, current) || args.NavigationId != _dashboardNavigationId) return;
+
+        HostOperationLogger.Info(
+            "performance",
+            $"webview:navigationCompleted id={_activeWebViewInitializationId} success={args.IsSuccess} "
+                + $"status={args.WebErrorStatus} navigationMs={Stopwatch.GetElapsedTime(_dashboardNavigationStartedAt).TotalMilliseconds:0.0} "
+                + $"totalMs={Stopwatch.GetElapsedTime(_activeWebViewInitializationStartedAt).TotalMilliseconds:0.0}");
+        _dashboardInitialized = args.IsSuccess && _webViewTrust.IsTrustedDocument(current.Source);
+        _dashboardNavigationCompletion?.TrySetResult(_dashboardInitialized);
+        if (_dashboardInitialized)
+        {
+            HideDashboardFailure();
+            SendStateToDashboard();
+        }
+        else ShowDashboardFailure();
     }
 
     private void OnDashboardNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
@@ -562,6 +611,10 @@ public sealed class MainForm : Form
         var target = _webViewTrust.ClassifyNavigation(e.Uri);
         if (target == DashboardNavigationTarget.Dashboard)
         {
+            _dashboardNavigationId = e.NavigationId;
+            _dashboardNavigationStartedAt = Stopwatch.GetTimestamp();
+            _dashboardInitialized = false;
+            HideDashboardFailure();
             Interlocked.Increment(ref _navigationGeneration);
             _dashboardSuspendVersion++;
             _preferenceFlush?.TrySetResult(false);
@@ -791,7 +844,12 @@ public sealed class MainForm : Form
         _statePublisher.MarkDirty();
         _webViewSuspended = false;
         _dashboardInitialized = false;
+        _dashboardInitializationVersion++;
         _dashboardInitializationTask = null;
+        _dashboardNavigationId = null;
+        _dashboardNavigationCompletion?.TrySetResult(false);
+        _dashboardNavigationCompletion = null;
+        HideDashboardFailure();
 
         var webView = _webView;
         if (webView is null)

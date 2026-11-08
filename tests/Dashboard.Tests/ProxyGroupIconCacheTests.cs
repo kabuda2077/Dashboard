@@ -46,6 +46,43 @@ public sealed class ProxyGroupIconCacheTests : TemporaryDirectoryTest
     }
 
     [Theory]
+    [InlineData("", 0)]
+    [InlineData("  ", 0)]
+    [InlineData("", 2)]
+    [InlineData("  ", 2)]
+    public async Task ReadsFirstIconFieldInIndentedAndIndentlessSequencesWithoutOtherSections(string sequenceIndent, int rootIndent)
+    {
+        var config = $"""
+        proxies:
+          - icon: https://example.test/before.png
+            proxy-groups:
+              - icon: https://example.test/nested-before.png
+        proxy-groups: # groups may use either sequence indentation style
+        {sequenceIndent}- icon: "https://example.test/first.svg#fragment" # first field
+        {sequenceIndent}  name: First
+        {sequenceIndent}- name: Second
+        {sequenceIndent}  icon: 'https://example.test/second.png' # later field
+        rules:
+          - icon: https://example.test/after.png
+        proxy-providers:
+          provider:
+            proxy-groups:
+              - icon: https://example.test/nested-after.png
+        """;
+        await File.WriteAllTextAsync(ConfigPath, "---\n" + string.Join("\n",
+            config.Split('\n').Select(line => new string(' ', rootIndent) + line)));
+        var handler = new IconHandler();
+        using var client = new HttpClient(handler);
+        var cache = CreateCache(client);
+
+        await cache.RefreshAsync(ConfigPath);
+
+        Assert.Equal(new[] { "https://example.test/first.svg#fragment", "https://example.test/second.png" },
+            cache.GetDashboardMap(DashboardUri).Keys);
+        Assert.Equal(2, handler.Downloads);
+    }
+
+    [Theory]
     [InlineData("https://example.test/icon.png")]
     [InlineData("https://example.test/a/../icon.png")]
     [InlineData("https://Example.TEST/icon.png")]

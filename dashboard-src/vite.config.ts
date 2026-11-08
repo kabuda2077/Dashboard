@@ -155,6 +155,7 @@ export default defineConfig({
     include: ['vue', 'vue-router', 'vue-i18n', 'echarts', 'axios', 'dayjs'],
   },
   test: {
+    maxWorkers: 4,
     environment: 'happy-dom',
     globals: true,
     include: ['src/**/__tests__/**/*.test.ts'],

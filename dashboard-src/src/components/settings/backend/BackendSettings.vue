@@ -12,7 +12,7 @@
         <div class="dashboard-section-title">
           <span class="indicator">
             <span
-              v-if="hostState.coreUpdateAvailable"
+              v-if="hostState.coreUpdateMode === 'automatic' && hostState.coreUpdateAvailable"
               class="indicator-item top-1 -right-1 flex"
             >
               <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
@@ -62,29 +62,6 @@
             >
               {{ $t(unknownStateLabel) }}
             </span>
-          </div>
-          <div
-            v-if="canShowTunStack"
-            class="setting-item"
-          >
-            <div
-              class="setting-item-label"
-              @mouseenter="(event) => showTip(event, $t('tunStackHelp'))"
-            >
-              {{ $t('tunStack') }}
-            </div>
-            <SelectInput
-              :model-value="tunStack"
-              :options="tunStackOptions"
-              :disabled="!canWriteTun"
-              :aria-busy="isTunBusy"
-              :aria-label="$t('tunStack')"
-              :aria-description="$t('tunStackHelp')"
-              class="select-sm min-w-24 shrink-0"
-              @mouseenter="(event: MouseEvent) => showTip(event, $t('tunStackHelp'))"
-              @focus="(event: FocusEvent) => showTip(event, $t('tunStackHelp'))"
-              @update:model-value="handlerTunStackChange"
-            />
           </div>
           <div class="setting-item">
             <div class="setting-item-label">
@@ -181,7 +158,9 @@
                 </button>
               </template>
               <span
-                v-if="coreHostActions?.canUpgradeCore.value"
+                v-if="
+                  hostState.coreUpdateMode === 'automatic' && coreHostActions?.canUpgradeCore.value
+                "
                 class="indicator w-full"
               >
                 <span
@@ -211,6 +190,22 @@
                   }}
                 </button>
               </span>
+              <button
+                v-if="coreHostActions && hostState.coreUpdateMode !== 'automatic'"
+                data-testid="core-release-page"
+                class="btn btn-sm dashboard-action-btn"
+                :disabled="!hostState.coreReleaseUrl"
+                :title="
+                  $t(
+                    hostState.coreReleaseUrl
+                      ? 'desktop.manualCoreUpdateHint'
+                      : 'desktop.unknownCoreSourceHint',
+                  )
+                "
+                @click="postHostMessage({ type: 'openCoreRepository' })"
+              >
+                {{ $t('desktop.coreReleasePage') }}
+              </button>
               <button
                 v-if="hasSmartGroup"
                 class="btn btn-sm dashboard-action-btn"
@@ -252,14 +247,12 @@ import {
 } from '@/assembly/config'
 import { isSingBoxCore as isSingBox } from '@/assembly/version'
 import BackendVersion from '@/components/common/BackendVersion.vue'
-import SelectInput from '@/components/common/SelectInput.vue'
 import TopDownloadConnections from '@/components/settings/backend/TopDownloadConnections.vue'
 import { coreHostActionsKey } from '@/composables/coreHostActions'
 import { hasHostBridge, hostState, postHostMessage } from '@/composables/hostBridge'
 import { i18n } from '@/i18n'
 import { useBackendRuntimeConfig } from '@/composables/useBackendRuntimeConfig'
 import { showNotification } from '@/helper/notification'
-import { useTooltip } from '@/helper/tooltip'
 import {
   getRequestErrorMessage,
   notifyRequestErrorForSession,
@@ -272,22 +265,16 @@ import { computed, inject, ref } from 'vue'
 
 defineProps<{ embedded?: boolean }>()
 
-const { showTip } = useTooltip()
 const coreHostActions = inject(coreHostActionsKey, null)
 const {
   configStatus,
   configError,
   tunState,
-  tunStack,
-  tunStackOptions,
-  canShowTunStack,
-  canWriteTun,
   isTunBusy,
   allowLanEnabled,
   ensureConfigLoaded,
   updateAllowLan,
   updateTunEnabled,
-  updateTunStack,
 } = useBackendRuntimeConfig()
 const tunReadOnlyHint = computed(() =>
   !tunState.value.writable && !isTunBusy.value
@@ -373,11 +360,6 @@ const handlerTunModeChange = async (event: Event) => {
     input.disabled = !tunState.value.writable
   }
 }
-const handlerTunStackChange = (stack: string) =>
-  runManualRequest(async () => {
-    if (await updateTunStack(stack) === false)
-      throw new Error(i18n.global.t('tunStackUpdateFailed'))
-  })
 const handlerAllowLanChange = async (event: Event) => {
   const input = event.target as HTMLInputElement
   if (typeof allowLanEnabled.value !== 'boolean') return

@@ -68,9 +68,14 @@ if ($args -contains 'install') {
 throw 'Unexpected pnpm invocation'
 '@)
     $script:FixtureRoot = $fixture
+    $script:UseStandalonePnpm = $false
     function Get-Command {
         [CmdletBinding()] param([string]$Name)
-        if ($Name -eq 'pnpm.cmd') { return [pscustomobject]@{Source=(Join-Path $script:FixtureRoot 'pnpm.ps1')} }
+        if ($Name -eq 'pnpm.cmd') {
+            if ($script:UseStandalonePnpm) { return $null }
+            return [pscustomobject]@{Source=(Join-Path $script:FixtureRoot 'pnpm.ps1')}
+        }
+        if ($Name -eq 'pnpm.exe') { return [pscustomobject]@{Source=(Join-Path $script:FixtureRoot 'pnpm.ps1')} }
         if ($Name -eq 'node.exe') { return [pscustomobject]@{Source=(Join-Path $script:FixtureRoot 'node-global.ps1')} }
         throw "Unexpected tool lookup: $Name"
     }
@@ -85,6 +90,9 @@ throw 'Unexpected pnpm invocation'
     Assert-PathRule ($record.path.StartsWith($fixture + [IO.Path]::PathSeparator)) 'Lifecycle scripts did not inherit the selected Node path.'
     Assert-PathRule ([string]$record.pnpmStore -eq [string]$beforePnpmStore -and [string]$record.npmStore -eq [string]$beforeNpmStore) 'Install changed store environment settings.'
     Assert-PathRule ($env:PATH -eq $beforePath -and [string]$env:CI -eq [string]$beforeCi) 'Tool selection leaked process environment changes.'
+    $script:UseStandalonePnpm = $true
+    Initialize-FrontendTools
+    Assert-PathRule ($script:FrontendPnpm -eq (Join-Path $fixture 'pnpm.ps1')) 'Standalone pnpm.exe was not selected when pnpm.cmd was absent.'
 }
 finally { Remove-TemporaryTestDirectory $fixture }
 Write-Host 'Project-local test paths and frontend tool/configuration selection passed.' -ForegroundColor Green

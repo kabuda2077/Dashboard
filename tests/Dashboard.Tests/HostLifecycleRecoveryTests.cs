@@ -83,6 +83,7 @@ public sealed class HostLifecycleRecoveryTests : TemporaryDirectoryTest
                     replacements++;
                     Assert.True(new SettingsStore(TestRoot).Current.DesktopOptions.Autostart);
                     duringSpawn = host.ExecuteAsync(request with { Value = false });
+                    return Task.CompletedTask;
                 }, () => host.ShutdownAsync()));
             Assert.Equal("busy", (await host.ExecuteAsync(request with { Value = false })).Code);
             Assert.False(relaunch.IsCompleted);
@@ -102,6 +103,27 @@ public sealed class HostLifecycleRecoveryTests : TemporaryDirectoryTest
             if (relaunch is not null) await relaunch.WaitAsync(TimeSpan.FromSeconds(5));
             await host.ShutdownAsync();
         }
+    }
+
+    [Fact]
+    public async Task ReplacementMustConfirmReadinessBeforeOldHostIsSealed()
+    {
+        using var host = new DashboardHost(TestRoot, Path.Combine(TestRoot, "ui"), true);
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exited = false;
+        var handoff = host.RelaunchAfterAutostartAsync(() => ready.Task, async () =>
+        {
+            exited = true;
+            await host.ShutdownAsync();
+        });
+        Assert.False(exited);
+        Assert.False(host.IsClosing);
+        ready.SetException(new InvalidOperationException("replacement account differs"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handoff);
+        Assert.False(exited);
+        Assert.False(host.IsClosing);
+        Assert.True((await host.ExecuteAsync(new() { Type = "setDesktopOption", Option = "lightweightMode", Value = false })).Saved);
+        await host.ShutdownAsync();
     }
 
     [Theory]
@@ -233,7 +255,7 @@ public sealed class HostLifecycleRecoveryTests : TemporaryDirectoryTest
         using var host = new DashboardHost(TestRoot, Path.Combine(TestRoot, "ui"), true);
         var replacementStarted = false;
         await Assert.ThrowsAsync<IOException>(() => host.RelaunchAfterAutostartAsync(
-            () => replacementStarted = true, async () =>
+            () => { replacementStarted = true; return Task.CompletedTask; }, async () =>
             {
                 Assert.True(await host.ShutdownAsync());
                 throw new IOException("injected failure after shutdown");

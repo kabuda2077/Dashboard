@@ -17,31 +17,52 @@ const useIndexedDB = (dbKey: string) => {
       }
       request.onsuccess = () => {
         const db = request.result
-        const store = db.transaction(dbKey, 'readonly').objectStore(dbKey)
-        const cursorRequest = store.openCursor()
-
-        cursorRequest.onsuccess = (event) => {
-          const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
-
-          if (cursor) {
-            cacheMap.set(cursor.key as string, cursor.value.value)
-            cursor.continue()
-          } else {
-            resolve(request.result)
-          }
+        const fail = (error: unknown) => {
+          db.close?.()
+          reject(error)
         }
-        cursorRequest.onerror = () => reject(cursorRequest.error)
+        try {
+          const transaction = db.transaction(dbKey, 'readonly')
+          const cursorRequest = transaction.objectStore(dbKey).openCursor()
+          const loaded = new Map<string, string>()
+          transaction.oncomplete = () => {
+            cacheMap.clear()
+            for (const [key, value] of loaded) cacheMap.set(key, value)
+            resolve(db)
+          }
+          transaction.onabort = () => fail(transaction.error ?? new Error('Local database initialization aborted.'))
+          transaction.onerror = () => fail(transaction.error ?? cursorRequest.error)
+          cursorRequest.onsuccess = (event) => {
+            const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
+
+            if (cursor) {
+              loaded.set(cursor.key as string, cursor.value.value)
+              cursor.continue()
+            }
+          }
+          cursorRequest.onerror = () => fail(cursorRequest.error)
+        } catch (error) {
+          fail(error)
+        }
       }
       request.onerror = () => reject(request.error)
     })
 
-  const dbPromise = openDatabase()
+  let dbPromise: Promise<IDBDatabase> | undefined
+  const getDatabase = () => {
+    // Open lazily so an unused database cannot produce an unhandled rejection.
+    dbPromise ??= openDatabase().catch((error) => {
+      dbPromise = undefined
+      throw error
+    })
+    return dbPromise
+  }
 
   const executeTransaction = async <T>(
     mode: IDBTransactionMode,
     operation: (store: IDBObjectStore) => IDBRequest<T>,
   ) => {
-    const db = await dbPromise
+    const db = await getDatabase()
     return new Promise<T>((resolve, reject) => {
       const transaction = db.transaction(dbKey, mode)
       const store = transaction.objectStore(dbKey)
@@ -76,7 +97,7 @@ const useIndexedDB = (dbKey: string) => {
   })
 
   const get = async (key: string) => {
-    await dbPromise
+    await getDatabase()
     return cacheMap.get(key)
   }
 
@@ -105,7 +126,11 @@ export const LOCAL_IMAGE = 'local-image'
 const date = dayjs().format('YYYY-MM-DD')
 const backgroundInDB = ref('')
 const getBackgroundInDB = async () => {
-  backgroundInDB.value = (await getBase64FromIndexedDB()) || ''
+  try {
+    backgroundInDB.value = (await getBase64FromIndexedDB()) || ''
+  } catch (error) {
+    console.error('Failed to load the local background image:', error)
+  }
 }
 
 watch(
