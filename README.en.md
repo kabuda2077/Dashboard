@@ -2,43 +2,94 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-A Windows desktop proxy dashboard based on [zashboard](https://github.com/Zephyruso/zashboard), supporting mihomo and sing-box with the Clash API enabled.
+**A Windows desktop proxy dashboard for mihomo and sing-box**, built on [zashboard](https://github.com/Zephyruso/zashboard). Manage two core profiles, select and benchmark nodes, inspect live connections, traffic, rules and logs, and use desktop tray and network diagnostics in one place.
+
+- **Latest release**: [Releases](https://github.com/kabuda2077/Dashboard/releases)
+- **Supported cores**: mihomo, sing-box (with Clash API enabled)
+- **Platform**: Windows x64
+
+---
+
+## Quick Start
+
+### Requirements
+
+Make sure the following are installed before running Dashboard:
+
+- **Windows x64**
+- **[.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (required even if .NET 9 is already installed)
+- **[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)**
+
+### Installation & Setup
+
+1. Download the latest archive from [Releases](https://github.com/kabuda2077/Dashboard/releases), extract all files, and run `Dashboard.exe`.
+2. Prepare your own `mihomo` or Clash-API-enabled `sing-box` executable and configuration file (the release package does not bundle proxy cores or user configs).
+3. Open the **Core** page, select the core type, fill in the executable path, configuration file path, API address, and Secret, then save and start the core.
+
+> **Core API Configuration**
+> - **mihomo**: enable `external-controller` (for example `127.0.0.1:9090`) and match the Secret with your `secret` field.
+> - **sing-box**: enable `experimental.clash_api.external_controller` and match the Secret with your configuration.
+> - If the core starts but stays disconnected, check the API address and Secret. If the target API does not belong to the currently managed core, Dashboard warns you and disables mihomo upgrades through that API.
+> - UAC is requested when administrator privileges are required. Elevate with the **current Windows account**; elevating with another account cancels the handoff and keeps the original window.
+
+---
 
 ## Features
 
-- Manage two independent core configurations; start, stop, restart and switch the active core. The TUN mode switch stays in the main backend section. The stack selector appears when supported under the expanded Settings → Connection settings → TUN settings; changing it may interrupt connections.
-- Select proxies, run latency tests, and view connections, traffic, rules and logs. Connection history is a bounded aggregate that is trimmed and periodically saved while the interface runs in the background. Entries with less downloaded traffic may be removed and start accumulating again if they reappear.
-- Customize themes, backgrounds and connection labels; import and export interface preferences.
-- System tray, autostart, close to tray and lightweight mode. Lightweight mode releases the interface after one minute hidden and restores it when reopened.
-- Optional source-IP hostname resolution, disabled by default. Manual labels take priority; unsupported lookups keep the original IP.
-- Overview measures HTTP request times for eight targets, with up to four targets running concurrently and five sequential samples per target. Each completed target frees a slot for the next one. The number is the median of successful samples. Sample bars grow from the bottom as results arrive; waiting and queued bars stay still, and failures appear as short red bars. Animations are disabled when reduced motion is preferred. Tabs switch between the left-hand latency and routing cards. Routing checks cover eight targets and create independent host HTTPS connections through an existing local proxy inbound of the current core and show the matched final node or direct route. Both use a green dot for a confirmed result; unconfirmed results use gray. The track is green after a confirmed connection and gray for unconfirmed or failed results, with a moving segment during a check. It does not indicate latency or percentage progress. Checks are unavailable without a usable inbound and never change configuration. Process and inbound rules may differ from WebView, TUN or other apps; results do not represent every application. Unmatched connections remain unconfirmed.
-- Click an individual latency or routing target to retest it; the lightning button tests all targets on the current page. Latency retests keep the previous number while bars show current progress, then update the final median after all five samples; routing checks keep their previous results. Results survive page changes and lightweight WebView disposal within the same application session; exiting the application clears them. Automatic checks run only while the diagnostics card is visible: latency follows its auto-check setting and refreshes on a return after five minutes; routing runs on first view or after a path change, without periodic polling. Node, mode, rule or network changes coalesce into a refresh of the visible page without pending-update labels.
-- Network information queries domestic and international exits in parallel. The domestic card uses ipip.net to obtain the IP, location and ISP in one request, without an ASN lookup. The international card uses the service selected under “IP info API” to obtain the exit IP observed by that service, location, ISP/organization and ASN in one request; its title shows the selected service. Valid addresses remain visible when attribution fields are incomplete, and missing fields are not inferred. Details are ordered as location, ASN number and ISP; the domestic ISP is also aligned to the right. Long text stays on one line, with full location, ISP and ASN organization available on hover. By default, the latter half of each IP and location details beyond the country/territory are masked. The ISP keeps its first word and the ASN keeps its number, with each following word replaced by `**`; hover text follows the same privacy setting. Reveal them explicitly to see full information. Addresses naturally use the IPv4 or IPv6 returned by each service, without additional probes. These observations follow current network and routing rules and do not represent every proxy node. The API setting also controls online attribution in connection details; the connection list uses the separate GeoIP country and ASN databases. Request time is not Ping; routing checks do not guarantee unblocking or full website functionality.
+### Core & Desktop Management
 
-## Install and use
+- **Dual core profiles**: store two independent core configurations and start, stop, restart, or switch the active core at any time.
+- **TUN controls**: the TUN mode and allow-LAN switches stay in the main backend section; the TUN stack selector is located under the expanded **Settings → Connection settings → TUN settings** when supported (switching stacks may briefly interrupt connections).
+- **System tray & lightweight mode**: supports tray residency, autostart, and close-to-tray. With lightweight mode enabled, hiding the window for one minute releases the WebView interface and restores it when reopened.
 
-Requires Windows x64, [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+### Proxies, Connections & Preferences
 
-1. Download a ZIP from [Releases](https://github.com/kabuda2077/Dashboard/releases), extract it and run `Dashboard.exe`.
-2. Supply mihomo or sing-box with the Clash API enabled, plus its configuration file. The package includes neither cores nor configurations.
-3. On the Core page, choose the core and enter its executable, configuration file, API address and Secret. Save and start it. UAC is requested when administrator privileges are needed. Elevate with the current Windows account; using another account cancels the handoff and keeps the original window.
+- **Daily proxy workflow**: switch proxy groups and nodes, run latency tests, and inspect live connections, traffic, rules, and logs. All settings are consolidated on the Core page.
+- **Connection views & history**: switch between **Active** and **All** connections, and click **All** again to filter for **Closed only**. Connection history is a capacity-bounded aggregate trimmed and saved periodically even in the background; lower-traffic entries may be evicted and accumulate again if they reappear. Aggregation mode and table sorting are saved and exported with interface preferences (statistical data itself is not exported).
+- **Customization & source labels**: customize themes, background images, and source IP labels, and import/export interface preferences. Optional source-IP hostname resolution is available (disabled by default; manual labels take priority and unsupported lookups keep the original IP).
 
-For mihomo, configure `external-controller`; for sing-box, use `experimental.clash_api.external_controller`. An example API address is `http://127.0.0.1:9090`. The Secret must match the core configuration. If the core starts but remains disconnected, check the API address and Secret. An API that does not belong to the managed core is marked, and mihomo upgrades through that API are disabled.
+### Overview & Network Diagnostics
 
-Settings are on the Core page. Connections offers Active and All views; select All again to show only closed connections. Connection statistics aggregation and table sorting are saved as interface preferences and included in preference imports and exports; statistical data is not included.
+Use the left-hand tabs to switch between **Latency** and **Routing**, while the right-hand side shows **Domestic / International exit information**:
 
-## Updates and limitations
+- **Latency checks**: tests 8 targets with up to 4 concurrent targets and 5 sequential samples each, displaying the median of successful samples. Sample bars grow as results arrive, queued bars stay still, and failed samples appear as short red bars (animations respect reduced-motion preferences).
+- **Routing checks**: covers 8 targets by opening independent host HTTPS connections through an existing local proxy inbound of the active core, matching the final node or direct route. Confirmed results show a green dot and green bottom track, while unconfirmed or failed results stay gray; an active check shows a moving segment (indicating activity only, not latency or percentage progress). Checks require a usable local inbound and never modify core configuration.
+- **On-demand & automatic refresh**: click any target tile to retest it, or use the lightning button to retest the current tab. Previous results remain visible during retests, persist across page navigation and lightweight-mode disposal within the same app session, and clear on full exit. Automatic checks run only while the card is visible: latency follows its auto-check toggle and refreshes when returning after 5 minutes; routing runs on first view or after path changes without periodic polling. Node, mode, rule, or network changes coalesce into a refresh of the visible tab.
+- **Exit IP & attribution**: queries domestic and international exits in parallel. The domestic card queries `ipip.net` once for IP, location, and ISP (without ASN); the international card queries the provider selected under **IP info API** once for the observed exit IP, location, ASN, and ISP/organization, showing the provider name in the title. Details are ordered as **Location | ASN number | ISP** with single-line truncation and full hover tooltips; privacy masking applies consistently to both visible text and hover titles. The same API setting is used for online attribution in connection details, while the connection list uses separate GeoIP country and ASN databases.
 
-- **When upgrading from 1.x to 2.x, extract to a new directory and configure it again.** Old settings, history, backgrounds and autostart entries are not migrated automatically. Keep the old directory as a backup.
-- To update 2.x, fully exit the application and replace its files. Keep `settings.json`, cores and configuration files.
-- An application version change clears browser data, including connection history and local background images. Saved interface preferences are restored. The first switch from the old cache policy also resets browser data once.
-- Secrets are protected for the current Windows user. If another user cannot decrypt them, enter and save them again on the Core page.
-- Dashboard updates open the download page for manual replacement. Recognized original mihomo builds upgrade through the managed core API; completion is reported after the replacement process and API are confirmed ready. Recognized mihomo forks, including TanakaLun and Smart, and sing-box use a Releases action with a hover hint: download the core, stop it, then replace its executable. reF1nd sing-box opens its separate releases repository. Unknown sources never fall back to an original core’s update address; confirm the download source yourself. Version markers identify known formats but cannot prove the repository of a custom build that retains an original version string.
-- sing-box is managed through the Clash API, with its desktop TUN stack read-only. Native API, Tools and Terminal are unavailable. Automatic TUN recovery after sleep has not been verified.
-- The local interface uses port `33291` and cannot start if it is occupied. Autostart tasks with conflicting ownership are not overwritten; check existing tasks.
+> **Diagnostic notes**: HTTP request time is not ICMP Ping. Host routing probes may hit different process or inbound rules than WebView, TUN, or other applications; results do not represent every application and do not guarantee website unblocking or full site functionality.
 
-For troubleshooting, inspect `resources/logs`. Start with `Dashboard.exe --diagnostic-log` for detailed logging.
+---
 
-For development and verification, see the [development guide](docs/development.md). For upstream updates, see the [upstream guide](docs/upstream.md) (both in Chinese).
+## Updates & Upgrades
 
-MIT License. Upstream frontend copyright is retained in [dashboard-src/LICENSE](dashboard-src/LICENSE).
+### Updating 2.x
+
+- **Fully exit** Dashboard from the system tray, extract the new archive over the existing application files, and keep your `settings.json`, core executables, and configuration files.
+- Application version changes reset WebView browser data (clearing connection history and local background images, so local backgrounds need to be selected again), while saved settings and interface preferences are restored automatically.
+
+### Upgrading from 1.x to 2.x
+
+- **Do not overwrite an existing 1.x folder.** Back up the old directory, extract 2.x into a new empty directory, and configure it again. Settings, history, backgrounds, and autostart entries from 1.x are not migrated automatically.
+
+### Application & Core Updates
+
+- **Dashboard**: check for updates in the About section to open the release page and replace files manually.
+- **Original mihomo**: recognized original builds upgrade through the managed core API and report completion only after the restarted process and API are confirmed ready.
+- **mihomo forks & sing-box**: recognized forks (such as TanakaLun and Smart) and sing-box provide a **Releases** action (reF1nd sing-box points to its dedicated releases repository); download the archive, stop the core, and replace the executable manually. Unknown core sources never fall back to an upstream update URL.
+
+---
+
+## Notes & Troubleshooting
+
+- **sing-box scope**: managed through the Clash API with a read-only desktop TUN stack; native API, Tools, and Terminal are not supported. Automatic TUN recovery after system sleep/wake has not been verified.
+- **Secret protection**: Secrets are encrypted for the current Windows user. If decryption fails after switching Windows accounts, re-enter and save the Secret on the Core page.
+- **Port & autostart**: the local UI uses port `33291` and cannot start if that port is occupied. Autostart scheduled tasks with conflicting ownership are not overwritten; check existing tasks in Windows Task Scheduler.
+- **Logs**: runtime logs are stored under `resources/logs`. Launch with `Dashboard.exe --diagnostic-log` for verbose diagnostic logging.
+
+---
+
+## Development & License
+
+- See [docs/development.md](docs/development.md) for development and verification workflows, and [docs/upstream.md](docs/upstream.md) for upstream synchronization (both in Chinese).
+- Released under the [MIT License](LICENSE); upstream frontend copyright is retained in [dashboard-src/LICENSE](dashboard-src/LICENSE).
