@@ -1,7 +1,8 @@
 import { resetConfigs, startConfigRuntime, stopConfigRuntime } from '@/assembly/config'
 import { initLogs, resetLogs, stopLogs } from '@/assembly/logs'
-import { fetchProxies, resetProxies } from '@/assembly/proxies'
+import { fetchProxies, proxyGroupList, proxyMap, resetProxies } from '@/assembly/proxies'
 import { fetchRules, resetRules } from '@/assembly/rules'
+import { hasHostBridge, hostState, requestHost } from '@/composables/hostBridge'
 import { closeProxyGroupChain } from '@/helper/proxy-group-chain'
 import { initConnections, resetConnections, stopConnections } from '@/store/connections'
 import { initSatistic, resetStatistics, stopSatistic } from '@/store/overview'
@@ -50,9 +51,10 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
         if (pending.get(key) !== task) return
         started.delete(key)
         pending.delete(key)
-        if (key === 'rules') await notifyRequestErrorForSession(error, {
-          isCurrent: () => session.isCurrent() && attempt === rulesAttempt,
-        })
+        if (key === 'rules')
+          await notifyRequestErrorForSession(error, {
+            isCurrent: () => session.isCurrent() && attempt === rulesAttempt,
+          })
       })
       .finally(() => {
         if (pending.get(key) === task) pending.delete(key)
@@ -78,6 +80,34 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
     },
     { immediate: true, flush: 'sync' },
   )
+  const stopIconCache = watch(
+    // fetchProxies has already applied custom overrides to the same map used by the views.
+    () => proxyGroupList.value.map((name) => proxyMap.value[name]?.icon),
+    (icons) => {
+      const { coreType, runtimeEpoch } = hostState.value
+      if (!hasHostBridge || !backendSessionReady.value || !coreType || runtimeEpoch === undefined)
+        return
+      const iconUrls = [
+        ...new Set(
+          icons.flatMap((icon) => {
+            if (!icon) return []
+            try {
+              const url = new URL(icon)
+              return /^https?:$/.test(url.protocol) && url.href.length <= 8192 ? [url.href] : []
+            } catch {
+              return []
+            }
+          }),
+        ),
+      ].slice(0, 256)
+      void requestHost({
+        type: 'cacheProxyIcons',
+        coreType,
+        expectedRuntimeEpoch: runtimeEpoch,
+        iconUrls,
+      }).catch((error) => console.warn('Proxy icon cache request failed.', error))
+    },
+  )
   const stopRoute = watch(
     () => toValue(route),
     (name, previous) => {
@@ -98,6 +128,7 @@ export const startBackendRuntime = (route: MaybeRefOrGetter<unknown>) => {
   const stop = () => {
     rulesAttempt++
     stopSession()
+    stopIconCache()
     stopRoute()
     pending.clear()
     document.removeEventListener('visibilitychange', visible)

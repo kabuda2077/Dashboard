@@ -108,8 +108,8 @@ export const renderRoutes = computed(() => {
   const routeOrder = [
     ROUTE_NAME.core,
     ROUTE_NAME.proxies,
-    ROUTE_NAME.connections,
     ROUTE_NAME.overview,
+    ROUTE_NAME.connections,
     ROUTE_NAME.logs,
     ROUTE_NAME.rules,
   ]

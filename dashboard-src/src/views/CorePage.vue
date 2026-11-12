@@ -371,11 +371,11 @@ const t = i18n.global.t
 let interactiveFrame = 0
 onMounted(() => {
   interactiveFrame = requestAnimationFrame(() => {
-    performance.mark('core-interactive')
+    const entry = performance.mark('core-interactive')
     postHostMessage({
       type: 'performance',
       name: 'coreInteractiveFromNavigation',
-      durationMs: Math.round(performance.now()),
+      durationMs: entry.startTime,
     })
   })
 })

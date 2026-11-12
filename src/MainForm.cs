@@ -41,6 +41,12 @@ public sealed class MainForm : Form
     private long _webViewInitializationSequence;
     private long _activeWebViewInitializationId;
     private long _activeWebViewInitializationStartedAt;
+    private long? _dashboardReleasedAt;
+    private string? _trayRestoreId;
+    private long _trayRestoreStartedAt;
+    private ulong? _trayRestoreNavigationId;
+    private bool _trayRestoreFrontendReady;
+    private double _trayRestoreLastDocumentMs;
     private bool _webViewSuspended;
     private int _dashboardSuspendVersion;
     private readonly System.Windows.Forms.Timer _dashboardDisposeTimer = new() { Interval = DelayedDashboardDisposeMs };
@@ -142,7 +148,8 @@ public sealed class MainForm : Form
             },
             CheckAppUpdateAsync = () => _host.CheckForAppUpdateAsync(manual: true),
             OpenAppRelease = _host.OpenAppReleasePage,
-            OpenCoreRepository = _host.OpenCoreRepositoryPage
+            OpenCoreRepository = _host.OpenCoreRepositoryPage,
+            OpenCoreRelease = _host.OpenCoreReleasePage
         });
         BindEvents();
     }
@@ -159,7 +166,6 @@ public sealed class MainForm : Form
 
         _initialized = true;
         RefreshStatus();
-        _host.RefreshIconCache();
         await EnsureDashboardInitializedAsync("window-shown");
 
         HostOperationLogger.Diagnostic("performance", $"host:onShown durationMs={Stopwatch.GetElapsedTime(shownStartedAt).TotalMilliseconds:0}");
@@ -284,6 +290,7 @@ public sealed class MainForm : Form
 
     private void ShowDashboardFailure()
     {
+        EndTrayRestoreTrace("failed");
         _dashboardInitialized = false;
         if (_dashboardFailurePanel is null)
         {
@@ -418,6 +425,11 @@ public sealed class MainForm : Form
 
     private async Task<bool> InitializeWebViewAsync(string trigger)
     {
+        var restoreId = _trayRestoreId;
+        void LogInitializationStage(string stage, string details = "")
+        {
+            if (restoreId is not null && restoreId == _trayRestoreId) LogTrayRestoreStage(stage, details);
+        }
         var initializationId = Interlocked.Increment(ref _webViewInitializationSequence);
         HostOperationLogger.Diagnostic(
             "performance",
@@ -425,12 +437,14 @@ public sealed class MainForm : Form
         var startedAt = Stopwatch.GetTimestamp();
         _activeWebViewInitializationId = initializationId;
         _activeWebViewInitializationStartedAt = startedAt;
+        LogInitializationStage("webview:initializationStarted");
         for (var attempt = 1; attempt <= WebViewInitializationAttempts; attempt++)
         {
             var stage = "control";
             var stageStartedAt = Stopwatch.GetTimestamp();
             EnsureWebViewCreated();
             var controlMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+            LogInitializationStage("webview:control", $"attempt={attempt} durationMs={controlMs:0.0}");
             var webView = _webView;
             if (webView is null)
             {
@@ -443,6 +457,7 @@ public sealed class MainForm : Form
                 stageStartedAt = Stopwatch.GetTimestamp();
                 _webViewContentUpdate.PrepareUserDataDirectory();
                 var profileMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+                LogInitializationStage("webview:profile", $"attempt={attempt} durationMs={profileMs:0.0}");
 
                 stage = "environment";
                 stageStartedAt = Stopwatch.GetTimestamp();
@@ -450,11 +465,13 @@ public sealed class MainForm : Form
                     browserExecutableFolder: null,
                     userDataFolder: _webViewContentUpdate.UserDataFolder);
                 var environmentMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+                LogInitializationStage("webview:environment", $"attempt={attempt} durationMs={environmentMs:0.0}");
 
                 stage = "controller";
                 stageStartedAt = Stopwatch.GetTimestamp();
                 await webView.EnsureCoreWebView2Async(environment);
                 var controllerMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+                LogInitializationStage("webview:controller", $"attempt={attempt} durationMs={controllerMs:0.0}");
                 if (!ReferenceEquals(webView, _webView) || webView.CoreWebView2 is null)
                 {
                     return false;
@@ -466,6 +483,7 @@ public sealed class MainForm : Form
                 webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
                 var settingsMs = Stopwatch.GetElapsedTime(stageStartedAt).TotalMilliseconds;
+                LogInitializationStage("webview:settings", $"attempt={attempt} durationMs={settingsMs:0.0}");
 
                 webView.CoreWebView2.NavigationStarting += OnDashboardNavigationStarting;
                 webView.CoreWebView2.NavigationCompleted += OnDashboardNavigationCompleted;
@@ -494,6 +512,7 @@ public sealed class MainForm : Form
                 {
                     HostOperationLogger.Diagnostic("webview", message);
                 }
+                LogInitializationStage("webview:retry", $"attempt={attempt} stage={stage}");
                 ResetFailedWebView(webView);
                 if (attempt == WebViewInitializationAttempts || IsDisposed || Disposing)
                 {
@@ -565,6 +584,7 @@ public sealed class MainForm : Form
         _dashboardNavigationCompletion = completion;
         try
         {
+            LogTrayRestoreStage("webview:navigationRequested");
             // An error document can retain the dashboard URL. Navigating to that
             // same URL/fragment may only change its hash, so force a real reload.
             if (_webViewTrust.IsTrustedDocument(coreWebView.Source)) coreWebView.Reload();
@@ -590,11 +610,14 @@ public sealed class MainForm : Form
                 + $"status={args.WebErrorStatus} navigationMs={Stopwatch.GetElapsedTime(_dashboardNavigationStartedAt).TotalMilliseconds:0.0} "
                 + $"totalMs={Stopwatch.GetElapsedTime(_activeWebViewInitializationStartedAt).TotalMilliseconds:0.0}");
         _dashboardInitialized = args.IsSuccess && _webViewTrust.IsTrustedDocument(current.Source);
+        LogTrayRestoreStage("webview:navigationCompleted",
+            $"success={_dashboardInitialized} durationMs={Stopwatch.GetElapsedTime(_dashboardNavigationStartedAt).TotalMilliseconds:0.0}");
         _dashboardNavigationCompletion?.TrySetResult(_dashboardInitialized);
         if (_dashboardInitialized)
         {
             HideDashboardFailure();
             SendStateToDashboard();
+            if (_trayRestoreFrontendReady) EndTrayRestoreTrace("completed");
         }
         else ShowDashboardFailure();
     }
@@ -611,6 +634,10 @@ public sealed class MainForm : Form
         var target = _webViewTrust.ClassifyNavigation(e.Uri);
         if (target == DashboardNavigationTarget.Dashboard)
         {
+            if (_trayRestoreNavigationId is { } restoreNavigation && restoreNavigation != e.NavigationId)
+                EndTrayRestoreTrace("navigation-replaced");
+            if (_trayRestoreId is not null) _trayRestoreNavigationId = e.NavigationId;
+            LogTrayRestoreStage("webview:navigationStarting");
             _dashboardNavigationId = e.NavigationId;
             _dashboardNavigationStartedAt = Stopwatch.GetTimestamp();
             _dashboardInitialized = false;
@@ -679,6 +706,16 @@ public sealed class MainForm : Form
             {
                 if (generation == Interlocked.Read(ref _navigationGeneration) && ReferenceEquals(current, _webView?.CoreWebView2))
                     PostDashboardMessage(message);
+            }, (stage, durationMs) =>
+            {
+                if (generation != Interlocked.Read(ref _navigationGeneration) || !ReferenceEquals(current, _webView?.CoreWebView2)) return;
+                LogTrayRestoreStage(stage, FormatTrayRestoreMetric(stage, durationMs, ref _trayRestoreLastDocumentMs));
+                if (stage == "frontend:startupFailed") EndTrayRestoreTrace("frontend-failed");
+                if (stage == "frontend:frontendReady" && _trayRestoreId is not null)
+                {
+                    _trayRestoreFrontendReady = true;
+                    if (_dashboardInitialized) EndTrayRestoreTrace("completed");
+                }
             });
         }
         catch (Exception ex)
@@ -836,8 +873,11 @@ public sealed class MainForm : Form
         FlushDashboardUpdates();
     }
 
-    private void DisposeDashboardView()
+    private void DisposeDashboardView() => ReleaseDashboardView("lightweight-timeout");
+
+    private void ReleaseDashboardView(string reason)
     {
+        EndTrayRestoreTrace("released-again");
         CancelDelayedDashboardDispose();
         _dashboardSuspendVersion++;
         _preferenceFlush?.TrySetResult(false);
@@ -860,9 +900,10 @@ public sealed class MainForm : Form
         _contentPanel.Controls.Remove(webView);
         _webView = null;
         webView.Dispose();
-        HostOperationLogger.Diagnostic(
+        _dashboardReleasedAt = reason == "lightweight-timeout" ? Stopwatch.GetTimestamp() : null;
+        HostOperationLogger.Info(
             "performance",
-            $"webview:disposed id={_activeWebViewInitializationId} reason=lightweight-timeout");
+            $"webview:disposed id={_activeWebViewInitializationId} reason={reason}");
     }
 
     private void ScheduleDashboardViewDispose()
@@ -1020,6 +1061,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        EndTrayRestoreTrace("hidden");
         RememberTrayRestoreState();
         _trayTransitionInProgress = true;
         try
@@ -1074,12 +1116,24 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (_dashboardReleasedAt is { } releasedAt && !dashboardReady && _trayRestoreId is null)
+        {
+            _trayRestoreId = Guid.NewGuid().ToString("N");
+            _trayRestoreStartedAt = requestedAt;
+            _trayRestoreNavigationId = null;
+            _trayRestoreFrontendReady = false;
+            _trayRestoreLastDocumentMs = 0;
+            _dashboardReleasedAt = null;
+            LogTrayRestoreStage("requested", $"releasedAgoMs={Stopwatch.GetElapsedTime(releasedAt).TotalMilliseconds:0.0}");
+        }
+
         _hiddenToTray = false;
         if (Visible && WindowState != FormWindowState.Minimized)
         {
             ResumeDashboard();
             Activate();
             BringToFront();
+            LogTrayRestoreStage("window:showDispatched");
             _ = EnsureDashboardInitializedAsync("tray-visible");
             HostOperationLogger.Diagnostic(
                 "performance",
@@ -1088,6 +1142,35 @@ public sealed class MainForm : Form
         }
 
         ShowPreparedDashboardFromTray(requestedAt, dashboardReady);
+    }
+
+    internal static string FormatTrayRestoreMetric(string stage, double durationMs, ref double previousDocumentMs)
+    {
+        if (stage is "frontend:bootstrapRequested" or "frontend:bootstrapReceived" or "frontend:preferencesRestored"
+            or "frontend:applicationImportRequested" or "frontend:applicationImportsReady" or "frontend:frontendMounted"
+            or "frontend:coreInteractiveFromNavigation" or "frontend:frontendReady" or "frontend:startupFailed")
+        {
+            var details = $"documentMs={durationMs:0.0} sincePreviousMs={durationMs - previousDocumentMs:0.0}";
+            previousDocumentMs = durationMs;
+            return details;
+        }
+        return $"durationMs={durationMs:0.0}";
+    }
+
+    private void LogTrayRestoreStage(string stage, string details = "")
+    {
+        if (_trayRestoreId is null) return;
+        HostOperationLogger.Info("performance",
+            $"trayRestore id={_trayRestoreId} webviewId={_activeWebViewInitializationId} stage={stage} "
+                + $"elapsedMs={Stopwatch.GetElapsedTime(_trayRestoreStartedAt).TotalMilliseconds:0.0} {details}".TrimEnd());
+    }
+
+    private void EndTrayRestoreTrace(string status)
+    {
+        LogTrayRestoreStage("finished", $"status={status}");
+        _trayRestoreId = null;
+        _trayRestoreNavigationId = null;
+        _trayRestoreFrontendReady = false;
     }
 
     private void ShowPreparedDashboardFromTray(long requestedAt, bool dashboardReady)
@@ -1114,6 +1197,7 @@ public sealed class MainForm : Form
             ResumeDashboard();
             Activate();
             BringToFront();
+            LogTrayRestoreStage("window:showDispatched");
             _ = EnsureDashboardInitializedAsync("tray-restore");
             HostOperationLogger.Diagnostic(
                 "performance",
@@ -1141,13 +1225,14 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
+            EndTrayRestoreTrace("disposed");
             _host.StateChanged -= OnHostStateChanged;
             _host.RuntimeStateChanged -= OnHostRuntimeStateChanged;
             _host.LogReceived -= OnHostLogReceived;
             _host.IconCacheChanged -= OnHostIconCacheChanged;
             _host.NoticeRequested -= OnHostNoticeRequested;
             _host.AppUpdateResultRequested -= OnAppUpdateResultRequested;
-            DisposeDashboardView();
+            ReleaseDashboardView("shutdown");
             _statePublisher.Dispose();
             _dashboardDisposeTimer.Dispose();
             _appIcon.Dispose();

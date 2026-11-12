@@ -32,15 +32,18 @@ it.each([
 ] as const)(
   'resolves %s without guessing an unknown repository',
   async (value, singBox, mode, repo) => {
-    const { resolveCoreUpdateSource } = await import('@/assembly/version')
-    expect(resolveCoreUpdateSource(value, singBox)).toEqual({
+    const { resolveCoreUpdateSource, repositoryUrlFor } = await import('@/assembly/version')
+    const source = resolveCoreUpdateSource(value, singBox)
+    expect(source).toEqual({
       mode,
       releaseUrl: repo ? `https://github.com/${repo}/releases` : '',
     })
+    const project = repo === 'reF1nd/sing-box-releases' ? 'reF1nd/sing-box' : repo
+    expect(repositoryUrlFor(source.releaseUrl)).toBe(project ? `https://github.com/${project}` : '')
   },
 )
 
-it('uses the host source despite a different API version, opens releases, then clears an unknown link', async () => {
+it('uses the host source despite a different API version, opens its project, then clears an unknown link', async () => {
   vi.resetModules()
   const releaseUrl = 'https://github.com/TanakaLun/mihomo/releases'
   const host = await startMockHost({
@@ -59,8 +62,8 @@ it('uses the host source despite a different API version, opens releases, then c
   app.mount(root)
   try {
     const link = root.querySelector('a')!
-    expect(link.href).toBe(releaseUrl)
-    expect(link.title).toBe(i18n.global.t('desktop.manualCoreUpdateHint'))
+    expect(link.href).toBe('https://github.com/TanakaLun/mihomo')
+    expect(link.title).toBe(i18n.global.t('desktop.coreRepositoryHint'))
     expect(coreUpdateSource.value.mode).toBe('manual')
     expect(isCoreUpdateAvailable.value).toBe(false)
     link.click()
@@ -68,6 +71,13 @@ it('uses the host source despite a different API version, opens releases, then c
       expect.objectContaining({ type: 'openCoreRepository' }),
     )
     expect(host.post.mock.calls.some(([message]) => message.type === 'upgradeCore')).toBe(false)
+    host.runtime({
+      coreType: 'sing-box',
+      coreUpdateMode: 'manual',
+      coreReleaseUrl: 'https://github.com/reF1nd/sing-box-releases/releases',
+    })
+    await nextTick()
+    expect(link.href).toBe('https://github.com/reF1nd/sing-box')
     host.runtime({ coreUpdateMode: 'unknown', coreReleaseUrl: '' })
     await nextTick()
     expect(link.hasAttribute('href')).toBe(false)

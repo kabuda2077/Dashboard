@@ -7,6 +7,13 @@ internal sealed record CoreUpdateSource(string Mode, string ReleaseUrl)
 {
     internal static CoreUpdateSource Unknown { get; } = new("unknown", "");
 
+    internal static string RepositoryUrlFor(string releaseUrl) => releaseUrl switch
+    {
+        "https://github.com/reF1nd/sing-box-releases/releases" => "https://github.com/reF1nd/sing-box",
+        "" => "",
+        _ => releaseUrl[..^"/releases".Length]
+    };
+
     internal static CoreUpdateSource Resolve(string output, CoreKind kind)
     {
         var version = VersionField(output, kind);

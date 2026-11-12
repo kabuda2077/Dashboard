@@ -11,7 +11,7 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         { Calls++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content(request) }); }
     }
-    private sealed class Body(int bytes, int delayMs = 0) : Stream
+    private sealed class Body(int bytes, int delayMs = 0, Task? release = null) : Stream
     {
         private int _remaining = bytes;
         public readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -19,6 +19,7 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
             Started.TrySetResult();
+            if (release is not null) await release.WaitAsync(cancellationToken);
             if (delayMs > 0) await Task.Delay(delayMs, cancellationToken);
             var size = Math.Min(buffer.Length, _remaining);
             buffer.Span[..size].Fill(1); _remaining -= size; return size;
@@ -35,32 +36,69 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
-    private string Config(string name, params string[] urls)
-    {
-        Directory.CreateDirectory(_root);
-        var file = Path.Combine(_root, name + ".yaml");
-        File.WriteAllText(file, "proxy-groups:\n" + string.Join("\n", urls.Select((url, i) => $"  - name: g{i}\n    icon: {url}")));
-        return file;
-    }
     private ProxyGroupIconCache Cache(HttpClient client, TimeSpan? download = null, TimeSpan? overall = null) =>
         new(Path.Combine(_root, "icons"), client, download, overall);
 
     [Fact]
-    public async Task RepeatedRefreshDoesNotDownloadAgainAndChangingConfigsCannotGrowAliasMap()
+    public async Task RepeatedRefreshDoesNotDownloadAgainAndChangingInputsCannotGrowAliasMap()
     {
         var handler = new Handler(_ => new ByteArrayContent([1, 2, 3]));
         using var client = new HttpClient(handler);
         var cache = Cache(client);
-        var config = Config("current", "https://Example.test/icon.png");
-        for (var i = 0; i < 100; i++) await cache.RefreshAsync(config);
+        string[] urls = ["https://Example.test/icon.png"];
+        for (var i = 0; i < 100; i++) await cache.RefreshAsync(urls);
         Assert.Equal(1, handler.Calls);
         for (var i = 0; i < 300; i++)
         {
-            config = Config("current", $"https://example.test/{i}.png");
-            await cache.RefreshAsync(config);
+            urls = [$"https://example.test/{i}.png"];
+            await cache.RefreshAsync(urls);
             Assert.Single(cache.GetDashboardMap(new Uri("http://127.0.0.1/")));
         }
         Assert.True(Directory.GetFiles(cache.CacheDirectory).Length <= ProxyGroupIconCache.MaxCacheFiles);
+        Assert.Empty(Directory.GetFiles(cache.CacheDirectory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task FinalInputIsCappedAfterFilteringAndCanonicalDeduplication()
+    {
+        var handler = new Handler(_ => new ByteArrayContent([1]));
+        using var client = new HttpClient(handler);
+        var cache = Cache(client);
+        var urls = Enumerable.Range(0, ProxyGroupIconCache.MaxCacheFiles + 10)
+            .SelectMany(index => new[] { "file:///tmp/icon.png", $"https://Example.test/{index}.png", $"https://example.test/a/../{index}.png" });
+
+        await cache.RefreshAsync(urls);
+
+        Assert.Equal(ProxyGroupIconCache.MaxCacheFiles, handler.Calls);
+        Assert.Equal(ProxyGroupIconCache.MaxCacheFiles, cache.GetDashboardMap(new Uri("http://127.0.0.1/")).Count);
+        Assert.Equal(ProxyGroupIconCache.MaxCacheFiles, Directory.GetFiles(cache.CacheDirectory).Length);
+    }
+
+    [Fact]
+    public async Task ConcurrentRefreshesOfTheSameUrlDownloadOnlyOnce()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var body = new Body(1, release: release.Task);
+        var handler = new Handler(_ => new StreamContent(body));
+        using var client = new HttpClient(handler);
+        var cache = Cache(client);
+        string[] urls = ["https://example.test/shared.png"];
+        var first = cache.RefreshAsync(urls);
+        Task second = Task.CompletedTask;
+        try
+        {
+            await body.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            second = cache.RefreshAsync(urls);
+            Assert.False(second.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        Assert.Equal(1, handler.Calls);
+        Assert.Single(cache.GetDashboardMap(new Uri("http://127.0.0.1/")));
         Assert.Empty(Directory.GetFiles(cache.CacheDirectory, "*.tmp"));
     }
 
@@ -70,7 +108,7 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
         using var body = new Body(3 * 1024 * 1024);
         using var client = new HttpClient(new Handler(_ => new StreamContent(body)));
         var cache = Cache(client);
-        await cache.RefreshAsync(Config("large", "https://example.test/large.png"));
+        await cache.RefreshAsync(["https://example.test/large.png"]);
         Assert.True(body.Disposed);
         Assert.Empty(cache.GetDashboardMap(new Uri("http://127.0.0.1/")));
         Assert.Empty(Directory.GetFiles(cache.CacheDirectory));
@@ -82,32 +120,43 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
     public async Task SlowBodyObeysPerFileAndOverallDeadlinesAndDeletesItsTemporaryFile(bool overall)
     {
         using var body = new Body(100, 30000);
-        using var client = new HttpClient(new Handler(_ => new StreamContent(body)));
+        var handler = new Handler(_ => new StreamContent(body));
+        using var client = new HttpClient(handler);
         var cache = Cache(client,
             overall ? TimeSpan.FromSeconds(10) : TimeSpan.FromMilliseconds(100),
             overall ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(10));
-        var refresh = cache.RefreshAsync(Config("slow", "https://example.test/slow.png"));
+        string[] urls = ["https://example.test/slow.png"];
+        var refresh = cache.RefreshAsync(urls);
         if (overall) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => refresh);
         else await refresh;
+        await cache.RefreshAsync(urls);
+        Assert.Equal(1, handler.Calls);
         Assert.True(body.Disposed);
         Assert.Empty(Directory.GetFiles(cache.CacheDirectory));
     }
 
-    [Fact]
-    public async Task CancelledOldRefreshReleasesGateAndCannotPublishOverNewConfiguration()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelledOldRefreshReleasesGateWithoutPublishingOrBackingOff(bool retryCancelledUrl)
     {
         using var body = new Body(100, 30000);
-        using var client = new HttpClient(new Handler(request => request.RequestUri!.AbsolutePath.Contains("slow") ? new StreamContent(body) : new ByteArrayContent([1])));
+        var requests = 0;
+        using var client = new HttpClient(new Handler(_ => ++requests == 1 ? new StreamContent(body) : new ByteArrayContent([1])));
         var cache = Cache(client);
+        var publications = 0;
+        cache.CacheChanged += (_, _) => publications++;
         using var cancellation = new CancellationTokenSource();
-        var first = cache.RefreshAsync(Config("slow", "https://example.test/slow.png"), cancellation.Token);
+        var first = cache.RefreshAsync(["https://example.test/slow.png"], cancellation.Token);
         await body.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var second = cache.RefreshAsync(Config("new", "https://example.test/new.png"));
+        var nextUrl = retryCancelledUrl ? "https://example.test/slow.png" : "https://example.test/new.png";
+        var second = cache.RefreshAsync([nextUrl]);
         Assert.False(second.IsCompleted);
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
         await second.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal("https://example.test/new.png", Assert.Single(cache.GetDashboardMap(new Uri("http://127.0.0.1/"))).Key);
+        Assert.Equal(nextUrl, Assert.Single(cache.GetDashboardMap(new Uri("http://127.0.0.1/"))).Key);
+        Assert.Equal(1, publications);
         Assert.Empty(Directory.GetFiles(cache.CacheDirectory, "*.tmp"));
     }
 
@@ -118,7 +167,7 @@ public sealed class IconCachePressureTests : TemporaryDirectoryTest
     {
         using var client = new HttpClient(new Handler(_ => new ByteArrayContent([1, 2, 3])));
         var cache = Cache(client);
-        await cache.RefreshAsync(Config("active", "https://example.test/active.png"));
+        await cache.RefreshAsync(["https://example.test/active.png"]);
         var dashboard = new Uri("http://127.0.0.1/");
         var published = Assert.Single(cache.GetDashboardMap(dashboard));
         var activeFile = Assert.Single(Directory.GetFiles(cache.CacheDirectory));

@@ -40,11 +40,12 @@ Make sure the following are installed before running Dashboard:
 
 - **Dual core profiles**: store two independent core configurations and start, stop, restart, or switch the active core at any time.
 - **TUN controls**: the TUN mode and allow-LAN switches stay in the main backend section; the TUN stack selector is located under the expanded **Settings → Connection settings → TUN settings** when supported (switching stacks may briefly interrupt connections).
-- **System tray & lightweight mode**: supports tray residency, autostart, and close-to-tray. With lightweight mode enabled, hiding the window for one minute releases the WebView interface and restores it when reopened.
+- **System tray & lightweight mode**: supports tray residency, autostart, and close-to-tray. The tray icon follows Windows light or dark mode and updates when the mode changes while running. With lightweight mode enabled, hiding the window for one minute releases the WebView interface and restores it when reopened.
 
 ### Proxies, Connections & Preferences
 
 - **Daily proxy workflow**: switch proxy groups and nodes, run latency tests, and inspect live connections, traffic, rules, and logs. All settings are consolidated on the Core page.
+- **Group icon caching**: automatically cache remote proxy group icons, including newly added groups and custom icons set in the interface. Reopening the interface prefers the local cache.
 - **Connection views & history**: switch between **Active** and **All** connections, and click **All** again to filter for **Closed only**. Connection history is a capacity-bounded aggregate trimmed and saved periodically even in the background; lower-traffic entries may be evicted and accumulate again if they reappear. Aggregation mode and table sorting are saved and exported with interface preferences (statistical data itself is not exported).
 - **Customization & source labels**: customize themes, background images, and source IP labels, and import/export interface preferences. Optional source-IP hostname resolution is available (disabled by default; manual labels take priority and unsupported lookups keep the original IP).
 
@@ -76,7 +77,8 @@ Use the left-hand tabs to switch between **Latency** and **Routing**, while the 
 
 - **Dashboard**: check for updates in the About section to open the release page and replace files manually.
 - **Original mihomo**: recognized original builds upgrade through the managed core API and report completion only after the restarted process and API are confirmed ready.
-- **mihomo forks & sing-box**: recognized forks (such as TanakaLun and Smart) and sing-box provide a **Releases** action (reF1nd sing-box points to its dedicated releases repository); download the archive, stop the core, and replace the executable manually. Unknown core sources never fall back to an upstream update URL.
+- **Core project page**: click the core version at the top to open the recognized core’s GitHub project page. For example, TanakaLun opens `TanakaLun/mihomo`, and reF1nd sing-box opens `reF1nd/sing-box`. Unknown sources do not fall back to a fixed repository.
+- **Manual core updates**: for recognized forks (such as TanakaLun and Smart) and sing-box, **Upgrade core** opens the corresponding releases page, with manual update instructions on hover. The same button opens the releases page when an official mihomo core cannot currently upgrade directly. reF1nd sing-box points to its dedicated releases repository. Download the archive, stop the core, and replace the executable manually. The button is disabled for unknown sources and never falls back to an upstream update URL.
 
 ---
 
@@ -85,7 +87,7 @@ Use the left-hand tabs to switch between **Latency** and **Routing**, while the 
 - **sing-box scope**: managed through the Clash API with a read-only desktop TUN stack; native API, Tools, and Terminal are not supported. Automatic TUN recovery after system sleep/wake has not been verified.
 - **Secret protection**: Secrets are encrypted for the current Windows user. If decryption fails after switching Windows accounts, re-enter and save the Secret on the Core page.
 - **Port & autostart**: the local UI uses port `33291` and cannot start if that port is occupied. Autostart scheduled tasks with conflicting ownership are not overwritten; check existing tasks in Windows Task Scheduler.
-- **Logs**: runtime logs are stored under `resources/logs`. Launch with `Dashboard.exe --diagnostic-log` for verbose diagnostic logging.
+- **Logs**: runtime logs are stored under `resources/logs`. After lightweight mode releases the UI, tray restore timings are logged to `performance.log` by default, with the same `trayRestore id` for each stage of a restore. `elapsedMs` starts at the restore request, `durationMs` measures a stage or event, `documentMs` is time since frontend navigation, and `sincePreviousMs` is the interval between frontend markers. `frontendReady` means the initial route is ready and the browser has had a paint opportunity; it does not include core API readiness or physical screen presentation. Launch with `Dashboard.exe --diagnostic-log` for other verbose diagnostic logging.
 
 ---
 

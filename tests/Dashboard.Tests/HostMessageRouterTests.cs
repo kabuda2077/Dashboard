@@ -14,6 +14,7 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
         WindowCommand = (type, _) => calls.Add(type),
         CheckAppUpdateAsync = () => { calls.Add("check"); return Task.CompletedTask; },
         OpenAppRelease = () => calls.Add("release"), OpenCoreRepository = () => calls.Add("repository"),
+        OpenCoreRelease = () => calls.Add("core-release"),
         RequestElevation = () => calls.Add("elevation")
     });
 
@@ -31,12 +32,14 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
         var first = Save("first");
         var second = Save("second");
         var replies = new List<object>();
+        var stages = new List<(string Name, double DurationMs)>();
         var bootstrap = router.RouteAsync("""
             {"protocolVersion":2,"type":"bootstrap","requestId":"reload"}
-            """, replies.Add);
+            """, replies.Add, (name, durationMs) => stages.Add((name, durationMs)));
         var later = Save("later");
         Assert.False(bootstrap.IsCompleted);
         Assert.Empty(replies);
+        Assert.Equal("bootstrap:received", Assert.Single(stages).Name);
         writes[1].SetResult(CommandResult.Completed());
         await second;
         Assert.False(bootstrap.IsCompleted);
@@ -44,6 +47,10 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
         await first;
         await bootstrap.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsType<BootstrapReply>(Assert.Single(replies));
+        Assert.Equal(new[] { "bootstrap:received", "bootstrap:preferenceBarrier", "bootstrap:snapshot", "bootstrap:replied" },
+            stages.Select(stage => stage.Name));
+        Assert.All(stages, stage => Assert.True(double.IsFinite(stage.DurationMs) && stage.DurationMs >= 0));
+        Assert.True(stages[^1].DurationMs >= stages[1].DurationMs);
         Assert.False(later.IsCompleted);
         writes[2].SetResult(CommandResult.Completed());
         await later;
@@ -104,6 +111,51 @@ public sealed class HostMessageRouterTests : TemporaryDirectoryTest
         Assert.True(error is ArgumentException or JsonException, error?.ToString());
         Assert.Empty(calls);
         Assert.Empty(replies);
+    }
+
+    [Theory]
+    [InlineData("{\"coreType\":\"mihomo\",\"expectedRuntimeEpoch\":1,\"iconUrls\":[\"file:///secret.png\"]}")]
+    [InlineData("{\"coreType\":\"mihomo\",\"expectedRuntimeEpoch\":1,\"iconUrls\":[null]}")]
+    [InlineData("{\"coreType\":\"mihomo\",\"iconUrls\":[]}")]
+    [InlineData("{\"expectedRuntimeEpoch\":1,\"iconUrls\":[]}")]
+    [InlineData("{\"coreType\":\"mihomo\",\"expectedRuntimeEpoch\":1,\"iconUrls\":[],\"preferences\":{}}")]
+    public async Task InvalidIconCachePayloadHasNoSideEffects(string fields)
+    {
+        var calls = new List<string>();
+        var replies = new List<object>();
+        var json = "{\"protocolVersion\":2,\"type\":\"cacheProxyIcons\",\"requestId\":\"icons\"," + fields[1..];
+        await Assert.ThrowsAsync<ArgumentException>(() => Router(calls).RouteAsync(json, replies.Add));
+        Assert.Empty(calls);
+        Assert.Empty(replies);
+    }
+
+    [Fact]
+    public async Task IconCacheAcceptsBoundedWebUrlsForOneCoreSession()
+    {
+        var calls = new List<string>();
+        var router = Router(calls);
+        var command = new HostRequest { ProtocolVersion = 2, Type = "cacheProxyIcons", RequestId = "icons",
+            CoreType = CoreKind.Mihomo, ExpectedRuntimeEpoch = 1, IconUrls = ["https://fixture.example/google.png"] };
+        await router.RouteAsync(HostBridgeJson.Serialize(command), _ => { });
+        Assert.Equal(["cacheProxyIcons"], calls);
+        Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(HostBridgeJson.Serialize(command with
+        { IconUrls = Enumerable.Repeat("https://fixture.example/icon.png", ProxyGroupIconCache.MaxCacheFiles + 1).ToArray() })));
+        Assert.Throws<ArgumentException>(() => HostMessageRouter.Parse(HostBridgeJson.Serialize(command with { Type = "requestState" })));
+    }
+
+    [Theory]
+    [InlineData("openCoreRepository", "repository")]
+    [InlineData("openCoreRelease", "core-release")]
+    public async Task CoreProjectAndReleaseLinksUseSeparateHandlers(string command, string expected)
+    {
+        var calls = new List<string>();
+        var replies = new List<object>();
+        await Router(calls).RouteAsync(JsonSerializer.Serialize(new
+        {
+            protocolVersion = 2, type = command, requestId = "core-link"
+        }), replies.Add);
+        Assert.Equal([expected], calls);
+        Assert.Equal("completed", Assert.IsType<HostReply>(Assert.Single(replies)).Result.Status);
     }
 
     [Fact]

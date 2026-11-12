@@ -119,7 +119,7 @@ $env:DASHBOARD_TEST_CORES_DIR = (Resolve-Path .tmp/tests/fixtures/validation-cor
 pwsh -NoProfile -File .\tools\create-release.ps1 -IncludeWebViewIntegration -IncludeRealCoreIntegration
 ```
 
-`check.ps1` 同样支持 WebView/核心集成开关；性能检查按需加 `-IncludePerformanceIntegration`。Release 对 HEAD 和 tracked/untracked 输入做快照，验证与归档前重新比对，变化即停止并保留旧包。派生 app/tray.ico 不参与源快照，ZIP 仍逐项核对文件与哈希；Version、InformationalVersion 和正式 tag 一致。`-OutputZip` 只接受 ZIP 文件名。
+`check.ps1` 同样支持 WebView/核心集成开关；性能检查按需加 `-IncludePerformanceIntegration`。Release 对 HEAD 和 tracked/untracked 输入做快照，验证与归档前重新比对，变化即停止并保留旧包。派生 app.ico、tray.ico 和 tray-light.ico 不参与源快照，ZIP 仍逐项核对文件与哈希；Version、InformationalVersion 和正式 tag 一致。`-OutputZip` 只接受 ZIP 文件名。
 
 代理 Chrome 脚本在 `dashboard-src/` 下按需运行，先构建当前前端；需要本机 Chrome/Chromium，可用 `CHROME_BIN` 指定。默认无界面，使用隔离模拟后端、构建快照和浏览器数据，性能仅作同机同负载比较：
 

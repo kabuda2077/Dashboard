@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Dashboard;
@@ -12,12 +13,13 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
     private readonly object _preferenceSavesLock = new();
     private readonly HashSet<Task> _pendingPreferenceSaves = [];
 
-    public async Task RouteAsync(string json, Action<object> reply)
+    public async Task RouteAsync(string json, Action<object> reply, Action<string, double>? performance = null)
     {
         var request = Parse(json);
         if (request.Type == "performance")
         {
             HostOperationLogger.Diagnostic("performance", $"frontend:{request.Name} durationMs={request.DurationMs:0}");
+            performance?.Invoke($"frontend:{request.Name}", request.DurationMs!.Value);
             return;
         }
         if (WindowCommands.Contains(request.Type))
@@ -33,12 +35,19 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
         }
         if (request.Type == "bootstrap")
         {
+            var startedAt = Stopwatch.GetTimestamp();
+            performance?.Invoke("bootstrap:received", 0);
             Task priorSaves;
             lock (_preferenceSavesLock) priorSaves = Task.WhenAll(_pendingPreferenceSaves);
             // Snapshot accepted writes only. Later saves must not prolong this bootstrap,
             // and failed writes still release the barrier with the last committed snapshot.
             await priorSaves;
-            reply(new BootstrapReply(id, handlers.BuildState(), handlers.Preferences()));
+            performance?.Invoke("bootstrap:preferenceBarrier", Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            var snapshotStartedAt = Stopwatch.GetTimestamp();
+            var snapshot = new BootstrapReply(id, handlers.BuildState(), handlers.Preferences());
+            performance?.Invoke("bootstrap:snapshot", Stopwatch.GetElapsedTime(snapshotStartedAt).TotalMilliseconds);
+            reply(snapshot);
+            performance?.Invoke("bootstrap:replied", Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
             return;
         }
         var preferenceSave = request.Type == "saveDashboardPreferences"
@@ -64,6 +73,7 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
                     await handlers.CheckAppUpdateAsync(); result = CommandResult.Completed(); break;
                 case "openAppRelease": handlers.OpenAppRelease(); result = CommandResult.Completed(); break;
                 case "openCoreRepository": handlers.OpenCoreRepository(); result = CommandResult.Completed(); break;
+                case "openCoreRelease": handlers.OpenCoreRelease(); result = CommandResult.Completed(); break;
                 default: result = await handlers.ExecuteAsync(request); break;
             }
         }
@@ -109,6 +119,19 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
             return request;
         }
         if (string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 128) throw new ArgumentException("A requestId is required.");
+        if (request.Type == "cacheProxyIcons")
+        {
+            if (request.CoreType is null || request.ExpectedRuntimeEpoch is null || request.IconUrls is null
+                || request.IconUrls.Count > ProxyGroupIconCache.MaxCacheFiles
+                || request.IconUrls.Any(url => url is null || url.Length > 8192
+                    || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+                || document.RootElement.EnumerateObject().Any(p => p.Name is not
+                    ("protocolVersion" or "type" or "requestId" or "coreType" or "expectedRuntimeEpoch" or "iconUrls")))
+                throw new ArgumentException("Icon caching requires its core session and HTTP(S) URLs only.");
+            return request;
+        }
+        if (document.RootElement.TryGetProperty("iconUrls", out _))
+            throw new ArgumentException("Unexpected icon cache payload.");
         if (request.Type is "testRouting" or "getNetworkDiagnostics" or "setNetworkDiagnostics")
         {
             if (request.CoreType is null || request.ExpectedRuntimeEpoch is null
@@ -152,7 +175,7 @@ internal sealed class HostMessageRouter(HostMessageHandlers handlers)
                 if (request.Preferences is null || request.Preferences.Any(item => !item.Key.StartsWith("config/", StringComparison.Ordinal) || item.Value is null))
                     throw new ArgumentException("Invalid preferences.");
                 break;
-            case "bootstrap": case "requestState": case "refreshCoreMetadata": case "checkAppUpdate": case "openAppRelease": case "openCoreRepository": break;
+            case "bootstrap": case "requestState": case "refreshCoreMetadata": case "checkAppUpdate": case "openAppRelease": case "openCoreRepository": case "openCoreRelease": break;
             default: throw new ArgumentException("Unknown host command.");
         }
         return request;
@@ -185,6 +208,7 @@ internal sealed class HostMessageHandlers
     public required Func<Task> CheckAppUpdateAsync { get; init; }
     public required Action OpenAppRelease { get; init; }
     public required Action OpenCoreRepository { get; init; }
+    public required Action OpenCoreRelease { get; init; }
     public Action<string, bool> PreferencesFlushed { get; init; } = (_, _) => { };
     public Action RequestElevation { get; init; } = () => { };
 }

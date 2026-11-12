@@ -25,6 +25,7 @@ try {
     Put 'dashboard-src/public/favicon.ico' 'tracked icon source'
     Put 'resources/app.ico' 'old generated app icon'
     Put 'resources/tray.ico' 'old generated tray icon'
+    Put 'resources/tray-light.ico' 'old generated light-taskbar icon'
     # Keep the production entry's normal tools/internal relative import.
     $null = New-Item -ItemType Directory -Force (Join-Path $fixture 'tools/internal')
     Copy-Item (Join-Path $repository 'tools/create-release.ps1') (Join-Path $fixture 'tools/create-release.ps1')
@@ -35,6 +36,7 @@ $script:Stage = [IO.File]::ReadAllText((Join-Path $script:RepositoryRoot '.tmp/s
 function Invoke-Verification {
     [IO.File]::WriteAllText((Join-Path $script:RepositoryRoot 'resources/app.ico'), 'rebuilt app icon')
     [IO.File]::WriteAllText((Join-Path $script:RepositoryRoot 'resources/tray.ico'), 'rebuilt tray icon')
+    [IO.File]::WriteAllText((Join-Path $script:RepositoryRoot 'resources/tray-light.ico'), 'rebuilt light-taskbar icon')
     if ($script:Stage -eq 'verification') {
         [IO.File]::WriteAllText((Join-Path $script:RepositoryRoot 'dashboard-src/src/Page.vue'), 'changed after verification')
     }
@@ -80,7 +82,7 @@ function Assert-ReleaseArchive {
     Assert-True (($manifest -join "`n") -ceq ($starting.manifest -join "`n")) 'Release did not save the starting input manifest.'
     Assert-True ($record.sourceHead -ceq $starting.head -and $record.uncommittedChanges) 'Starting revision or dirty source was lost.'
     Assert-True (@($manifest | Where-Object { $_ -like 'dashboard-src/src/Untracked.vue*' }).Count -eq 1) 'Existing untracked input was omitted.'
-    Assert-True (@($manifest | Where-Object { $_ -match '^resources/(app|tray)\.ico\t' }).Count -eq 0) 'Derived icons were treated as source inputs.'
+    Assert-True (@($manifest | Where-Object { $_ -match '^resources/(app|tray|tray-light)\.ico\t' }).Count -eq 0) 'Derived icons were treated as source inputs.'
     Assert-ReleaseSourceSnapshot -Root $fixture -Snapshot $starting
     $zipHash = (Get-FileHash $zip).Hash
     $recordHash = (Get-FileHash (Join-Path $evidence 'verification.json')).Hash

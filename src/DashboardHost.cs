@@ -38,9 +38,9 @@ internal sealed class DashboardHost : IDisposable
     private CoreKind _lastActiveCoreKind;
     private Task<bool>? _shutdownTask;
     private bool _disposed;
-    private string _iconConfigKey = "";
+    private string[]? _iconUrls;
 
-    private sealed record Metadata(string Key, string RawVersion, string DisplayVersion, bool? Tun, bool NeedsRetry);
+    private sealed record Metadata(string Key, string ConfigKey, string RawVersion, string DisplayVersion, bool? Tun, bool NeedsRetry);
 
     public DashboardHost(string? dataDirectory = null, string? dashboardDirectory = null, bool ephemeralPort = false,
         Func<bool>? isAdministrator = null, int testPort = 0,
@@ -66,7 +66,6 @@ internal sealed class DashboardHost : IDisposable
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _ = RefreshMetadataAsync();
-        RefreshIconCache();
     }
 
     public AppSettings Settings => _settings.Current;
@@ -102,7 +101,8 @@ internal sealed class DashboardHost : IDisposable
         var connection = _lifecycle.Connection;
         Metadata? metadata;
         lock (_metadataSync) _metadata.TryGetValue(kind, out metadata);
-        if (metadata?.Key != MetadataKey(EffectiveProfile(kind))) metadata = null;
+        var profile = EffectiveProfile(kind);
+        if (metadata?.Key != MetadataKey(profile)) metadata = null;
         var source = CoreUpdateSource.Resolve(metadata?.RawVersion ?? "", kind);
         var apiVersion = _lifecycle.ApiVersion;
         return new()
@@ -127,7 +127,8 @@ internal sealed class DashboardHost : IDisposable
                 && !connection.SecretDecryptionFailed && _core.IsRunning
                 && _lifecycle.ApiStatus == "ready" && _lifecycle.ApiIsManaged,
             IsWindowMaximized = isWindowMaximized,
-            ReadOnlyTunEnabled = kind == CoreKind.SingBox ? metadata?.Tun : null
+            ReadOnlyTunEnabled = kind == CoreKind.SingBox && metadata?.ConfigKey == FileMetadataKey(profile.ConfigPath)
+                ? metadata?.Tun : null
         };
     }
 
@@ -197,8 +198,9 @@ internal sealed class DashboardHost : IDisposable
                             : await SaveOptionAsync(request.Option!, request.Value!.Value, token).ConfigureAwait(false); break;
                     case "refreshCoreMetadata":
                         await RefreshMetadataAsync(force: true).ConfigureAwait(false);
-                        RefreshIconCache(force: true);
                         response = _lifecycle.RefreshConnection(); break;
+                    case "cacheProxyIcons":
+                        response = CacheProxyIcons(request); break;
                     default: response = CommandResult.Rejected("unknownCommand"); break;
                 }
             }
@@ -365,14 +367,12 @@ internal sealed class DashboardHost : IDisposable
             : current;
     }
 
-    private static string MetadataKey(CoreProfile profile)
+    private static string MetadataKey(CoreProfile profile) => FileMetadataKey(profile.ExePath);
+
+    private static string FileMetadataKey(string path)
     {
-        static string FileKey(string path)
-        {
-            var file = new FileInfo(path);
-            return file.Exists ? $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}" : path + "|missing";
-        }
-        return FileKey(profile.ExePath) + "|" + FileKey(profile.ConfigPath);
+        var file = new FileInfo(path);
+        return file.Exists ? $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}" : path + "|missing";
     }
 
     public Task RefreshMetadataAsync(bool force = false)
@@ -397,17 +397,26 @@ internal sealed class DashboardHost : IDisposable
                     {
                         var profile = EffectiveProfile(kind);
                         var key = MetadataKey(profile);
-                        lock (_metadataSync) { if (!forced && _metadata.TryGetValue(kind, out var cached) && cached.Key == key && !cached.NeedsRetry) continue; }
-                        string raw = "";
+                        var configKey = FileMetadataKey(profile.ConfigPath);
+                        Metadata? cached;
+                        lock (_metadataSync) _metadata.TryGetValue(kind, out cached);
+                        var reuseVersion = !forced && cached?.Key == key && !cached.NeedsRetry;
+                        if (reuseVersion && cached!.ConfigKey == configKey) continue;
+                        var raw = reuseVersion ? cached!.RawVersion : "";
                         var failed = false;
                         var exists = File.Exists(profile.ExePath);
-                        try { if (exists) raw = await _readCoreVersion(profile.ExePath, kind, token).ConfigureAwait(false); }
-                        catch (OperationCanceledException) { return; }
-                        catch (Exception error) { failed = true; HostOperationLogger.Error("version", "Core metadata query failed.", error); }
+                        if (!reuseVersion)
+                        {
+                            try { if (exists) raw = await _readCoreVersion(profile.ExePath, kind, token).ConfigureAwait(false); }
+                            catch (OperationCanceledException) { return; }
+                            catch (Exception error) { failed = true; HostOperationLogger.Error("version", "Core metadata query failed.", error); }
+                        }
                         var version = CoreUpdateChecker.DisplayVersion(raw, kind);
                         var tun = kind == CoreKind.SingBox ? ReadTun(profile.ConfigPath) : null;
-                        if (MetadataKey(EffectiveProfile(kind)) != key) { lock (_metadataSync) _metadataAgain = true; continue; }
-                        lock (_metadataSync) _metadata[kind] = new(key, raw, version, tun, failed || (exists && version.Length == 0));
+                        var currentProfile = EffectiveProfile(kind);
+                        if (MetadataKey(currentProfile) != key || FileMetadataKey(currentProfile.ConfigPath) != configKey)
+                        { lock (_metadataSync) _metadataAgain = true; continue; }
+                        lock (_metadataSync) _metadata[kind] = new(key, configKey, raw, version, tun, failed || (exists && version.Length == 0));
                     }
                     PublishState();
                 }
@@ -505,6 +514,11 @@ internal sealed class DashboardHost : IDisposable
     public void OpenAppReleasePage() => OpenWeb(AppUpdateChecker.ReleasesPageUrl);
     public void OpenCoreRepositoryPage()
     {
+        var url = CoreUpdateSource.RepositoryUrlFor(BuildRuntimeState(false).CoreReleaseUrl);
+        if (url.Length > 0) OpenWeb(url);
+    }
+    public void OpenCoreReleasePage()
+    {
         var url = BuildRuntimeState(false).CoreReleaseUrl;
         if (url.Length > 0) OpenWeb(url);
     }
@@ -514,69 +528,72 @@ internal sealed class DashboardHost : IDisposable
         catch (Exception error) { MessageRequested?.Invoke(this, new("无法打开链接", error.Message, MessageBoxIcon.Warning)); }
     }
 
-    public void RefreshIconCache(bool force = false)
+    private CommandResult CacheProxyIcons(HostRequest command)
     {
-        if (_tasks.IsClosing) return;
-        if (Settings.ActiveCoreKind != CoreKind.Mihomo)
+        var urls = command.IconUrls!.Select(url => new Uri(url).AbsoluteUri)
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        CancellationTokenSource request;
+        long generation;
+        bool scanExisting;
+        lock (_metadataSync)
         {
-            lock (_metadataSync)
-            {
-                Interlocked.Increment(ref _iconGeneration);
-                _iconConfigKey = "";
-                _iconCancellation?.Cancel();
-                _iconCancellation = null;
-            }
-            _icons.ClearPublishedMap();
-            return;
+            if (command.CoreType != _lifecycle.Kind || command.ExpectedRuntimeEpoch != _lifecycle.Epoch)
+                return CommandResult.Rejected("staleSession");
+            scanExisting = _iconUrls is null || !_iconUrls.SequenceEqual(urls);
+            if (!scanExisting && _iconCancellation is not null) return CommandResult.Completed("iconsQueued");
+            _iconUrls = urls;
+            generation = Interlocked.Increment(ref _iconGeneration);
+            _iconCancellation?.Cancel();
+            request = CancellationTokenSource.CreateLinkedTokenSource(_tasks.Token);
+            _iconCancellation = request;
         }
-        if (force) lock (_metadataSync) _iconConfigKey = "";
-        var path = Settings.Profile(CoreKind.Mihomo).ConfigPath;
-        _ = _tasks.Run(async lifetime =>
+        _ = _tasks.Run(async _ =>
         {
-            using var request = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-            await Task.Run(async () =>
+            using (request)
             {
-                string key;
-                try { var file = new FileInfo(path); key = path + "|" + (file.Exists ? file.LastWriteTimeUtc.Ticks : 0); }
-                catch { return; }
-                long generation;
-                lock (_metadataSync)
-                {
-                    if (Settings.ActiveCoreKind != CoreKind.Mihomo || Settings.Profiles.Mihomo.ConfigPath != path || _iconConfigKey == key) return;
-                    _iconConfigKey = key;
-                    generation = Interlocked.Increment(ref _iconGeneration);
-                    _iconCancellation?.Cancel();
-                    _iconCancellation = request;
-                }
-                bool Current() => !_tasks.IsClosing && !request.IsCancellationRequested
-                    && Settings.ActiveCoreKind == CoreKind.Mihomo && generation == Interlocked.Read(ref _iconGeneration);
+                bool Current() => !IsClosing && !request.IsCancellationRequested
+                    && command.CoreType == _lifecycle.Kind && command.ExpectedRuntimeEpoch == _lifecycle.Epoch
+                    && generation == Interlocked.Read(ref _iconGeneration);
                 try
                 {
-                    await _icons.LoadExistingAsync(path, request.Token, Current).ConfigureAwait(false);
-                    await _icons.RefreshAsync(path, request.Token, Current).ConfigureAwait(false);
+                    if (scanExisting) await _icons.LoadExistingAsync(urls, request.Token, Current).ConfigureAwait(false);
+                    await _icons.RefreshAsync(urls, request.Token, Current).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
-                    lock (_metadataSync) { if (ReferenceEquals(_iconCancellation, request)) _iconConfigKey = ""; }
+                    lock (_metadataSync) { if (ReferenceEquals(_iconCancellation, request)) _iconUrls = null; }
                 }
                 catch (Exception error)
                 {
-                    lock (_metadataSync) { if (ReferenceEquals(_iconCancellation, request)) _iconConfigKey = ""; }
+                    lock (_metadataSync) { if (ReferenceEquals(_iconCancellation, request)) _iconUrls = null; }
                     HostOperationLogger.Error("icon-cache", "Icon refresh failed.", error);
                 }
                 finally { lock (_metadataSync) { if (ReferenceEquals(_iconCancellation, request)) _iconCancellation = null; } }
-            }, lifetime).ConfigureAwait(false);
+            }
         });
+        return CommandResult.Completed("iconsQueued");
+    }
+
+    private void ResetIconCache()
+    {
+        lock (_metadataSync)
+        {
+            Interlocked.Increment(ref _iconGeneration);
+            _iconUrls = null;
+            _iconCancellation?.Cancel();
+            _iconCancellation = null;
+        }
+        _icons.ClearPublishedMap();
     }
 
     private void OnSettingsChanged(object? sender, EventArgs args)
     {
         var selectionChanged = _lastActiveCoreKind != Settings.ActiveCoreKind;
-        if (selectionChanged) _lifecycle.ClearNetworkDiagnostics();
+        if (selectionChanged) { _lifecycle.ClearNetworkDiagnostics(); ResetIconCache(); }
         if (!ReferenceEquals(_lastProfiles, Settings.Profiles) || selectionChanged)
         {
             _lastProfiles = Settings.Profiles; _lastActiveCoreKind = Settings.ActiveCoreKind;
-            _ = RefreshMetadataAsync(); RefreshIconCache(force: selectionChanged); ResetCoreUpdateState();
+            _ = RefreshMetadataAsync(); ResetCoreUpdateState();
         }
         PublishState();
     }
@@ -597,7 +614,7 @@ internal sealed class DashboardHost : IDisposable
     {
         CancelStaleRouting();
         if (_lastRuntimeEpoch != _lifecycle.Epoch)
-        { _lastRuntimeEpoch = _lifecycle.Epoch; ResetCoreUpdateState(); _ = RefreshMetadataAsync(); }
+        { _lastRuntimeEpoch = _lifecycle.Epoch; ResetIconCache(); ResetCoreUpdateState(); _ = RefreshMetadataAsync(); }
         if (_lifecycle.IsUpgradeInProgress) ResetCoreUpdateState();
         if (!_disposed) RuntimeStateChanged?.Invoke(this, EventArgs.Empty);
     }

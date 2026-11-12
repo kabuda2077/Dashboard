@@ -158,24 +158,25 @@
                 </button>
               </template>
               <span
-                v-if="
-                  hostState.coreUpdateMode === 'automatic' && coreHostActions?.canUpgradeCore.value
-                "
+                v-if="coreHostActions"
                 class="indicator w-full"
               >
                 <span
-                  v-if="hostState.coreUpdateAvailable"
+                  v-if="hostState.coreUpdateMode === 'automatic' && hostState.coreUpdateAvailable"
                   class="indicator-item top-1 -right-1 flex"
                 >
                   <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
                   <span class="bg-secondary h-2 w-2 rounded-full"></span>
                 </span>
                 <button
+                  data-testid="core-upgrade"
                   class="btn btn-sm dashboard-action-btn w-full"
                   :disabled="
-                    coreHostActions.isCoreUpgrading.value || !coreHostActions.canUpgradeCore.value
+                    coreHostActions.isCoreUpgrading.value ||
+                    (!canUpgradeCore && !hostState.coreReleaseUrl)
                   "
-                  @click="coreHostActions.upgradeCore"
+                  :title="coreUpgradeHint"
+                  @click="handleCoreUpgrade"
                 >
                   <span
                     v-if="coreHostActions.isCoreUpgrading.value"
@@ -190,22 +191,6 @@
                   }}
                 </button>
               </span>
-              <button
-                v-if="coreHostActions && hostState.coreUpdateMode !== 'automatic'"
-                data-testid="core-release-page"
-                class="btn btn-sm dashboard-action-btn"
-                :disabled="!hostState.coreReleaseUrl"
-                :title="
-                  $t(
-                    hostState.coreReleaseUrl
-                      ? 'desktop.manualCoreUpdateHint'
-                      : 'desktop.unknownCoreSourceHint',
-                  )
-                "
-                @click="postHostMessage({ type: 'openCoreRepository' })"
-              >
-                {{ $t('desktop.coreReleasePage') }}
-              </button>
               <button
                 v-if="hasSmartGroup"
                 class="btn btn-sm dashboard-action-btn"
@@ -266,6 +251,22 @@ import { computed, inject, ref } from 'vue'
 defineProps<{ embedded?: boolean }>()
 
 const coreHostActions = inject(coreHostActionsKey, null)
+const canUpgradeCore = computed(
+  () => hostState.value.coreUpdateMode === 'automatic' && !!coreHostActions?.canUpgradeCore.value,
+)
+const coreUpgradeHint = computed(() =>
+  canUpgradeCore.value || coreHostActions?.isCoreUpgrading.value
+    ? undefined
+    : i18n.global.t(
+        hostState.value.coreReleaseUrl
+          ? 'desktop.manualCoreUpdateHint'
+          : 'desktop.unknownCoreSourceHint',
+      ),
+)
+const handleCoreUpgrade = () => {
+  if (canUpgradeCore.value) void coreHostActions!.upgradeCore()
+  else postHostMessage({ type: 'openCoreRelease' })
+}
 const {
   configStatus,
   configError,

@@ -19,7 +19,15 @@ vi.mock('@/assembly/config', () => ({
   startConfigRuntime: calls.config,
   stopConfigRuntime: calls.configStop,
 }))
-vi.mock('@/assembly/proxies', () => ({ fetchProxies: calls.proxies, resetProxies: calls.reset }))
+vi.mock('@/assembly/proxies', async () => {
+  const { ref } = await import('vue')
+  return {
+    fetchProxies: calls.proxies,
+    resetProxies: calls.reset,
+    proxyGroupList: ref<string[]>([]),
+    proxyMap: ref({}),
+  }
+})
 vi.mock('@/assembly/rules', async () => {
   const { ref } = await import('vue')
   return {
@@ -111,6 +119,55 @@ const mountRuntime = async (ready = true) => {
     start: () => scope.run(() => startBackendRuntime(route)),
   }
 }
+
+it('caches final group icons after additions and custom edits, and stops with the runtime', async () => {
+  const { start, host, scope } = await mountRuntime()
+  const { proxyGroupList, proxyMap } = await import('@/assembly/proxies')
+  const { iconReflectList } = await import('@/store/settings')
+  iconReflectList.value = []
+  start()
+  await settle()
+  const proxy = (name: string, icon: string) => ({ name, type: 'Selector', all: ['DIRECT'], icon })
+  proxyMap.value = {
+    Google: proxy('Google', 'https://icons.example/old.png'),
+    Other: proxy('Other', 'data:image/png;base64,AA=='),
+  }
+  proxyGroupList.value = ['Google', 'Other']
+  await settle()
+  expect(host.post).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      type: 'cacheProxyIcons',
+      coreType: 'mihomo',
+      expectedRuntimeEpoch: 1,
+      iconUrls: ['https://icons.example/old.png'],
+    }),
+  )
+  host.ack()
+  iconReflectList.value = [
+    { name: 'Google', icon: 'https://icons.example/google.png', uuid: 'google' },
+  ]
+  await settle()
+  // The views keep showing the previous map until fetchProxies applies the edit.
+  expect(host.post).toHaveBeenCalledTimes(1)
+  proxyMap.value = { ...proxyMap.value, Google: proxy('Google', iconReflectList.value[0]!.icon) }
+  await settle()
+  expect(host.post).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      iconUrls: ['https://icons.example/google.png'],
+    }),
+  )
+  host.ack()
+  // Re-fetching an unchanged list must still allow a failed download to retry.
+  proxyMap.value = { ...proxyMap.value }
+  await settle()
+  expect(host.post).toHaveBeenCalledTimes(3)
+  host.ack()
+  scope.stop()
+  iconReflectList.value = []
+  proxyGroupList.value = []
+  await settle()
+  expect(host.post).toHaveBeenCalledTimes(3)
+})
 
 it('starts all shared data on Core while hidden without waiting for an animation frame', async () => {
   const { start, route } = await mountRuntime()

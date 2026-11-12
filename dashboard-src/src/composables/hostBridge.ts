@@ -112,6 +112,7 @@ export type HostCommand =
         | 'checkAppUpdate'
         | 'openAppRelease'
         | 'openCoreRepository'
+        | 'openCoreRelease'
     }
   | {
       type:
@@ -136,6 +137,12 @@ export type HostCommand =
       coreType: CoreKind
       expectedRuntimeEpoch: number
       targetIds?: string[]
+    }
+  | {
+      type: 'cacheProxyIcons'
+      coreType: CoreKind
+      expectedRuntimeEpoch: number
+      iconUrls: string[]
     }
   | { type: 'getNetworkDiagnostics'; coreType: CoreKind; expectedRuntimeEpoch: number }
   | {

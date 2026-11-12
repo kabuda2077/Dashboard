@@ -3,6 +3,7 @@ import {
   hasHostBridge,
   isHostSnapshot,
   isPreferencesSnapshot,
+  postHostMessage,
   requestHost,
 } from '@/composables/hostBridge'
 import { validatePreferenceValues } from './preferenceValues'
@@ -14,11 +15,16 @@ const historyPreferenceKeys = [
 
 export let restoredPreferences: Record<string, string> = {}
 
+export const reportStartupMark = (mark: string, name: string) => {
+  const entry = performance.mark(mark)
+  postHostMessage({ type: 'performance', name, durationMs: entry.startTime })
+}
+
 // No imports of application stores are allowed before this handshake completes.
 export const restoreDashboardSettings = async () => {
   let preferences: Record<string, string> = {}
   if (hasHostBridge) {
-    performance.mark('bootstrap-requested')
+    reportStartupMark('bootstrap-requested', 'bootstrapRequested')
     const reply = await requestHost({ type: 'bootstrap' })
     if (
       reply.type !== 'bootstrap' ||
@@ -27,6 +33,7 @@ export const restoreDashboardSettings = async () => {
     ) {
       throw new Error('宿主返回了无效的新版启动快照。')
     }
+    reportStartupMark('bootstrap-received', 'bootstrapReceived')
     preferences = { ...reply.preferences }
   } else {
     for (const key of historyPreferenceKeys) {
@@ -67,15 +74,17 @@ export const restoreDashboardSettings = async () => {
   }
   if (hasHostBridge) {
     restoredPreferences = { ...preferences }
-    performance.mark('preferences-restored')
+    reportStartupMark('preferences-restored', 'preferencesRestored')
   }
 }
 
 export const startDashboard = async (loadApplication: () => Promise<unknown>) => {
   try {
     await restoreDashboardSettings()
+    reportStartupMark('application-import-requested', 'applicationImportRequested')
     await loadApplication()
   } catch {
+    reportStartupMark('startup-failed', 'startupFailed')
     const container = document.getElementById('app')
     if (!container) return
     const message = document.createElement('p')

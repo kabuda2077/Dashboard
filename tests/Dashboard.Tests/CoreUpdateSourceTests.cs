@@ -25,6 +25,7 @@ public sealed class CoreUpdateSourceTests
         var source = CoreUpdateSource.Resolve(output, CoreKind.Mihomo);
         Assert.Equal(mode, source.Mode);
         Assert.Equal(repository.Length == 0 ? "" : "https://github.com/" + repository + "/releases", source.ReleaseUrl);
+        Assert.Equal(repository.Length == 0 ? "" : "https://github.com/" + repository, CoreUpdateSource.RepositoryUrlFor(source.ReleaseUrl));
     }
 
     [Theory]
@@ -41,5 +42,7 @@ public sealed class CoreUpdateSourceTests
         var source = CoreUpdateSource.Resolve(output, CoreKind.SingBox);
         Assert.Equal(mode, source.Mode);
         Assert.Equal(repository.Length == 0 ? "" : "https://github.com/" + repository + "/releases", source.ReleaseUrl);
+        var project = repository == "reF1nd/sing-box-releases" ? "reF1nd/sing-box" : repository;
+        Assert.Equal(project.Length == 0 ? "" : "https://github.com/" + project, CoreUpdateSource.RepositoryUrlFor(source.ReleaseUrl));
     }
 }

@@ -10,7 +10,7 @@ vi.mock('@/components/sidebar/OverviewCarousel.vue', () => ({ default: { render:
 vi.mock('@/components/sidebar/SidebarButtons.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/components/sidebar/VerticalInfos.vue', () => ({ default: { render: () => null } }))
 
-const pages = ['core', 'proxies', 'connections', 'overview', 'logs', 'rules']
+const pages = ['core', 'proxies', 'overview', 'connections', 'logs', 'rules']
 let app: App | undefined
 let root: HTMLElement | undefined
 const matchMediaImplementation = vi.mocked(window.matchMedia).getMockImplementation()!

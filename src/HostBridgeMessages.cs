@@ -32,6 +32,7 @@ internal sealed record HostRequest
     public string? Name { get; init; }
     public double? DurationMs { get; init; }
     public IReadOnlyList<string>? TargetIds { get; init; }
+    public IReadOnlyList<string>? IconUrls { get; init; }
     public NetworkDiagnosticsSnapshot? NetworkDiagnostics { get; init; }
 }
 

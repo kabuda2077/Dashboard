@@ -10,10 +10,14 @@ public sealed class ProxyGroupIconCache
     internal const int MaxCacheFiles = 256;
     internal const long MaxCacheBytes = 64L * 1024 * 1024;
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromDays(30);
+    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(30);
     private static readonly HttpClient SharedClient = CreateHttpClient();
     private readonly HttpClient _client;
     private readonly TimeSpan _downloadTimeout;
     private readonly TimeSpan _refreshTimeout;
+    private readonly TimeProvider _timeProvider;
+    private readonly Dictionary<string, DateTimeOffset> _retryAfter = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _activeUrls = new(StringComparer.Ordinal);
 
     private readonly Dictionary<string, string> _cachedFiles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _fileVersions = new(StringComparer.OrdinalIgnoreCase);
@@ -26,11 +30,12 @@ public sealed class ProxyGroupIconCache
     }
 
     internal ProxyGroupIconCache(string cacheDirectory, HttpClient? client = null,
-        TimeSpan? downloadTimeout = null, TimeSpan? refreshTimeout = null)
+        TimeSpan? downloadTimeout = null, TimeSpan? refreshTimeout = null, TimeProvider? timeProvider = null)
     {
         _client = client ?? SharedClient;
         _downloadTimeout = downloadTimeout ?? TimeSpan.FromSeconds(12);
         _refreshTimeout = refreshTimeout ?? TimeSpan.FromSeconds(90);
+        _timeProvider = timeProvider ?? TimeProvider.System;
         CacheDirectory = cacheDirectory;
         Directory.CreateDirectory(CacheDirectory);
     }
@@ -58,72 +63,89 @@ public sealed class ProxyGroupIconCache
             changed = _cachedFiles.Count != 0;
             _cachedFiles.Clear();
             _fileVersions.Clear();
+            _retryAfter.Clear();
+            _activeUrls.Clear();
         }
         if (changed) CacheChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public Task LoadExistingAsync(
-        string configPath,
+    public async Task LoadExistingAsync(
+        IEnumerable<string> iconUrls,
         CancellationToken cancellationToken = default,
         Func<bool>? isCurrent = null)
     {
-        // Keep disk scanning off the UI thread, but return ownership to the host.
-        return Task.Run(() => ScanExistingCacheFiles(configPath, cancellationToken, isCurrent), cancellationToken);
+        // Serialize scanning/pruning with downloads so a new list cannot remove an active temporary file.
+        await _refreshLock.WaitAsync(cancellationToken);
+        try
+        {
+            await Task.Run(() => ScanExistingCacheFiles(iconUrls, cancellationToken, isCurrent), cancellationToken).ConfigureAwait(false);
+        }
+        finally { _refreshLock.Release(); }
     }
 
     private void ScanExistingCacheFiles(
-        string configPath,
+        IEnumerable<string> iconUrls,
         CancellationToken cancellationToken,
         Func<bool>? isCurrent)
     {
-        var iconUrls = ExtractProxyGroupIconUrls(configPath)
-            .Distinct(StringComparer.Ordinal)
-            .Take(MaxCacheFiles)
-            .ToArray();
-
-        if (isCurrent?.Invoke() == false) return;
+        var urls = NormalizeIconUrls(iconUrls);
         cancellationToken.ThrowIfCancellationRequested();
-        bool changed;
-        lock (_sync)
-        {
-            if (isCurrent?.Invoke() == false) return;
-            changed = _cachedFiles.Count > 0;
-            _cachedFiles.Clear();
-        }
-        foreach (var iconUrl in iconUrls)
+        if (isCurrent?.Invoke() == false) return;
+        PublishIfChanged(SetActiveUrls(urls, isCurrent), cancellationToken, isCurrent);
+        foreach (var iconUrl in urls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri)
-                || uri.Scheme is not ("http" or "https"))
-            {
-                continue;
-            }
-
-            var fileName = GetCacheFileName(uri);
-            if (!File.Exists(Path.Combine(CacheDirectory, fileName)))
-            {
-                continue;
-            }
-
             if (isCurrent?.Invoke() == false) return;
-            changed |= TryRecordCacheFile(iconUrl, fileName, isCurrent);
+            RecordExistingFile(iconUrl, cancellationToken, isCurrent);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (isCurrent?.Invoke() == false) return;
-        PruneCache();
-        if (changed)
+        PublishIfChanged(PruneCache(cancellationToken, isCurrent), cancellationToken, isCurrent);
+    }
+
+    private static string[] NormalizeIconUrls(IEnumerable<string> iconUrls) => iconUrls
+        .Select(url => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.AbsoluteUri : null)
+        .OfType<string>()
+        .Distinct(StringComparer.Ordinal)
+        .Take(MaxCacheFiles)
+        .ToArray();
+
+    private bool SetActiveUrls(string[] iconUrls, Func<bool>? isCurrent)
+    {
+        var active = iconUrls.ToHashSet(StringComparer.Ordinal);
+        lock (_sync)
         {
-            CacheChanged?.Invoke(this, EventArgs.Empty);
+            if (isCurrent?.Invoke() == false) return false;
+            _activeUrls.Clear();
+            _activeUrls.UnionWith(active);
+            var removed = _cachedFiles.Keys.Where(key => !active.Contains(key)).ToArray();
+            foreach (var key in removed) _cachedFiles.Remove(key);
+            foreach (var key in _retryAfter.Keys.Where(key => !active.Contains(key)).ToArray()) _retryAfter.Remove(key);
+            return removed.Length > 0;
         }
     }
 
-    // The config extractor already normalizes URLs; ProxyIcon normalizes its lookup too.
+    private void RecordExistingFile(string iconUrl, CancellationToken cancellationToken, Func<bool>? isCurrent)
+    {
+        var fileName = GetCacheFileName(new Uri(iconUrl));
+        if (File.Exists(Path.Combine(CacheDirectory, fileName)))
+            PublishIfChanged(TryRecordCacheFile(iconUrl, fileName, isCurrent), cancellationToken, isCurrent);
+    }
+
+    private void PublishIfChanged(bool changed, CancellationToken cancellationToken, Func<bool>? isCurrent)
+    {
+        if (changed && !cancellationToken.IsCancellationRequested && isCurrent?.Invoke() != false)
+            CacheChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // URL keys are canonical on both cache input and ProxyIcon lookup.
     private bool TryRecordCacheFile(string iconUrl, string fileName, Func<bool>? isCurrent)
     {
         lock (_sync)
         {
-            if (isCurrent?.Invoke() == false) return false;
+            if (isCurrent?.Invoke() == false || !_activeUrls.Contains(iconUrl)) return false;
             var stamp = File.GetLastWriteTimeUtc(Path.Combine(CacheDirectory, fileName)).Ticks;
             var versionChanged = !_fileVersions.TryGetValue(fileName, out var previousStamp) || previousStamp != stamp;
             _fileVersions[fileName] = stamp;
@@ -145,66 +167,96 @@ public sealed class ProxyGroupIconCache
     }
 
     public async Task RefreshAsync(
-        string configPath,
+        IEnumerable<string> iconUrls,
         CancellationToken cancellationToken = default,
         Func<bool>? isCurrent = null)
     {
         await _refreshLock.WaitAsync(cancellationToken);
-        var changed = false;
         try
         {
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(_refreshTimeout);
-            var iconUrls = ExtractProxyGroupIconUrls(configPath).Distinct(StringComparer.Ordinal).Take(MaxCacheFiles).ToArray();
-            var currentKeys = iconUrls.ToHashSet(StringComparer.Ordinal);
-            lock (_sync)
-            {
-                if (isCurrent?.Invoke() == false) return;
-                foreach (var key in _cachedFiles.Keys.Where(key => !currentKeys.Contains(key)).ToArray())
-                    changed |= _cachedFiles.Remove(key);
-            }
+            var urls = NormalizeIconUrls(iconUrls);
+            budget.Token.ThrowIfCancellationRequested();
+            if (isCurrent?.Invoke() == false) return;
+            PublishIfChanged(SetActiveUrls(urls, isCurrent), cancellationToken, isCurrent);
 
-            foreach (var iconUrl in iconUrls)
+            foreach (var iconUrl in urls)
             {
                 budget.Token.ThrowIfCancellationRequested();
                 if (isCurrent?.Invoke() == false) return;
+                // Publish a stale file before trying the network, and retain it on failure.
+                RecordExistingFile(iconUrl, cancellationToken, isCurrent);
+                lock (_sync)
+                {
+                    if (_retryAfter.TryGetValue(iconUrl, out var retryAfter) && _timeProvider.GetUtcNow() < retryAfter)
+                        continue;
+                }
+
                 string? fileName;
                 try { fileName = await EnsureCachedAsync(iconUrl, budget.Token); }
-                catch (OperationCanceledException) when (!budget.IsCancellationRequested) { continue; }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    RecordFailure(iconUrl, isCurrent);
+                    budget.Token.ThrowIfCancellationRequested();
+                    continue;
+                }
                 catch (Exception error) when (error is HttpRequestException or IOException or InvalidOperationException)
-                { HostOperationLogger.Info("icon-cache", "An icon could not be cached; its remote fallback remains available."); continue; }
+                {
+                    budget.Token.ThrowIfCancellationRequested();
+                    RecordFailure(iconUrl, isCurrent);
+                    HostOperationLogger.Info("icon-cache", "An icon could not be refreshed; any cached copy remains available.");
+                    continue;
+                }
+                budget.Token.ThrowIfCancellationRequested();
+                if (isCurrent?.Invoke() == false) return;
                 if (string.IsNullOrWhiteSpace(fileName))
                 {
+                    RecordFailure(iconUrl, isCurrent);
                     continue;
                 }
 
-                if (isCurrent?.Invoke() == false) return;
-                changed |= TryRecordCacheFile(iconUrl, fileName, isCurrent);
+                lock (_sync) _retryAfter.Remove(iconUrl);
+                PublishIfChanged(TryRecordCacheFile(iconUrl, fileName, isCurrent), cancellationToken, isCurrent);
             }
-
         }
         finally
         {
-            try { changed |= PruneCache(); }
+            var changed = false;
+            try { changed = PruneCache(cancellationToken, isCurrent); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { HostOperationLogger.Info("icon-cache", "Cache pruning was unavailable."); }
             finally { _refreshLock.Release(); }
-            if (changed && !cancellationToken.IsCancellationRequested && isCurrent?.Invoke() != false)
-                CacheChanged?.Invoke(this, EventArgs.Empty);
+            PublishIfChanged(changed, cancellationToken, isCurrent);
         }
     }
 
-    internal bool PruneCache()
+    private void RecordFailure(string iconUrl, Func<bool>? isCurrent)
+    {
+        lock (_sync)
+        {
+            if (isCurrent?.Invoke() == false || !_activeUrls.Contains(iconUrl)) return;
+            _retryAfter[iconUrl] = _timeProvider.GetUtcNow() + FailureRetryDelay;
+        }
+    }
+
+    internal bool PruneCache(CancellationToken cancellationToken = default, Func<bool>? isCurrent = null)
     {
         long retainedBytes = 0;
         HashSet<string> active;
-        lock (_sync) active = _cachedFiles.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        lock (_sync)
+        {
+            // ClearPublishedMap shares this lock: either cancellation wins, or pruning
+            // retains the old session's fallback files in this snapshot before reset.
+            if (cancellationToken.IsCancellationRequested || isCurrent?.Invoke() == false) return false;
+            active = _cachedFiles.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
         var retained = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in new DirectoryInfo(CacheDirectory).EnumerateFiles()
             .OrderByDescending(file => active.Contains(file.Name))
             .ThenByDescending(file => file.LastWriteTimeUtc))
         {
             if (file.Extension != ".tmp" && retained.Count < MaxCacheFiles && retainedBytes + file.Length <= MaxCacheBytes
-                && (active.Contains(file.Name) || DateTime.UtcNow - file.LastWriteTimeUtc < CacheLifetime))
+                && (active.Contains(file.Name) || _timeProvider.GetUtcNow().UtcDateTime - file.LastWriteTimeUtc < CacheLifetime))
             { retained.Add(file.Name); retainedBytes += file.Length; continue; }
             try { file.Delete(); } catch (IOException) { }
         }
@@ -237,7 +289,7 @@ public sealed class ProxyGroupIconCache
 
         var fileName = GetCacheFileName(uri);
         var cachePath = Path.Combine(CacheDirectory, fileName);
-        if (File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < CacheLifetime)
+        if (File.Exists(cachePath) && _timeProvider.GetUtcNow().UtcDateTime - File.GetLastWriteTimeUtc(cachePath) < CacheLifetime)
         {
             return fileName;
         }
@@ -260,6 +312,7 @@ public sealed class ProxyGroupIconCache
             {
                 await CopyWithLimitAsync(source, target, MaxIconBytes, cancellationToken);
             }
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(tempPath, cachePath, overwrite: true);
             return fileName;
         }
@@ -303,103 +356,4 @@ public sealed class ProxyGroupIconCache
             : ".img";
     }
 
-    private static IEnumerable<string> ExtractProxyGroupIconUrls(string configPath)
-    {
-        if (string.IsNullOrWhiteSpace(configPath) || !File.Exists(configPath))
-        {
-            yield break;
-        }
-
-        var inProxyGroups = false;
-        var proxyGroupsIndent = 0;
-        int? rootIndent = null;
-
-        foreach (var rawLine in File.ReadLines(configPath))
-        {
-            var withoutComment = StripComment(rawLine);
-            if (string.IsNullOrWhiteSpace(withoutComment))
-            {
-                continue;
-            }
-
-            var indent = CountIndent(withoutComment);
-            var line = withoutComment.Trim();
-            if (line is "---" or "..." || line.StartsWith('%')) continue;
-
-            var isSequenceItem = line == "-" || (line.Length > 1 && line[0] == '-' && char.IsWhiteSpace(line[1]));
-            if (rootIndent is null && !isSequenceItem && line.Contains(':')) rootIndent = indent;
-            // YAML permits the group's sequence dashes to align with its top-level key.
-            if (inProxyGroups && (indent < proxyGroupsIndent || (indent == proxyGroupsIndent && !isSequenceItem)))
-            {
-                inProxyGroups = false;
-            }
-
-            if (!inProxyGroups && indent == rootIndent && line.Equals("proxy-groups:", StringComparison.OrdinalIgnoreCase))
-            {
-                inProxyGroups = true;
-                proxyGroupsIndent = indent;
-                continue;
-            }
-
-            if (isSequenceItem) line = line[1..].TrimStart();
-            if (!inProxyGroups || !TryReadYamlValue(line, "icon", out var iconValue))
-            {
-                continue;
-            }
-
-            if (Uri.TryCreate(iconValue, UriKind.Absolute, out var iconUri)
-                && iconUri.Scheme is "http" or "https")
-            {
-                yield return iconUri.AbsoluteUri;
-            }
-        }
-    }
-
-    private static bool TryReadYamlValue(string line, string key, out string value)
-    {
-        value = "";
-        var prefix = key + ":";
-        if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        value = line[prefix.Length..].Trim().Trim('"', '\'');
-        return !string.IsNullOrWhiteSpace(value);
-    }
-
-    private static string StripComment(string line)
-    {
-        var inSingleQuote = false;
-        var inDoubleQuote = false;
-        for (var i = 0; i < line.Length; i++)
-        {
-            var current = line[i];
-            if (current == '\'' && !inDoubleQuote)
-            {
-                inSingleQuote = !inSingleQuote;
-            }
-            else if (current == '"' && !inSingleQuote)
-            {
-                inDoubleQuote = !inDoubleQuote;
-            }
-            else if (current == '#' && !inSingleQuote && !inDoubleQuote)
-            {
-                return line[..i];
-            }
-        }
-
-        return line;
-    }
-
-    private static int CountIndent(string line)
-    {
-        var count = 0;
-        while (count < line.Length && char.IsWhiteSpace(line[count]))
-        {
-            count++;
-        }
-
-        return count;
-    }
 }

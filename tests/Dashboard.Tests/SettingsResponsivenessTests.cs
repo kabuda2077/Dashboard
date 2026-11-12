@@ -33,7 +33,7 @@ public sealed class SettingsResponsivenessTests : TemporaryDirectoryTest
                         ExecuteAsync = async request => { await store.SavePreferencesAsync(request.Preferences!); return CommandResult.Completed(); },
                         BuildState = () => new(), Preferences = () => store.Current.DashboardPreferences,
                         ChooseFile = (_, _) => null, OpenLocation = (_, _) => { }, WindowCommand = (_, _) => { },
-                        CheckAppUpdateAsync = () => Task.CompletedTask, OpenAppRelease = () => { }, OpenCoreRepository = () => { }
+                        CheckAppUpdateAsync = () => Task.CompletedTask, OpenAppRelease = () => { }, OpenCoreRepository = () => { }, OpenCoreRelease = () => { }
                     });
                     block = true;
                     var save = router.RouteAsync("""

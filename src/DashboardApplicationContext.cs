@@ -7,8 +7,8 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     private readonly DashboardHost _host;
     private readonly Control _dispatcher = new();
     private readonly Icon _appIcon;
-    private readonly Icon _trayIconImage;
     private readonly NotifyIcon _trayIcon;
+    private readonly TrayIconTheme _trayIconTheme;
     private readonly bool _startMinimized;
     private readonly WebViewContentUpdate _webViewContentUpdate;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
@@ -35,8 +35,10 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _host.RelaunchRequested += OnRelaunchRequested;
 
         _appIcon = LoadAppIcon();
-        _trayIconImage = LoadTrayIcon(_appIcon);
         _trayIcon = CreateTrayIcon();
+        _trayIconTheme = new TrayIconTheme(
+            _trayIcon, RunOnUiThread, Path.Combine(AppSettings.AppDirectory, "resources"));
+        _trayIcon.Visible = true;
         UpdateTrayStatus();
         var shouldStartCore = _host.Settings.DesktopOptions.StartCoreOnLaunch || startCoreAfterLaunch;
         var isAdministrator = DashboardHost.IsRunningAsAdministrator();
@@ -180,9 +182,7 @@ internal sealed class DashboardApplicationContext : ApplicationContext
     {
         var icon = new NotifyIcon
         {
-            Icon = _trayIconImage,
-            Text = "Dashboard",
-            Visible = true
+            Text = "Dashboard"
         };
         icon.MouseUp += (_, e) =>
         {
@@ -532,9 +532,9 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         _host.RelaunchRequested -= OnRelaunchRequested;
         _trayIcon.Visible = false;
         ShutdownResourceDisposer.DisposeAll(
+            ("Tray icon theme", _trayIconTheme.Dispose),
             ("Tray icon", _trayIcon.Dispose),
             ("Tray menu", () => _trayMenu?.Dispose()),
-            ("Tray icon image", _trayIconImage.Dispose),
             ("Application icon", _appIcon.Dispose),
             ("Dashboard host", _host.Dispose),
             ("Application lifetime cancellation", _lifetimeCancellation.Dispose),
@@ -559,11 +559,4 @@ internal sealed class DashboardApplicationContext : ApplicationContext
         };
     }
 
-    private static Icon LoadTrayIcon(Icon fallback)
-    {
-        var iconPath = Path.Combine(AppSettings.AppDirectory, "resources", "tray.ico");
-        return File.Exists(iconPath)
-            ? new Icon(iconPath)
-            : (Icon)fallback.Clone();
-    }
 }

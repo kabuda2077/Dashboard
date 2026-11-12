@@ -51,7 +51,11 @@ public sealed class CoreManualUpdateTests : TemporaryDirectoryTest
             Assert.Equal(original, await File.ReadAllBytesAsync(store.Current.Profile(kind).ExePath));
             Assert.False(Directory.Exists(Path.Combine(TestRoot, "backups")));
             Assert.False(api.Requests.ContainsKey("/upgrade"));
-            if (mode == "unknown") host.OpenCoreRepositoryPage(); // Must be a no-op.
+            if (mode == "unknown")
+            {
+                host.OpenCoreRepositoryPage(); // Both links must be no-ops.
+                host.OpenCoreReleasePage();
+            }
         }
         finally
         {

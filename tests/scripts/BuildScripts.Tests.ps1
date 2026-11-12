@@ -39,7 +39,7 @@ try {
     Copy-Item (Join-Path $PSScriptRoot '../../tools/internal/create-app-icon.ps1') $generator
     Copy-Item (Join-Path $PSScriptRoot '../../dashboard-src/public/favicon.ico') (Join-Path $temp 'resources/dashboard/favicon.ico')
     & $generator
-    foreach ($kind in @('app', 'tray')) {
+    foreach ($kind in @('app', 'tray', 'tray-light')) {
         $bytes = [IO.File]::ReadAllBytes((Join-Path $temp "resources/$kind.ico"))
         Assert-True ([BitConverter]::ToUInt16($bytes, 4) -eq 7) 'Desktop icons lost required size variants.'
         $entry = 6 + 5 * 16
@@ -47,6 +47,22 @@ try {
         $bitmap = [Drawing.Bitmap]::new($stream)
         try {
             Assert-True ($bitmap.Width -eq 128 -and $bitmap.Height -eq 128) 'Icon frame cannot be decoded at its declared size.'
+            if ($kind -ne 'app') {
+                $expected = if ($kind -eq 'tray') { [Drawing.Color]::White } else { [Drawing.Color]::FromArgb(29, 29, 31) }
+                $opaquePixels = 0
+                $transparentPixels = 0
+                for ($y = 0; $y -lt $bitmap.Height; $y++) {
+                    for ($x = 0; $x -lt $bitmap.Width; $x++) {
+                        $pixel = $bitmap.GetPixel($x, $y)
+                        if ($pixel.A -eq 0) { $transparentPixels++ }
+                        elseif ($pixel.A -eq 255) {
+                            Assert-True ($pixel.ToArgb() -eq $expected.ToArgb()) 'Tray icon foreground has the wrong theme color.'
+                            $opaquePixels++
+                        }
+                    }
+                }
+                Assert-True ($opaquePixels -gt 0 -and $transparentPixels -gt 0) 'Tray icons must have a visible shape and transparent background.'
+            }
         }
         finally { $bitmap.Dispose(); $stream.Dispose() }
     }

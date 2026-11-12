@@ -6,12 +6,12 @@
       class="h-4 w-4 rounded-xs"
     />
     <a
-      :href="coreUpdateSource.releaseUrl || undefined"
+      :href="coreRepositoryUrl || undefined"
       :title="updateHint"
-      :aria-disabled="!coreUpdateSource.releaseUrl || undefined"
+      :aria-disabled="!coreRepositoryUrl || undefined"
       :aria-describedby="hintId"
-      :tabindex="!coreUpdateSource.releaseUrl ? 0 : undefined"
-      :role="!coreUpdateSource.releaseUrl ? 'link' : undefined"
+      :tabindex="!coreRepositoryUrl ? 0 : undefined"
+      :role="!coreRepositoryUrl ? 'link' : undefined"
       class="text-base-content/60 hover:text-primary focus-visible:ring-primary/30 min-w-0 truncate rounded-xs transition-colors focus-visible:ring-2 focus-visible:outline-none"
       target="_blank"
       rel="noreferrer"
@@ -29,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-import { coreUpdateSource, isSingBoxCore, version } from '@/assembly/version'
+import { coreRepositoryUrl, isSingBoxCore, version } from '@/assembly/version'
 import MetacubexLogo from '@/assets/images/metacubex.jpg'
 import SingBoxLogo from '@/assets/images/sing-box.svg'
 import { hasHostBridge, postHostMessage } from '@/composables/hostBridge'
@@ -40,17 +40,11 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const hintId = useId()
 const updateHint = computed(() =>
-  t(
-    coreUpdateSource.value.mode === 'automatic'
-      ? 'desktop.coreReleaseHint'
-      : coreUpdateSource.value.releaseUrl
-        ? 'desktop.manualCoreUpdateHint'
-        : 'desktop.unknownCoreSourceHint',
-  ),
+  t(coreRepositoryUrl.value ? 'desktop.coreRepositoryHint' : 'desktop.unknownCoreSourceHint'),
 )
 
 const handleRepositoryClick = (event: MouseEvent) => {
-  if (!coreUpdateSource.value.releaseUrl) {
+  if (!coreRepositoryUrl.value) {
     event.preventDefault()
     return
   }

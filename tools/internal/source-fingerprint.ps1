@@ -18,7 +18,7 @@ function Get-SourceInputPaths {
     if ($LASTEXITCODE) { throw 'Cannot enumerate source inputs.' }
     $paths = ($inventory -join "`n").Split([char]0, [StringSplitOptions]::RemoveEmptyEntries)
     # These tracked icons are generated from the tracked favicon and icon script.
-    $files = [string[]]@($paths | Where-Object { $_ -notin @('resources/app.ico', 'resources/tray.ico') } | Select-Object -Unique)
+    $files = [string[]]@($paths | Where-Object { $_ -notin @('resources/app.ico', 'resources/tray.ico', 'resources/tray-light.ico') } | Select-Object -Unique)
     [Array]::Sort($files, [StringComparer]::Ordinal)
     return $files
 }

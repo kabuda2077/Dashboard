@@ -49,6 +49,13 @@ export const coreUpdateSource = computed(() =>
     : resolveCoreUpdateSource(version.value ?? '', isSingBoxCore.value),
 )
 
+export const repositoryUrlFor = (releaseUrl: string) =>
+  releaseUrl === 'https://github.com/reF1nd/sing-box-releases/releases'
+    ? 'https://github.com/reF1nd/sing-box'
+    : releaseUrl.replace(/\/releases$/, '')
+
+export const coreRepositoryUrl = computed(() => repositoryUrlFor(coreUpdateSource.value.releaseUrl))
+
 export const isSingBoxCore = computed(() =>
   hasHostBridge ? hostState.value.coreType === 'sing-box' : version.value?.includes('sing-box'),
 )

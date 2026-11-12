@@ -2,11 +2,10 @@ import { expect, it, vi } from 'vitest'
 import { createApp, nextTick, ref } from 'vue'
 import { makeHostSnapshot } from './hostFixture'
 
-const releasePost = vi.hoisted(() => vi.fn())
 vi.mock('@/composables/hostBridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/composables/hostBridge')>()),
   hasHostBridge: true,
-  postHostMessage: releasePost,
+  postHostMessage: vi.fn(),
 }))
 
 vi.mock('@/assembly/config', () => ({
@@ -45,26 +44,28 @@ vi.mock('@/composables/useBackendRuntimeConfig', () => ({
 }))
 
 it.each([
-  [false, 'en-US'],
-  [true, 'en-US'],
-  [false, 'zh-CN'],
-  [true, 'zh-CN'],
+  [false, 'en-US', 'automatic'],
+  [true, 'en-US', 'manual'],
+  [false, 'zh-CN', 'automatic'],
+  [true, 'zh-CN', 'manual'],
+  [false, 'en-US', 'manual'],
+  [false, 'zh-CN', 'manual'],
 ] as const)(
-  'localizes Core operations without changing their order or wiring (sing-box=%s, locale=%s)',
-  async (singBox, locale) => {
+  'localizes and routes Core operations (sing-box=%s, locale=%s, mode=%s)',
+  async (singBox, locale, mode) => {
     const { isSingBoxCore } = await import('@/assembly/version')
     ;(isSingBoxCore as { value: boolean }).value = singBox
-    const { applyHostState } = await import('@/composables/hostBridge')
-    releasePost.mockClear()
-    const source = singBox
-      ? {
-          coreUpdateMode: 'manual' as const,
-          coreReleaseUrl: 'https://github.com/reF1nd/sing-box-releases/releases',
-        }
-      : {
-          coreUpdateMode: 'automatic' as const,
-          coreReleaseUrl: 'https://github.com/MetaCubeX/mihomo/releases',
-        }
+    const { applyHostState, postHostMessage } = await import('@/composables/hostBridge')
+    vi.mocked(postHostMessage).mockClear()
+    const source = {
+      coreUpdateMode: mode,
+      coreReleaseUrl:
+        mode === 'automatic'
+          ? 'https://github.com/MetaCubeX/mihomo/releases'
+          : singBox
+            ? 'https://github.com/reF1nd/sing-box-releases/releases'
+            : 'https://github.com/TanakaLun/mihomo/releases',
+    }
     applyHostState(makeHostSnapshot({ coreUpdateAvailable: true, ...source }))
     const { coreHostActionsKey } = await import('@/composables/coreHostActions')
     const { default: Component } = await import('@/components/settings/backend/BackendSettings.vue')
@@ -76,10 +77,12 @@ it.each([
     const t = i18n.global.t
     const restartCore = vi.fn(),
       upgradeCore = vi.fn()
+    const isCoreUpgrading = ref(false)
+    const canUpgradeCore = ref(mode === 'automatic')
     app.provide(coreHostActionsKey, {
       isRunning: ref(true),
-      isCoreUpgrading: ref(false),
-      canUpgradeCore: ref(!singBox),
+      isCoreUpgrading,
+      canUpgradeCore,
       restartCore,
       upgradeCore,
     })
@@ -94,35 +97,52 @@ it.each([
         t('flushDNSCache'),
         t('flushFakeIP'),
         ...(!singBox ? [t('updateGeoDatabase')] : []),
-        t(singBox ? 'desktop.coreReleasePage' : 'desktop.upgrade'),
+        t('desktop.upgrade'),
       ])
       expect(root.textContent).toContain(locale === 'en-US' ? 'Current downloads' : '当前下载')
       expect(buttons[1].textContent).toContain(locale === 'en-US' ? 'Restart core' : '重启内核')
       buttons[1].click()
-      buttons.at(-1)!.click()
       expect(restartCore).toHaveBeenCalledOnce()
-      if (singBox) {
+      const upgrade = buttons.at(-1)!
+      expect(upgrade.disabled).toBe(false)
+      upgrade.click()
+      if (mode === 'manual') {
         expect(upgradeCore).not.toHaveBeenCalled()
-        expect(releasePost).toHaveBeenCalledWith({ type: 'openCoreRepository' })
-        expect(buttons.at(-1)!.title).toBe(t('desktop.manualCoreUpdateHint'))
+        expect(postHostMessage).toHaveBeenLastCalledWith({ type: 'openCoreRelease' })
+        expect(upgrade.title).toBe(t('desktop.manualCoreUpdateHint'))
         expect(root.querySelector('.indicator-item')).toBeNull()
       } else {
         expect(upgradeCore).toHaveBeenCalledOnce()
-        expect(buttons.at(-1)!.parentElement!.querySelector('.indicator-item')).not.toBeNull()
+        expect(postHostMessage).not.toHaveBeenCalled()
+        expect(upgrade.parentElement!.querySelector('.indicator-item')).not.toBeNull()
       }
       applyHostState(makeHostSnapshot({ coreUpdateAvailable: false, ...source }))
+      canUpgradeCore.value = false
       await nextTick()
-      expect(buttons.at(-1)!.parentElement!.querySelector('.indicator-item')).toBeNull()
-      if (singBox) {
-        applyHostState(makeHostSnapshot({ coreUpdateMode: 'unknown', coreReleaseUrl: '' }))
-        await nextTick()
-        const release = root.querySelector<HTMLButtonElement>('[data-testid=core-release-page]')!
-        expect(release.disabled).toBe(true)
-        expect(release.title).toBe(t('desktop.unknownCoreSourceHint'))
-        releasePost.mockClear()
-        release.click()
-        expect(releasePost).not.toHaveBeenCalled()
-      }
+      expect(upgrade.parentElement!.querySelector('.indicator-item')).toBeNull()
+      expect(upgrade.disabled).toBe(false)
+      expect(upgrade.title).toBe(t('desktop.manualCoreUpdateHint'))
+      upgradeCore.mockClear()
+      upgrade.click()
+      expect(upgradeCore).not.toHaveBeenCalled()
+      expect(postHostMessage).toHaveBeenLastCalledWith({ type: 'openCoreRelease' })
+
+      applyHostState(makeHostSnapshot({ coreUpdateMode: 'unknown', coreReleaseUrl: '' }))
+      await nextTick()
+      expect(upgrade.textContent?.trim()).toBe(t('desktop.upgrade'))
+      expect(upgrade.disabled).toBe(true)
+      expect(upgrade.title).toBe(t('desktop.unknownCoreSourceHint'))
+      vi.mocked(postHostMessage).mockClear()
+      upgrade.click()
+      expect(postHostMessage).not.toHaveBeenCalled()
+
+      applyHostState(makeHostSnapshot(source))
+      isCoreUpgrading.value = true
+      await nextTick()
+      expect(upgrade.textContent?.trim()).toBe(t('desktop.upgrading'))
+      expect(upgrade.disabled).toBe(true)
+      upgrade.click()
+      expect(postHostMessage).not.toHaveBeenCalled()
     } finally {
       app.unmount()
       i18n.global.locale.value = previousLocale

@@ -2,6 +2,48 @@ namespace Dashboard.Tests;
 
 public sealed class MetadataRefreshTests : TemporaryDirectoryTest
 {
+    [Theory]
+    [InlineData(CoreKind.Mihomo, "Mihomo Meta TanakaLun-Alpha-9fc52a02 windows amd64", "TanakaLun/mihomo")]
+    [InlineData(CoreKind.SingBox, "sing-box version 1.14.0-beta.15-reF1nd", "reF1nd/sing-box-releases")]
+    public async Task ConfigChangesPreserveTheReleaseLinkAndRefreshTunWithoutRereadingTheExecutable(
+        CoreKind kind, string raw, string repository)
+    {
+        var exe = Path.Combine(TestRoot, "fixture.exe");
+        var config = Path.Combine(TestRoot, "config.json");
+        await File.WriteAllTextAsync(exe, "Version-reader fixture; never executed.");
+        await File.WriteAllTextAsync(config, """{"inbounds":[{"type":"tun"}]}""");
+        var store = new SettingsStore(TestRoot);
+        await store.UpdateProfileAsync(kind, 0, new() { ExePath = exe, ConfigPath = config, ApiUrl = "http://127.0.0.1:1" });
+        await store.SetActiveCoreAsync(kind);
+        var reads = 0;
+        using var host = new DashboardHost(TestRoot, Path.Combine(TestRoot, "ui"), true, () => false,
+            readCoreVersion: (_, _, _) => { Interlocked.Increment(ref reads); return Task.FromResult(raw); });
+        try
+        {
+            await host.RefreshMetadataAsync();
+            var initial = host.BuildRuntimeState(false);
+            var releaseUrl = "https://github.com/" + repository + "/releases";
+            Assert.Equal("manual", initial.CoreUpdateMode);
+            Assert.Equal(releaseUrl, initial.CoreReleaseUrl);
+            Assert.Equal(kind == CoreKind.SingBox ? (bool?)true : null, initial.ReadOnlyTunEnabled);
+            Assert.Equal(1, reads);
+
+            await File.WriteAllTextAsync(config, """{"inbounds":[]}""");
+            var beforeRefresh = host.BuildRuntimeState(false);
+            Assert.Equal("manual", beforeRefresh.CoreUpdateMode);
+            Assert.Equal(releaseUrl, beforeRefresh.CoreReleaseUrl);
+            Assert.Equal(initial.CoreVersion, beforeRefresh.CoreVersion);
+            Assert.Null(beforeRefresh.ReadOnlyTunEnabled);
+
+            await host.RefreshMetadataAsync();
+            var refreshed = host.BuildRuntimeState(false);
+            Assert.Equal(releaseUrl, refreshed.CoreReleaseUrl);
+            Assert.Equal(kind == CoreKind.SingBox ? (bool?)false : null, refreshed.ReadOnlyTunEnabled);
+            Assert.Equal(1, reads);
+        }
+        finally { await host.ShutdownAsync(); }
+    }
+
     [Fact]
     public async Task ExplicitRefreshRetriesFailedUnchangedFilesAndSuccessfulCacheIsReusable()
     {

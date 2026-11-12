@@ -20,11 +20,18 @@ it('uses the real C# bootstrap shape and restores preferences before importing s
     expect(localStorage.getItem('config/old')).toBeNull()
   })
   const result = startDashboard(load)
+  expect(host.post.mock.calls.filter(([message]) => message.type === 'performance').map(([message]) => message.name))
+    .toEqual(['bootstrapRequested'])
   host.bootstrap('wrong-id', { 'config/theme': 'wrong' })
   expect(load).not.toHaveBeenCalled()
   host.bootstrap(undefined, { 'config/theme': 'dark' })
   await result
   expect(load).toHaveBeenCalledOnce()
+  const stages = host.post.mock.calls.filter(([message]) => message.type === 'performance').map(([message]) => message)
+  expect(stages.map((message) => message.name)).toEqual([
+    'bootstrapRequested', 'bootstrapReceived', 'preferencesRestored', 'applicationImportRequested',
+  ])
+  expect(stages.every((message) => Number.isFinite(message.durationMs) && message.durationMs >= 0)).toBe(true)
   expect(bootstrapFixture().protocolVersion).toBe(2)
 })
 it.each([null, undefined, { 'setup/password': 'bad' }])(
@@ -62,6 +69,7 @@ it('fails visibly on timeout and a fresh request can retry', async () => {
   await vi.advanceTimersByTimeAsync(30001)
   await boot
   expect(load).not.toHaveBeenCalled()
+  expect(host.post.mock.lastCall?.[0]).toMatchObject({ type: 'performance', name: 'startupFailed' })
   document.querySelector('button')!.click()
   host.bootstrap()
   await vi.advanceTimersByTimeAsync(0)
@@ -133,7 +141,8 @@ it('prefers saved history preferences over old cache values without another host
   const boot = restoreDashboardSettings()
   host.bootstrap(undefined, preferences)
   await boot
-  expect(host.post).toHaveBeenCalledOnce()
+  expect(host.post.mock.calls.filter(([message]) => message.type !== 'performance'))
+    .toEqual([[expect.objectContaining({ type: 'bootstrap' })]])
   expect(localStorage.getItem('config/connection-history-aggregation-type')).toBe('outbound')
   expect(localStorage.getItem('config/connection-history-sorting')).toBe('[]')
   expect(localStorage.getItem('cache/connection-history-aggregation-type')).toBeNull()
@@ -200,7 +209,8 @@ it('does not migrate malformed or unsupported history cache values', async () =>
   const boot = restoreDashboardSettings()
   host.bootstrap()
   await boot
-  expect(host.post).toHaveBeenCalledOnce()
+  expect(host.post.mock.calls.filter(([message]) => message.type !== 'performance'))
+    .toEqual([[expect.objectContaining({ type: 'bootstrap' })]])
   expect(localStorage.getItem('config/connection-history-aggregation-type')).toBeNull()
   expect(localStorage.getItem('config/connection-history-sorting')).toBeNull()
 })

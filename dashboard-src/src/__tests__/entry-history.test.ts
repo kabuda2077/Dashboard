@@ -10,7 +10,7 @@ vi.mock('@/helper', () => ({ applyCustomThemes: vi.fn() }))
 vi.mock('@/helper/dashboardSettingsSync', () => ({ installDashboardSettingsSync: vi.fn() }))
 vi.mock('@/hostBootstrap', () => ({}))
 vi.mock('@/i18n', () => ({ i18n: {} }))
-vi.mock('@/router', () => ({ default: {} }))
+vi.mock('@/router', () => ({ default: { isReady: () => Promise.resolve() } }))
 vi.mock('vue', async (original) => ({
   ...(await original<typeof import('vue')>()),
   createApp: () => ({

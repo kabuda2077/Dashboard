@@ -29,7 +29,7 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
             ExecuteAsync = _ => { called = true; return Task.FromResult(CommandResult.Completed()); },
             BuildState = () => { called = true; return new(); }, Preferences = () => new Dictionary<string, string>(),
             ChooseFile = (_, _) => null, OpenLocation = (_, _) => { }, WindowCommand = (_, _) => { },
-            CheckAppUpdateAsync = () => Task.CompletedTask, OpenAppRelease = () => { }, OpenCoreRepository = () => { }
+            CheckAppUpdateAsync = () => Task.CompletedTask, OpenAppRelease = () => { }, OpenCoreRepository = () => { }, OpenCoreRelease = () => { }
         });
         var error = await Record.ExceptionAsync(() => router.RouteAsync("{\"protocolVersion\":2,\"type\":\"testRouting\",\"requestId\":\"probe\"" + fields + "}", _ => called = true));
         Assert.True(error is ArgumentException or JsonException);
@@ -686,7 +686,7 @@ public sealed class RoutingProbeTests : TemporaryDirectoryTest
                 ExecuteAsync = host.ExecuteAsync, BuildState = () => host.BuildState(false), Preferences = () => host.Preferences,
                 ChooseFile = (_, _) => throw new InvalidOperationException(), OpenLocation = (_, _) => throw new InvalidOperationException(),
                 WindowCommand = (_, _) => throw new InvalidOperationException(), CheckAppUpdateAsync = () => Task.CompletedTask,
-                OpenAppRelease = () => { }, OpenCoreRepository = () => { }
+                OpenAppRelease = () => { }, OpenCoreRepository = () => { }, OpenCoreRelease = () => { }
             });
             HostReply? reply = null;
             await router.RouteAsync(HostBridgeJson.Serialize(new {
